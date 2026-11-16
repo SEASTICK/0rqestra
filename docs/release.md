@@ -68,7 +68,7 @@ First-time download: `https://seastick.github.io/0rqestra-realeases/downloads.ht
 
 1. **Public repository** `SEASTICK/0rqestra-realeases` (created, spelling as created). The branch
    `gh-pages` exists. Still to do by hand: Settings → Pages → *Deploy from a branch* → `gh-pages`
-   → `/ (root)`. The repository holds only installers and `latest.json`, never the source code.
+   → `/ (root)`. The repository holds only `latest.json` and the download page, never the source code or the installers.
 2. **Deploy key:** create a key pair
    (`ssh-keygen -t ed25519 -f 0rqestra-deploy-key -N ""`). Add the **public** key as a deploy
    key with **write access** in `0rqestra-realeases`.
