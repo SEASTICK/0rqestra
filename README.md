@@ -1,6 +1,6 @@
-# WorkTreeAI
+# 0rqestra
 
-WorkTreeAI is a planned public, open-source desktop application for coordinating a team of AI
+0rqestra is a planned public, open-source desktop application for coordinating a team of AI
 coding agents against a local software project, through an editable visual tree.
 
 - A single **Manager** agent is the user's only conversation partner.
@@ -46,17 +46,17 @@ Stage 2 does not start until Stage 1 is reviewed.
 
 ## Using provider tools
 
-WorkTreeAI will not bundle, modify, or redistribute any provider CLI. It will never collect,
+0rqestra will not bundle, modify, or redistribute any provider CLI. It will never collect,
 store, or forward your Claude.ai or ChatGPT sign-in credentials. You install each CLI and sign
 in through the provider's own flow.
 
-WorkTreeAI "runs Claude Code" and "runs Codex" in the plain-text sense only. It is not built,
+0rqestra "runs Claude Code" and "runs Codex" in the plain-text sense only. It is not built,
 endorsed by, or affiliated with Anthropic or OpenAI. Plan usage limits apply; see
 `docs/provider-integrations.md`.
 
 ## Contributing and license
 
-The project is not yet accepting outside contributions. The decision to release WorkTreeAI as
+The project is not yet accepting outside contributions. The decision to release 0rqestra as
 open source is agreed. **Which license to use has not been chosen yet.** Until a LICENSE file is
 added, no license is granted.
 
@@ -97,9 +97,29 @@ npm start
 | `npm ci` | Install the exact dependency versions from `package-lock.json` |
 | `npm run check` | Lint, typecheck all workspaces, and run unit tests |
 | `npm run smoke` | Build the desktop app and run the Electron security self-check in a real window. Prints `SMOKE PASSED` (exit 0) or `SMOKE FAILED` (exit 1); times out after 20 s |
-| `npm run smoke:failures -w @worktreeai/desktop` | Run the smoke check against deliberately broken temporary copies of the build, to prove each failure is caught; the real build is never modified |
+| `npm run smoke:failures -w @0rqestra/desktop` | Run the smoke check against deliberately broken temporary copies of the build, to prove each failure is caught; the real build is never modified |
 | `npm start` | Build and open the desktop app (placeholder page) |
-| `npm run package -w @worktreeai/desktop` | Unsigned unpacked build in `apps/desktop/release/` |
+| `npm run package -w @0rqestra/desktop` | Unsigned unpacked build in `apps/desktop/release/` |
 
 **Layout:** `packages/contracts`, `packages/provider-fake`, `packages/engine`, `apps/desktop`.
 See `docs/architecture.md` §8 for details, check results, and known limitations.
+
+## Rename compatibility
+
+The product name, window/page titles, Electron packaging name, npm root/workspace names and
+this README now use **0rqestra** (`@0rqestra/*` for npm workspaces). The development
+app ID is `dev.orqestra.desktop`; it remains a placeholder before a signed public release.
+
+The secure preload API `window.worktreeai`, the smoke-only `--worktreeai-smoke` diagnostic flag,
+and the provider probe tools' `WORKTREEAI_*` variables, `.worktreeai-probe` configuration path
+and recorded client IDs remain stable for compatibility and reproducibility. Provider runtime
+evidence files and their hashes are unchanged. No model probe was rerun by this rename.
+
+The recorded package/smoke results in the architecture document refer to the earlier WorkTreeAI
+build. The rename itself does not upgrade their verification status or complete Stage 1. This
+checkout contains the foundation and provider probes; it does not contain the separately built
+desktop subscription/UI preview from the former repository's review branch.
+
+Historical Stage 1 documents, the existing `WorkTreeAI stages.txt` filename and provider-review
+materials retain their original names and contents. They describe this same project before its
+rename; none of their evidence, decisions or review statuses is changed by the rebranding.

@@ -20,7 +20,7 @@ export function mainWindowOptions(preloadPath: string, smokeMode = false): Brows
     width: 1280,
     height: 800,
     show: false,
-    title: "WorkTreeAI",
+    title: "0rqestra",
     webPreferences: {
       ...SECURE_WEB_PREFERENCES,
       preload: preloadPath,

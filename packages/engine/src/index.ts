@@ -3,7 +3,7 @@ import type {
   ProviderErrorCategory,
   ProviderEvent,
   TaskRequest,
-} from "@worktreeai/contracts";
+} from "@0rqestra/contracts";
 
 export type TaskResult =
   | { status: "succeeded"; summary: string; events: ProviderEvent[] }

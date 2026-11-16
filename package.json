@@ -1,5 +1,5 @@
 {
-  "name": "worktreeai",
+  "name": "0rqestra",
   "private": true,
   "type": "module",
   "description": "Open-source desktop app for coordinating a configurable tree of AI coding agents.",
@@ -15,8 +15,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "build": "npm run build --workspaces --if-present",
-    "smoke": "npm run smoke -w @worktreeai/desktop",
-    "start": "npm run start -w @worktreeai/desktop",
+    "smoke": "npm run smoke -w @0rqestra/desktop",
+    "start": "npm run start -w @0rqestra/desktop",
     "check": "npm run lint && npm run typecheck && npm test"
   },
   "devDependencies": {

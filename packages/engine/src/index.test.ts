@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { TaskRequest } from "@worktreeai/contracts";
-import { FakeProvider } from "@worktreeai/provider-fake";
+import type { TaskRequest } from "@0rqestra/contracts";
+import { FakeProvider } from "@0rqestra/provider-fake";
 import { runTask } from "./index.js";
 
 const request: TaskRequest = {

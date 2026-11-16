@@ -1,5 +1,5 @@
 {
-  "name": "@worktreeai/engine",
+  "name": "@0rqestra/engine",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,9 +10,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@worktreeai/contracts": "0.0.0"
+    "@0rqestra/contracts": "0.0.0"
   },
   "devDependencies": {
-    "@worktreeai/provider-fake": "0.0.0"
+    "@0rqestra/provider-fake": "0.0.0"
   }
 }
