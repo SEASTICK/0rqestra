@@ -12,8 +12,9 @@ export function startWindowsInstaller(installerPath: string): void {
 }
 
 export function macBundlePath(execPath: string): string {
-  // <bundle>.app/Contents/MacOS/<executable>
-  const bundle = path.resolve(execPath, "..", "..", "..");
+  // <bundle>.app/Contents/MacOS/<executable>. Always a POSIX path; path.posix keeps the tests
+  // meaningful on Windows runners too.
+  const bundle = path.posix.resolve(execPath, "..", "..", "..");
   if (!bundle.endsWith(".app")) throw new Error(`Not running from an app bundle: ${execPath}`);
   if (bundle.includes("/AppTranslocation/")) {
     throw new Error("Move the app to the Applications folder, start it from there, and try again.");

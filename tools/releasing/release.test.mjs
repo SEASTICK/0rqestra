@@ -13,6 +13,15 @@ import { loadPrivateKey, publicKeyBase64, releaseFileNames, sha512File, signDige
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PAGES = "https://seastick.github.io/0rqestra-releases";
 
+// Child processes get the real environment (Windows needs it) minus anything that steers the scripts.
+function childEnv(extra = {}) {
+  const env = { ...process.env, ...extra };
+  for (const name of ["UPDATE_SIGNING_PRIVATE_KEY", "UPDATE_SIGNING_PRIVATE_KEY_PASSWORD", "RELEASES_PAGES_URL"]) {
+    if (!(name in extra)) delete env[name];
+  }
+  return env;
+}
+
 let dir;
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "release-test-"));
@@ -127,7 +136,7 @@ describe("release scripts", () => {
     return { read };
   }
   const prepare = (...args) =>
-    spawnSync(process.execPath, [path.join(here, "prepare-release.mjs"), ...args, dir], { encoding: "utf8", env: { PATH: process.env.PATH } });
+    spawnSync(process.execPath, [path.join(here, "prepare-release.mjs"), ...args, dir], { encoding: "utf8", env: childEnv() });
 
   it("prepare-release sets only the version for stable", () => {
     const repo = fakeRepo("key");
@@ -159,7 +168,7 @@ describe("release scripts", () => {
     // The repository's own update-config.json decides; a fresh random key can never match it.
     const result = spawnSync(process.execPath, [path.join(here, "sign-update.mjs"), "--check"], {
       encoding: "utf8",
-      env: { PATH: process.env.PATH, UPDATE_SIGNING_PRIVATE_KEY: newKey().pem },
+      env: childEnv({ UPDATE_SIGNING_PRIVATE_KEY: newKey().pem }),
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/publicKey|does not match/);
@@ -168,9 +177,9 @@ describe("release scripts", () => {
   it("generate-update-key writes a usable key and never overwrites one", () => {
     const out = path.join(dir, "update.key");
     const script = path.join(here, "generate-update-key.mjs");
-    const stdout = execFileSync(process.execPath, [script, out], { encoding: "utf8", env: { PATH: process.env.PATH } });
+    const stdout = execFileSync(process.execPath, [script, out], { encoding: "utf8", env: childEnv() });
     const printed = stdout.trim().split("\n").at(-1);
     expect(publicKeyBase64(loadPrivateKey(fs.readFileSync(out, "utf8")))).toBe(printed);
-    expect(spawnSync(process.execPath, [script, out]).status).toBe(1);
+    expect(spawnSync(process.execPath, [script, out], { env: childEnv() }).status).toBe(1);
   });
 });
