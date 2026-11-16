@@ -1,5 +1,6 @@
 {
   "channel": "stable",
-  "feedUrl": "https://seastick.github.io/0rqestra-releases",
+  "feedUrl": "https://raw.githubusercontent.com/SEASTICK/0rqestra/update-feed",
+  "downloadBase": "https://github.com/SEASTICK/0rqestra/releases/download",
   "publicKey": ""
 }

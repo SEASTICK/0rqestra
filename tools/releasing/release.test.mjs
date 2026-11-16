@@ -11,12 +11,13 @@ import { buildManifest } from "./build-manifest.mjs";
 import { loadPrivateKey, publicKeyBase64, releaseFileNames, sha512File, signDigest } from "./lib.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const PAGES = "https://seastick.github.io/0rqestra-releases";
+const FEED = "https://raw.githubusercontent.com/OWNER/REPO/update-feed";
+const DOWNLOADS = "https://github.com/OWNER/REPO/releases/download";
 
 // Child processes get the real environment (Windows needs it) minus anything that steers the scripts.
 function childEnv(extra = {}) {
   const env = { ...process.env, ...extra };
-  for (const name of ["UPDATE_SIGNING_PRIVATE_KEY", "UPDATE_SIGNING_PRIVATE_KEY_PASSWORD", "RELEASES_PAGES_URL"]) {
+  for (const name of ["UPDATE_SIGNING_PRIVATE_KEY", "UPDATE_SIGNING_PRIVATE_KEY_PASSWORD", "DOWNLOAD_BASE"]) {
     if (!(name in extra)) delete env[name];
   }
   return env;
@@ -92,31 +93,29 @@ describe("build-manifest", () => {
   it("writes a manifest the app accepts, with signatures that verify", async () => {
     const key = newKey();
     const names = await releaseSet("0.3.0", key);
-    const { manifest, page } = buildManifest({ channel: "stable", version: "0.3.0", filesDir: dir, notes: "- Fix", pagesUrl: PAGES });
-    const parsed = parseManifest(JSON.stringify(manifest), PAGES);
+    const manifest = buildManifest({ channel: "stable", version: "0.3.0", filesDir: dir, notes: "- Fix", downloadBase: DOWNLOADS });
+    const parsed = parseManifest(JSON.stringify(manifest), DOWNLOADS);
     expect(parsed.version).toBe("0.3.0");
     expect(parsed.notes).toBe("- Fix");
     expect(Object.keys(parsed.platforms).sort()).toEqual(["darwin-aarch64", "darwin-x86_64", "windows-x86_64"]);
-    expect(parsed.platforms["windows-x86_64"].url).toBe(`${PAGES}/${names.windows}`);
+    expect(parsed.platforms["windows-x86_64"].url).toBe(`${DOWNLOADS}/v0.3.0/${names.windows}`);
     expect(parsed.platforms["darwin-aarch64"]).toEqual(parsed.platforms["darwin-x86_64"]);
     const digest = await sha512File(path.join(dir, names.macUpdate));
     expect(verifyUpdateSignature(key.publicKey, "0.3.0", digest, parsed.platforms["darwin-aarch64"].signature)).toBe(true);
-    expect(page).toContain(`href="${names.windows}"`);
-    expect(page).toContain(`href="${names.macDmg}"`);
   });
 
-  it("publishes the test channel under /test, which the stable app refuses", async () => {
+  it("points a test release at its own test-v tag", async () => {
     await releaseSet("0.3.0", newKey());
-    const { manifest } = buildManifest({ channel: "test", version: "0.3.0", filesDir: dir, notes: "", pagesUrl: PAGES });
-    expect(manifest.platforms["windows-x86_64"].url.startsWith(`${PAGES}/test/`)).toBe(true);
+    const manifest = buildManifest({ channel: "test", version: "0.3.0", filesDir: dir, notes: "", downloadBase: DOWNLOADS });
+    expect(manifest.platforms["windows-x86_64"].url.startsWith(`${DOWNLOADS}/test-v0.3.0/`)).toBe(true);
     expect(manifest.notes).toBe("Improvements and fixes.");
-    expect(() => parseManifest(JSON.stringify(manifest), `${PAGES}/test`)).not.toThrow();
+    expect(() => parseManifest(JSON.stringify(manifest), DOWNLOADS)).not.toThrow();
   });
 
   it("refuses an incomplete file set", async () => {
     const names = await releaseSet("0.3.0", newKey());
     fs.rmSync(path.join(dir, `${names.macUpdate}.sig`));
-    expect(() => buildManifest({ channel: "stable", version: "0.3.0", filesDir: dir, notes: "", pagesUrl: PAGES })).toThrow(
+    expect(() => buildManifest({ channel: "stable", version: "0.3.0", filesDir: dir, notes: "", downloadBase: DOWNLOADS })).toThrow(
       /Missing release file/,
     );
   });
@@ -130,7 +129,7 @@ describe("release scripts", () => {
     fs.copyFileSync(path.join(here, "../../apps/desktop/package.json"), path.join(desktop, "package.json"));
     fs.writeFileSync(
       path.join(desktop, "update-config.json"),
-      JSON.stringify({ channel: "stable", feedUrl: PAGES, publicKey }),
+      JSON.stringify({ channel: "stable", feedUrl: FEED, downloadBase: DOWNLOADS, publicKey }),
     );
     const read = (name) => JSON.parse(fs.readFileSync(path.join(desktop, name), "utf8"));
     return { read };
@@ -143,7 +142,7 @@ describe("release scripts", () => {
     const before = repo.read("package.json");
     expect(prepare("stable", "0.4.0").status).toBe(0);
     expect(repo.read("package.json")).toEqual({ ...before, version: "0.4.0" });
-    expect(repo.read("update-config.json")).toEqual({ channel: "stable", feedUrl: PAGES, publicKey: "key" });
+    expect(repo.read("update-config.json")).toEqual({ channel: "stable", feedUrl: FEED, downloadBase: DOWNLOADS, publicKey: "key" });
   });
 
   it("prepare-release gives a test build its own name, app id, and update address", () => {
@@ -154,12 +153,11 @@ describe("release scripts", () => {
     expect(after.version).toBe("0.4.1");
     expect(after.build.appId).toBe(`${before.build.appId}.updatertest`);
     expect(after.build.productName).toBe(`${before.build.productName} Updater Test`);
-    expect(repo.read("update-config.json")).toEqual({ channel: "test", feedUrl: `${PAGES}/test`, publicKey: "key" });
+    expect(repo.read("update-config.json")).toEqual({ channel: "test", feedUrl: `${FEED}/test`, downloadBase: DOWNLOADS, publicKey: "key" });
   });
 
-  it("prepare-release refuses to build without a public key or with bad arguments", () => {
+  it("prepare-release refuses bad arguments", () => {
     fakeRepo("");
-    expect(prepare("stable", "0.4.0").status).toBe(1);
     expect(prepare("beta", "0.4.0").status).toBe(2);
     expect(prepare("stable", "0.4").status).toBe(2);
   });

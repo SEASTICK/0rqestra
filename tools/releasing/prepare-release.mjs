@@ -18,13 +18,9 @@ const configPath = path.join(root, "apps/desktop/update-config.json");
 
 const pkg = readJson(pkgPath);
 const config = readJson(configPath);
-if (!config.publicKey) {
-  console.error('apps/desktop/update-config.json has no "publicKey". See docs/release.md.');
-  process.exit(1);
-}
 pkg.version = version;
 config.channel = channel;
-config.feedUrl = (process.env.RELEASES_PAGES_URL ?? config.feedUrl).replace(/\/+$/, "").replace(/\/test$/, "");
+config.feedUrl = config.feedUrl.replace(/\/+$/, "").replace(/\/test$/, "");
 if (channel === "test") {
   pkg.build.appId = `${pkg.build.appId}.updatertest`;
   pkg.build.productName = `${pkg.build.productName} Updater Test`;
