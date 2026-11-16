@@ -18,10 +18,7 @@ export interface UpdateManifest {
 
 export interface UpdateConfig {
   channel: "stable" | "test";
-  // Where latest.json is read from.
   feedUrl: string;
-  // Update files must be below this address (the repository's release downloads).
-  downloadBase: string;
   publicKey: string;
 }
 
@@ -33,14 +30,11 @@ export function parseUpdateConfig(raw: string): UpdateConfig | null {
     return null;
   }
   if (typeof value !== "object" || value === null) return null;
-  const { channel, feedUrl, downloadBase, publicKey } = value as Record<string, unknown>;
+  const { channel, feedUrl, publicKey } = value as Record<string, unknown>;
   if (channel !== "stable" && channel !== "test") return null;
-  if (typeof feedUrl !== "string" || typeof downloadBase !== "string" || typeof publicKey !== "string") return null;
-  for (const url of [feedUrl, downloadBase]) {
-    if (!URL.canParse(url) || new URL(url).protocol !== "https:") return null;
-  }
-  const trim = (url: string) => url.replace(/\/+$/, "");
-  return { channel, feedUrl: trim(feedUrl), downloadBase: trim(downloadBase), publicKey: publicKey.trim() };
+  if (typeof feedUrl !== "string" || typeof publicKey !== "string") return null;
+  if (!URL.canParse(feedUrl) || new URL(feedUrl).protocol !== "https:") return null;
+  return { channel, feedUrl: feedUrl.replace(/\/+$/, ""), publicKey: publicKey.trim() };
 }
 
 export function platformKey(platform: string, arch: string): PlatformKey | null {
@@ -50,8 +44,8 @@ export function platformKey(platform: string, arch: string): PlatformKey | null 
   return null;
 }
 
-// Update files are only ever fetched over HTTPS from below the configured download address.
-export function isUnderBase(url: string, feedUrl: string): boolean {
+// Update files are only ever fetched over HTTPS from below the configured feed URL.
+export function isUnderFeed(url: string, feedUrl: string): boolean {
   if (!URL.canParse(url)) return false;
   const candidate = new URL(url);
   const feed = new URL(`${feedUrl}/`);
@@ -73,7 +67,7 @@ function decodeURIComponentSafe(text: string): string {
   }
 }
 
-export function parseManifest(raw: string, downloadBase: string): UpdateManifest {
+export function parseManifest(raw: string, feedUrl: string): UpdateManifest {
   let value: unknown;
   try {
     value = JSON.parse(raw);
@@ -92,7 +86,7 @@ export function parseManifest(raw: string, downloadBase: string): UpdateManifest
     if (typeof url !== "string" || typeof signature !== "string" || signature === "") {
       throw new Error(`latest.json platform ${key} is invalid`);
     }
-    if (!isUnderBase(url, downloadBase)) throw new Error(`latest.json platform ${key} points outside the release downloads`);
+    if (!isUnderFeed(url, feedUrl)) throw new Error(`latest.json platform ${key} points outside the update site`);
     entries[key] = { url, signature };
   }
   return {

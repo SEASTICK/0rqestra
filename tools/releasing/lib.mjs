@@ -4,7 +4,6 @@ import { createHash, createPrivateKey, createPublicKey, sign } from "node:crypto
 import fs from "node:fs";
 
 export const SIGNATURE_DOMAIN = "0rqestra-update-v1";
-// File names use this fixed name on both channels.
 export const PRODUCT = "0rqestra";
 export const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 

@@ -120,7 +120,7 @@ export class Updater {
 
     let manifest;
     try {
-      manifest = parseManifest(await this.deps.fetchText(`${config.feedUrl}/latest.json`), config.downloadBase);
+      manifest = parseManifest(await this.deps.fetchText(`${config.feedUrl}/latest.json`), config.feedUrl);
     } catch (error) {
       this.fail(silent, text.networkCheck, detailOf(error));
       return;

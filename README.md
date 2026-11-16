@@ -37,7 +37,8 @@ Stage 2 does not start until Stage 1 is reviewed.
 ## Download and updates
 
 - **Latest release:** [Download 0rqestra](https://github.com/SEASTICK/0rqestra/releases/latest)
-  (Windows `.exe`, macOS `.dmg`).
+  (Windows `.exe`, macOS `.dmg`). The same files are on the
+  [download page](https://seastick.github.io/0rqestra-releases/downloads.html).
 - An installed app updates itself: it downloads and verifies a new version in the background and
   asks before restarting.
 - Releases are started by hand under **Actions → Publish 0rqestra release**: `test` first, then

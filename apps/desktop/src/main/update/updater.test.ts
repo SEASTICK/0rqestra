@@ -4,8 +4,7 @@ import { signedMessage } from "./signature.js";
 import { text, Updater, type UpdaterDeps } from "./updater.js";
 import { FOCUS_MIN_GAP_MS, SNOOZE_MS } from "./version.js";
 
-const FEED = "https://feed.example/app";
-const DOWNLOADS = "https://downloads.example/releases";
+const FEED = "https://updates.example/app";
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 const PUBLIC_KEY = publicKey.export({ format: "der", type: "spki" }).toString("base64");
 const sha512 = (content: string) => createHash("sha512").update(content).digest("hex");
@@ -33,7 +32,7 @@ function setup(options: Options = {}) {
   const state = { now: 1_000_000, snooze: null as string | null, choice: options.choice ?? "later", published };
   const deps: UpdaterDeps = {
     currentVersion: options.current ?? "0.1.0",
-    config: { channel: "stable", feedUrl: FEED, downloadBase: DOWNLOADS, publicKey: PUBLIC_KEY },
+    config: { channel: "stable", feedUrl: FEED, publicKey: PUBLIC_KEY },
     platform: options.platform === undefined ? "windows-x86_64" : options.platform,
     async fetchText(url) {
       log.push(`fetch ${url}`);
@@ -43,7 +42,7 @@ function setup(options: Options = {}) {
         notes: "- New things",
         platforms: {
           "windows-x86_64": {
-            url: `${DOWNLOADS}/v${state.published}/App.exe`,
+            url: `${FEED}/App_${state.published}.exe`,
             signature: signatureFor(options.signedVersion ?? state.published, options.signedContent ?? content),
           },
         },
@@ -85,7 +84,7 @@ describe("Updater", () => {
     await updater.check(true);
     expect(log).toEqual([
       `fetch ${FEED}/latest.json`,
-      `download ${DOWNLOADS}/v0.2.0/App.exe`,
+      `download ${FEED}/App_0.2.0.exe`,
       "prompt 0.2.0 from 0.1.0",
       "install /tmp/update.exe",
     ]);
@@ -200,17 +199,5 @@ describe("Updater", () => {
     const { updater, log } = setup({ published: "0.1.0" });
     await Promise.all([updater.check(true), updater.check(true)]);
     expect(log.length).toBe(1);
-  });
-});
-
-describe("Updater and the download address", () => {
-  it("refuses a manifest whose file is not among the release downloads", async () => {
-    const { updater, log } = setup();
-    const deps = (updater as unknown as { deps: UpdaterDeps }).deps;
-    deps.fetchText = async () =>
-      JSON.stringify({ version: "0.2.0", platforms: { "windows-x86_64": { url: `${FEED}/App.exe`, signature: "c2ln" } } });
-    await updater.check(false);
-    expect(log).toEqual([`error ${text.networkCheck}`]);
-    expect(updater.diagnostics?.detail).toMatch(/outside the release downloads/);
   });
 });

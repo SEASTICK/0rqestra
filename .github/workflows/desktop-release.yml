@@ -26,10 +26,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Installers are attached to this repository's releases. latest.json lives on this branch and is
-  # read by the installed apps through raw.githubusercontent.com (see apps/desktop/update-config.json).
-  FEED_BRANCH: update-feed
-  DOWNLOAD_BASE: ${{ github.server_url }}/${{ github.repository }}/releases/download
+  RELEASES_REPO: SEASTICK/0rqestra-releases
+  RELEASES_PAGES_URL: https://seastick.github.io/0rqestra-releases
 
 jobs:
   version:
@@ -38,7 +36,6 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
       channel: ${{ steps.release.outputs.channel }}
-      updates: ${{ steps.setup.outputs.updates }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -93,23 +90,16 @@ jobs:
             if [ "$CHANNEL" = "test" ]; then tag="test-$RELEASE_TAG"; fi
             if [ -n "$(git tag --list "$tag")" ]; then echo "$tag is already released. Check the version choice." >&2; exit 1; fi
           fi
-      # Decided here, on the cheap Linux runner, before any Windows or macOS minutes are used.
-      - name: Check the update signing setup
-        id: setup
+      # Fails here, on the cheap Linux runner, before any Windows or macOS minutes are used.
+      - name: Require the one-time release setup
         env:
           UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
           UPDATE_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RELEASES_DEPLOY_KEY: ${{ secrets.RELEASES_DEPLOY_KEY }}
         run: |
           set -euo pipefail
-          public_key="$(node -p "require('./apps/desktop/update-config.json').publicKey")"
-          if [ -z "$public_key" ] && [ -z "$UPDATE_SIGNING_PRIVATE_KEY" ]; then
-            # No update key yet: the installers are still released, but this build cannot update itself.
-            echo "::warning::No update signing key is set up. This release has in-app updates switched off; see docs/release.md."
-            echo "updates=false" >> "$GITHUB_OUTPUT"
-          else
-            node tools/releasing/sign-update.mjs --check
-            echo "updates=true" >> "$GITHUB_OUTPUT"
-          fi
+          test -n "$RELEASES_DEPLOY_KEY" || { echo "Repository secret RELEASES_DEPLOY_KEY is missing." >&2; exit 1; }
+          node tools/releasing/sign-update.mjs --check
 
   build-windows:
     needs: version
@@ -223,10 +213,10 @@ jobs:
     if: ${{ always() && needs.version.result == 'success' && needs.build-windows.result == 'success' && needs.build-macos.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
     runs-on: ubuntu-latest
     env:
+      RELEASES_DEPLOY_KEY: ${{ secrets.RELEASES_DEPLOY_KEY }}
       RELEASE_VERSION: ${{ needs.version.outputs.version }}
       RELEASE_TAG: ${{ needs.version.outputs.tag }}
       CHANNEL: ${{ needs.version.outputs.channel }}
-      UPDATES: ${{ needs.version.outputs.updates }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -241,7 +231,6 @@ jobs:
           merge-multiple: true
       # The signing key is used only here, after the approval, never on the build runners.
       - name: Sign the update files
-        if: ${{ env.UPDATES == 'true' }}
         env:
           UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
           UPDATE_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -277,9 +266,41 @@ jobs:
               text = text[:1800].rstrip() + "…"
           Path("release-notes.txt").write_text(text, encoding="utf-8")
           PY
-      - name: Create and validate the updater manifest
-        if: ${{ env.UPDATES == 'true' }}
-        run: node tools/releasing/build-manifest.mjs "$CHANNEL" "$RELEASE_VERSION" release-files release-notes.txt latest.json
+      - name: Create and validate the updater manifest and download page
+        run: node tools/releasing/build-manifest.mjs "$CHANNEL" "$RELEASE_VERSION" release-files release-notes.txt .
+      - name: Publish the complete update set atomically to GitHub Pages
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/releases_deploy_key"
+          printf '%s\n' "$RELEASES_DEPLOY_KEY" > "$key_path"
+          chmod 600 "$key_path"
+          export GIT_SSH_COMMAND="ssh -i $key_path -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          site="$RUNNER_TEMP/updates-site"
+          git clone --quiet --depth 1 --branch gh-pages "git@github.com:${RELEASES_REPO}.git" "$site"
+          destination="$site"
+          if [ "$CHANNEL" = "test" ]; then destination="$site/test"; fi
+          mkdir -p "$destination"
+          find "$destination" -maxdepth 1 -type f \( -name '*.exe' -o -name '*.sig' -o -name '*.zip' -o -name '*.dmg' -o -name 'latest.json' -o -name 'downloads.html' \) -delete
+          cp release-files/* "$destination/"
+          cp latest.json downloads.html "$destination/"
+          git -C "$site" checkout --quiet --orphan publish
+          git -C "$site" add -A
+          git -C "$site" -c user.name="0rqestra-ci" -c user.email="ci@0rqestra.invalid" commit --quiet -m "0rqestra $RELEASE_VERSION ($CHANNEL)"
+          git -C "$site" push --quiet --force origin publish:gh-pages
+          rm -f "$key_path"
+      - name: Verify every public updater URL
+        run: |
+          set -euo pipefail
+          node -e 'const m = require("./latest.json"); console.log([...new Set(Object.values(m.platforms).map((p) => p.url))].join("\n"))' > "$RUNNER_TEMP/updater-urls.txt"
+          while IFS= read -r url; do
+            ok=false
+            for attempt in $(seq 1 24); do
+              status="$(curl --silent --show-error --head --output /dev/null --write-out '%{http_code}' "$url" || true)"
+              if [ "$status" = "200" ]; then ok=true; break; fi
+              sleep 10
+            done
+            $ok || { echo "Public updater URL did not return HTTP 200: $url" >&2; exit 1; }
+          done < "$RUNNER_TEMP/updater-urls.txt"
       - name: Publish stable GitHub release
         if: ${{ needs.version.outputs.channel == 'stable' }}
         uses: softprops/action-gh-release@v2
@@ -287,7 +308,10 @@ jobs:
           tag_name: ${{ needs.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
-          files: release-files/*
+          files: |
+            release-files/*
+            latest.json
+            downloads.html
       - name: Publish test pre-release
         # The test build is a pre-release under Releases, so it can be downloaded straight from the
         # repository. It is not "Latest" and does not touch the root of the update site, so the
@@ -308,40 +332,3 @@ jobs:
           files: |
             release-files/*.exe
             release-files/*.dmg
-            release-files/*.zip
-            release-files/*.sig
-      # Last, and only after the release files answer: the installed apps see the new version here.
-      - name: Verify every public updater URL
-        if: ${{ env.UPDATES == 'true' }}
-        run: |
-          set -euo pipefail
-          node -e 'const m = require("./latest.json"); console.log([...new Set(Object.values(m.platforms).map((p) => p.url))].join("\n"))' > "$RUNNER_TEMP/updater-urls.txt"
-          while IFS= read -r url; do
-            ok=false
-            for attempt in $(seq 1 24); do
-              status="$(curl --silent --show-error --location --head --output /dev/null --write-out '%{http_code}' "$url" || true)"
-              if [ "$status" = "200" ]; then ok=true; break; fi
-              sleep 10
-            done
-            $ok || { echo "Public updater URL did not return HTTP 200: $url" >&2; exit 1; }
-          done < "$RUNNER_TEMP/updater-urls.txt"
-      - name: Publish latest.json to the update feed
-        if: ${{ env.UPDATES == 'true' }}
-        run: |
-          set -euo pipefail
-          feed="$RUNNER_TEMP/update-feed"
-          if git ls-remote --exit-code --heads origin "$FEED_BRANCH" >/dev/null; then
-            git fetch --quiet origin "$FEED_BRANCH"
-            git worktree add --quiet --detach "$feed" FETCH_HEAD
-          else
-            git worktree add --quiet --detach "$feed"
-            git -C "$feed" checkout --quiet --orphan "$FEED_BRANCH"
-            git -C "$feed" rm -rf --quiet .
-          fi
-          destination="$feed"
-          if [ "$CHANNEL" = "test" ]; then destination="$feed/test"; fi
-          mkdir -p "$destination"
-          cp latest.json "$destination/latest.json"
-          git -C "$feed" add -A
-          git -C "$feed" -c user.name="0rqestra-ci" -c user.email="ci@0rqestra.invalid" commit --quiet -m "0rqestra $RELEASE_VERSION ($CHANNEL)"
-          git -C "$feed" push --quiet origin "HEAD:refs/heads/$FEED_BRANCH"

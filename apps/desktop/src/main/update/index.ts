@@ -26,9 +26,7 @@ async function download(url: string, directory: string): Promise<{ filePath: str
   const name = path.basename(decodeURIComponent(new URL(url).pathname)).replace(/[^A-Za-z0-9._-]/g, "_");
   const filePath = path.join(directory, name);
 
-  // Release downloads redirect to GitHub's file storage. What arrives is trusted only after its
-  // signature has been verified.
-  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(30 * 60_000) });
+  const response = await fetch(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(30 * 60_000) });
   if (!response.ok || !response.body) throw new Error(`HTTP ${response.status} for ${url}`);
   const hash = createHash("sha512");
   let received = 0;
