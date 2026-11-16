@@ -1,0 +1,53 @@
+name: Desktop app downloads
+
+on:
+  pull_request:
+    paths: ['apps/**', 'packages/**', 'package*.json', '.github/workflows/desktop-downloads.yml']
+  push:
+    branches: [main]
+    paths: ['apps/**', 'packages/**', 'package*.json', '.github/workflows/desktop-downloads.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run package -w @0rqestra/desktop -- --publish never
+      - name: Ad-hoc sign the Mac development build
+        if: runner.os == 'macOS'
+        run: codesign --force --deep --sign - apps/desktop/release/mac-arm64/0rqestra.app
+      - name: Verify the packaged app
+        shell: bash
+        run: |
+          node -e 'const {spawnSync}=require("node:child_process"); const path=require("node:path"); const file=process.platform==="win32"?"apps/desktop/release/win-unpacked/0rqestra.exe":"apps/desktop/release/mac-arm64/0rqestra.app/Contents/MacOS/0rqestra"; const env={...process.env}; delete env.ELECTRON_RUN_AS_NODE; const r=spawnSync(path.resolve(file),["--smoke"],{env,encoding:"utf8",timeout:45000}); process.stdout.write(r.stdout||""); process.stderr.write(r.stderr||""); if(r.error||r.status!==0||!(r.stdout||"").includes("SMOKE PASSED"))process.exit(1);'
+      - name: Archive Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -LiteralPath (Resolve-Path apps/desktop/release/win-unpacked).Path -DestinationPath 0rqestra-Windows-x64.zip
+      - name: Archive Mac app
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent apps/desktop/release/mac-arm64/0rqestra.app 0rqestra-macOS-ARM64.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: 0rqestra-${{ runner.os }}-${{ runner.arch }}
+          path: 0rqestra-*.zip
+          if-no-files-found: error
+          retention-days: 14
