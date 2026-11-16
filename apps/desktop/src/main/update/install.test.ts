@@ -6,13 +6,13 @@ import { macBundlePath, swapMacBundle, type Extract } from "./install.js";
 
 describe("macBundlePath", () => {
   it("finds the bundle from the executable path", () => {
-    expect(macBundlePath("/Applications/WorkTreeAI.app/Contents/MacOS/WorkTreeAI")).toBe("/Applications/WorkTreeAI.app");
+    expect(macBundlePath("/Applications/0rqestra.app/Contents/MacOS/0rqestra")).toBe("/Applications/0rqestra.app");
   });
 
   it("refuses when not running from a bundle or when translocated", () => {
     expect(() => macBundlePath("/usr/local/bin/electron")).toThrow(/Not running from an app bundle/);
     expect(() =>
-      macBundlePath("/private/var/folders/x/AppTranslocation/ABC/d/WorkTreeAI.app/Contents/MacOS/WorkTreeAI"),
+      macBundlePath("/private/var/folders/x/AppTranslocation/ABC/d/0rqestra.app/Contents/MacOS/0rqestra"),
     ).toThrow(/Applications folder/);
   });
 });
@@ -32,7 +32,7 @@ describe("swapMacBundle", () => {
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "swap-test-"));
-    bundle = path.join(dir, "WorkTreeAI.app");
+    bundle = path.join(dir, "0rqestra.app");
     fs.mkdirSync(bundle);
     fs.writeFileSync(path.join(bundle, "version.txt"), "old");
   });
@@ -41,7 +41,7 @@ describe("swapMacBundle", () => {
   it("replaces the bundle and leaves nothing else behind", async () => {
     await swapMacBundle(bundle, "update.zip", extractBundles("Renamed.app"));
     expect(marker()).toBe("new");
-    expect(fs.readdirSync(dir)).toEqual(["WorkTreeAI.app"]);
+    expect(fs.readdirSync(dir)).toEqual(["0rqestra.app"]);
   });
 
   it("keeps the installed app when the update cannot be unpacked", async () => {
@@ -51,13 +51,13 @@ describe("swapMacBundle", () => {
       }),
     ).rejects.toThrow("corrupt archive");
     expect(marker()).toBe("old");
-    expect(fs.readdirSync(dir)).toEqual(["WorkTreeAI.app"]);
+    expect(fs.readdirSync(dir)).toEqual(["0rqestra.app"]);
   });
 
   it("keeps the installed app when the update holds no bundle or several", async () => {
     await expect(swapMacBundle(bundle, "update.zip", extractBundles())).rejects.toThrow(/found 0/);
     await expect(swapMacBundle(bundle, "update.zip", extractBundles("A.app", "B.app"))).rejects.toThrow(/found 2/);
     expect(marker()).toBe("old");
-    expect(fs.readdirSync(dir)).toEqual(["WorkTreeAI.app"]);
+    expect(fs.readdirSync(dir)).toEqual(["0rqestra.app"]);
   });
 });

@@ -34,7 +34,7 @@ export const extractWithDitto: Extract = async (archivePath, destination) => {
 // the previous bundle is put back. Returns after the new bundle is in place.
 export async function swapMacBundle(bundlePath: string, archivePath: string, extract: Extract): Promise<void> {
   const parent = path.dirname(bundlePath);
-  const staging = await fs.mkdtemp(path.join(parent, ".worktreeai-update-"));
+  const staging = await fs.mkdtemp(path.join(parent, ".0rqestra-update-"));
   try {
     const unpacked = path.join(staging, "new");
     await fs.mkdir(unpacked);

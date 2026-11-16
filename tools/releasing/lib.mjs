@@ -3,8 +3,8 @@
 import { createHash, createPrivateKey, createPublicKey, sign } from "node:crypto";
 import fs from "node:fs";
 
-export const SIGNATURE_DOMAIN = "worktreeai-update-v1";
-export const PRODUCT = "WorkTreeAI";
+export const SIGNATURE_DOMAIN = "0rqestra-update-v1";
+export const PRODUCT = "0rqestra";
 export const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
 export function releaseFileNames(version) {

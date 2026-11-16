@@ -4,7 +4,7 @@ import { createPublicKey, verify } from "node:crypto";
 // The signed message binds the version to the file's SHA-512, so a signed file cannot be
 // republished under another version number. tools/releasing/sign-update.mjs builds the same message.
 
-export const SIGNATURE_DOMAIN = "worktreeai-update-v1";
+export const SIGNATURE_DOMAIN = "0rqestra-update-v1";
 
 export function signedMessage(version: string, sha512Hex: string): Buffer {
   return Buffer.from(`${SIGNATURE_DOMAIN}\n${version}\n${sha512Hex.toLowerCase()}\n`, "utf8");

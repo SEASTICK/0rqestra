@@ -1,7 +1,7 @@
-name: Publish WorkTreeAI release
+name: Publish 0rqestra release
 
 # Same model as Trader_go and Vinstly Desktop. Nothing is published on push: start it by hand under
-# Actions -> Publish WorkTreeAI release -> Run workflow. See docs/release.md.
+# Actions -> Publish 0rqestra release -> Run workflow. See docs/release.md.
 on:
   push:
     tags: ["v*"]
@@ -22,7 +22,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: worktreeai-release
+  group: 0rqestra-release
   cancel-in-progress: false
 
 env:
@@ -76,7 +76,7 @@ jobs:
             echo "tag=v$version"
             echo "channel=$channel"
           } >> "$GITHUB_OUTPUT"
-          echo "Publishing WorkTreeAI $version on the $channel channel"
+          echo "Publishing 0rqestra $version on the $channel channel"
       - name: Check that the version is not already released
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
@@ -131,7 +131,7 @@ jobs:
           installer="$(ls apps/desktop/release/*.exe | head -n1)"
           test -f "$installer" || { echo "electron-builder did not produce a Windows installer." >&2; exit 1; }
           mkdir -p release-files
-          cp "$installer" "release-files/WorkTreeAI_${RELEASE_VERSION}_x64-setup.exe"
+          cp "$installer" "release-files/0rqestra_${RELEASE_VERSION}_x64-setup.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-windows-x64
@@ -173,11 +173,11 @@ jobs:
           lipo -archs "$app/Contents/MacOS/"* | grep -q x86_64
           mkdir -p release-files dmg-root
           # The update file: a zip of the app bundle, unpacked by the installed app with ditto.
-          ditto -c -k --keepParent "$app" "release-files/WorkTreeAI_${RELEASE_VERSION}_universal.zip"
+          ditto -c -k --keepParent "$app" "release-files/0rqestra_${RELEASE_VERSION}_universal.zip"
           # The first-time download: a disk image with the app and a shortcut to Applications.
           ditto "$app" "dmg-root/$(basename "$app")"
           ln -s /Applications dmg-root/Applications
-          hdiutil create -volname "$(basename "$app" .app)" -srcfolder dmg-root -ov -format UDZO "release-files/WorkTreeAI_${RELEASE_VERSION}_universal.dmg"
+          hdiutil create -volname "$(basename "$app" .app)" -srcfolder dmg-root -ov -format UDZO "release-files/0rqestra_${RELEASE_VERSION}_universal.dmg"
           ls -la release-files
       - uses: actions/upload-artifact@v4
         with:
@@ -236,8 +236,8 @@ jobs:
           UPDATE_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           node tools/releasing/sign-update.mjs "$RELEASE_VERSION" \
-            "release-files/WorkTreeAI_${RELEASE_VERSION}_x64-setup.exe" \
-            "release-files/WorkTreeAI_${RELEASE_VERSION}_universal.zip"
+            "release-files/0rqestra_${RELEASE_VERSION}_x64-setup.exe" \
+            "release-files/0rqestra_${RELEASE_VERSION}_universal.zip"
       - name: Compose release notes
         run: |
           python3 - <<'PY'
@@ -285,7 +285,7 @@ jobs:
           cp latest.json downloads.html "$destination/"
           git -C "$site" checkout --quiet --orphan publish
           git -C "$site" add -A
-          git -C "$site" -c user.name="worktreeai-ci" -c user.email="ci@worktreeai.invalid" commit --quiet -m "WorkTreeAI $RELEASE_VERSION ($CHANNEL)"
+          git -C "$site" -c user.name="0rqestra-ci" -c user.email="ci@0rqestra.invalid" commit --quiet -m "0rqestra $RELEASE_VERSION ($CHANNEL)"
           git -C "$site" push --quiet --force origin publish:gh-pages
           rm -f "$key_path"
       - name: Verify every public updater URL
@@ -325,9 +325,9 @@ jobs:
           prerelease: true
           make_latest: "false"
           body: |
-            Test build of WorkTreeAI ${{ needs.version.outputs.version }} from commit ${{ github.sha }}. Not released.
+            Test build of 0rqestra ${{ needs.version.outputs.version }} from commit ${{ github.sha }}. Not released.
 
-            The test build is called "WorkTreeAI Updater Test" and has its own app id, so it installs next to the regular app without replacing it. It only looks for updates on the test channel.
+            The test build is called "0rqestra Updater Test" and has its own app id, so it installs next to the regular app without replacing it. It only looks for updates on the test channel.
             Release for real by running the workflow with channel = stable.
           files: |
             release-files/*.exe

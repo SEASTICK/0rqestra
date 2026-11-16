@@ -1,11 +1,11 @@
-# Releasing WorkTreeAI
+# Releasing 0rqestra
 
-The model is the one used for Trader_go and Vinstly Desktop. WorkTreeAI is built for Windows
+The model is the one used for Trader_go and Vinstly Desktop. 0rqestra is built for Windows
 (x64) and macOS (universal: Apple Silicon and Intel), and both are listed in the same
 `latest.json`.
 
 **Nothing is published on push.** Everything is started by hand on GitHub:
-**Actions → Publish WorkTreeAI release → Run workflow**. The workflow must be on `main` to be
+**Actions → Publish 0rqestra release → Run workflow**. The workflow must be on `main` to be
 started.
 
 Status: the release scripts and the app's update logic are covered by unit tests. The workflow
@@ -16,7 +16,7 @@ itself, the Windows installer step, and the macOS bundle swap have **not** been 
 
 | Channel | What it does |
 |---|---|
-| `test` | Builds and publishes under `/test` on the public update site. Creates a pre-release `test-vX.Y.Z` under Releases (not "Latest") and no `v` tag. Skips the approval. The test app is called **WorkTreeAI Updater Test** and has its own app id, so it only follows the test channel. |
+| `test` | Builds and publishes under `/test` on the public update site. Creates a pre-release `test-vX.Y.Z` under Releases (not "Latest") and no `v` tag. Skips the approval. The test app is called **0rqestra Updater Test** and has its own app id, so it only follows the test channel. |
 | `stable` | Builds, **pauses for approval**, publishes at the root of the update site, and creates a regular release tagged `vX.Y.Z`, shown as "Latest" on the repository page. Everyone who has the app receives the update. |
 
 ## How to release
@@ -62,13 +62,13 @@ First-time download: `https://seastick.github.io/0rqestra-releases/downloads.htm
 2. **Deploy key:** create a key pair
    (`ssh-keygen -t ed25519 -f 0rqestra-releases-deploy -N ""`). Add the **public** key as a deploy
    key with **write access** in `0rqestra-releases`.
-3. **Update signing key:** `node tools/releasing/generate-update-key.mjs worktreeai-updater.key`
+3. **Update signing key:** `node tools/releasing/generate-update-key.mjs 0rqestra-updater.key`
    (set `UPDATE_SIGNING_PRIVATE_KEY_PASSWORD` first to protect it with a password). Do not reuse
    the Trader_go or Vinstly key. Put the **public** key it prints in
    `apps/desktop/update-config.json` as `publicKey`, and commit that.
 4. **Secrets** in this repository (Settings → Secrets and variables → Actions):
    - `RELEASES_DEPLOY_KEY`: the contents of the **private** deploy key.
-   - `UPDATE_SIGNING_PRIVATE_KEY`: the contents of `worktreeai-updater.key`.
+   - `UPDATE_SIGNING_PRIVATE_KEY`: the contents of `0rqestra-updater.key`.
    - `UPDATE_SIGNING_PRIVATE_KEY_PASSWORD`: the password, if you set one.
 5. Keep private keys outside Git. If the signing key is lost, existing installations cannot be
    updated and must be reinstalled.

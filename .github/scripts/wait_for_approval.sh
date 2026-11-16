@@ -27,7 +27,7 @@ Bara ${APPROVERS// /, } kan godkänna.
 
 Körningen: ${RUN_URL}"
 else
-body="WorkTreeAI **v${RELEASE_VERSION}** är byggd men inte publicerad. När den godkänns går uppdateringen ut till alla som har appen.
+body="0rqestra **v${RELEASE_VERSION}** är byggd men inte publicerad. När den godkänns går uppdateringen ut till alla som har appen.
 
 Svara i det här ärendet med **approve** för att publicera eller **deny** för att avbryta.
 Bara ${APPROVERS// /, } kan godkänna. Ärendet är tilldelat den som startade körningen, men båda kan svara.
