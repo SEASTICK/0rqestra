@@ -1,6 +1,6 @@
 {
   "name": "@0rqestra/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "commonjs",
   "description": "0rqestra desktop app (Electron).",
@@ -26,7 +26,8 @@
     },
     "files": [
       "dist/**",
-      "package.json"
+      "package.json",
+      "update-config.json"
     ],
     "win": {
       "target": "nsis"

@@ -1,0 +1,334 @@
+name: Publish WorkTreeAI release
+
+# Same model as Trader_go and Vinstly Desktop. Nothing is published on push: start it by hand under
+# Actions -> Publish WorkTreeAI release -> Run workflow. See docs/release.md.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional. Leave blank to get the previous version +1 (patch), counting both stable and test releases. Or write one yourself, for example 0.2.0."
+        required: false
+        type: string
+      channel:
+        description: "stable publishes the update everyone receives, after approval. test publishes under /test only and creates no v-tag."
+        required: false
+        default: stable
+        type: choice
+        options: [stable, test]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: worktreeai-release
+  cancel-in-progress: false
+
+env:
+  RELEASES_REPO: SEASTICK/0rqestra-releases
+  RELEASES_PAGES_URL: https://seastick.github.io/0rqestra-releases
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      channel: ${{ steps.release.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Choose release version
+        id: release
+        env:
+          MANUAL_VERSION: ${{ inputs.version }}
+          REQUESTED_CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          elif [ -n "$MANUAL_VERSION" ]; then
+            version="${MANUAL_VERSION#v}"
+          else
+            # Blank field: previous version + 1 (patch). Counts stable (vX.Y.Z) and test (test-vX.Y.Z)
+            # tags, so numbers only go up on either channel. A version raised by hand in the source wins.
+            git fetch --tags --quiet
+            source="$(node -p "require('./apps/desktop/package.json').version")"
+            [[ "$source" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid package.json version: $source" >&2; exit 1; }
+            latest="$(git tag --list | sed -nE 's/^(test-)?v([0-9]+\.[0-9]+\.[0-9]+)$/\2/p' | sort -V | tail -n1)"
+            if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$source" "$latest" | sort -V | tail -n1)" = "$latest" ]; then
+              IFS=. read -r major minor patch <<< "$latest"
+              version="$major.$minor.$((patch + 1))"
+            else
+              version="$source"
+            fi
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid release version: $version" >&2; exit 1; }
+          channel=stable
+          if [ "$REQUESTED_CHANNEL" = "test" ]; then channel=test; fi
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "channel=$channel"
+          } >> "$GITHUB_OUTPUT"
+          echo "Publishing WorkTreeAI $version on the $channel channel"
+      - name: Check that the version is not already released
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "Tag build: skipping the check for an existing tag."
+          else
+            tag="$RELEASE_TAG"
+            if [ "$CHANNEL" = "test" ]; then tag="test-$RELEASE_TAG"; fi
+            if [ -n "$(git tag --list "$tag")" ]; then echo "$tag is already released. Check the version choice." >&2; exit 1; fi
+          fi
+      # Fails here, on the cheap Linux runner, before any Windows or macOS minutes are used.
+      - name: Require the one-time release setup
+        env:
+          UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
+          UPDATE_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RELEASES_DEPLOY_KEY: ${{ secrets.RELEASES_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$RELEASES_DEPLOY_KEY" || { echo "Repository secret RELEASES_DEPLOY_KEY is missing." >&2; exit 1; }
+          node tools/releasing/sign-update.mjs --check
+
+  build-windows:
+    needs: version
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      CHANNEL: ${{ needs.version.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Set release version and channel identity
+        run: node tools/releasing/prepare-release.mjs "$CHANNEL" "$RELEASE_VERSION"
+      - name: Build Windows installer
+        working-directory: apps/desktop
+        run: |
+          npm run build
+          npx electron-builder --win nsis --x64 --publish never
+      - name: Stage Windows release files
+        run: |
+          set -euo pipefail
+          installer="$(ls apps/desktop/release/*.exe | head -n1)"
+          test -f "$installer" || { echo "electron-builder did not produce a Windows installer." >&2; exit 1; }
+          mkdir -p release-files
+          cp "$installer" "release-files/WorkTreeAI_${RELEASE_VERSION}_x64-setup.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-x64
+          if-no-files-found: error
+          path: release-files/*
+
+  build-macos:
+    needs: version
+    runs-on: macos-latest
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      CHANNEL: ${{ needs.version.outputs.channel }}
+      # No Apple Developer account yet: electron-builder leaves the app unsigned and the next step
+      # signs it ad hoc. Updates are still verified with the app's own update key.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Set release version and channel identity
+        run: node tools/releasing/prepare-release.mjs "$CHANNEL" "$RELEASE_VERSION"
+      - name: Build universal macOS app
+        working-directory: apps/desktop
+        run: |
+          npm run build
+          npx electron-builder --mac dir --universal --publish never
+      - name: Sign ad hoc and stage macOS release files
+        run: |
+          set -euo pipefail
+          app="$(ls -d apps/desktop/release/mac-universal/*.app | head -n1)"
+          test -d "$app" || { echo "electron-builder did not produce a macOS app." >&2; exit 1; }
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict "$app"
+          lipo -archs "$app/Contents/MacOS/"* | grep -q arm64
+          lipo -archs "$app/Contents/MacOS/"* | grep -q x86_64
+          mkdir -p release-files dmg-root
+          # The update file: a zip of the app bundle, unpacked by the installed app with ditto.
+          ditto -c -k --keepParent "$app" "release-files/WorkTreeAI_${RELEASE_VERSION}_universal.zip"
+          # The first-time download: a disk image with the app and a shortcut to Applications.
+          ditto "$app" "dmg-root/$(basename "$app")"
+          ln -s /Applications dmg-root/Applications
+          hdiutil create -volname "$(basename "$app" .app)" -srcfolder dmg-root -ov -format UDZO "release-files/WorkTreeAI_${RELEASE_VERSION}_universal.dmg"
+          ls -la release-files
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos-universal
+          if-no-files-found: error
+          path: release-files/*
+
+  approve:
+    # The stable update reaches everyone who has the app, so it pauses here until an approver answers.
+    # Test runs skip this job. GitHub does not allow "required reviewers" in private repositories on
+    # the free plan, so approval happens in an issue that only the listed users can decide.
+    needs: [version, build-windows, build-macos]
+    if: ${{ needs.version.outputs.channel == 'stable' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      APPROVERS: SEASTICK edwinfighter42-star
+      TRIGGERED_BY: ${{ github.actor }}
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wait for approval
+        run: bash .github/scripts/wait_for_approval.sh
+
+  publish:
+    needs: [version, build-windows, build-macos, approve]
+    if: ${{ always() && needs.version.result == 'success' && needs.build-windows.result == 'success' && needs.build-macos.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    env:
+      RELEASES_DEPLOY_KEY: ${{ secrets.RELEASES_DEPLOY_KEY }}
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+      CHANNEL: ${{ needs.version.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: release-files
+          merge-multiple: true
+      # The signing key is used only here, after the approval, never on the build runners.
+      - name: Sign the update files
+        env:
+          UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
+          UPDATE_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          node tools/releasing/sign-update.mjs "$RELEASE_VERSION" \
+            "release-files/WorkTreeAI_${RELEASE_VERSION}_x64-setup.exe" \
+            "release-files/WorkTreeAI_${RELEASE_VERSION}_universal.zip"
+      - name: Compose release notes
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          curated = Path("apps/desktop/RELEASE_NOTES.md")
+          if curated.exists():
+              text = curated.read_text(encoding="utf-8").strip()
+          else:
+              tag = os.environ["RELEASE_TAG"]
+              versions = []
+              for item in subprocess.check_output(["git", "tag", "--list", "v*"], text=True).splitlines():
+                  if item == tag:
+                      continue
+                  parts = item.removeprefix("v").split(".")
+                  if len(parts) == 3 and all(part.isdigit() for part in parts):
+                      versions.append((tuple(map(int, parts)), item))
+              previous = max(versions)[1] if versions else None
+              revision = f"{previous}..HEAD" if previous else "HEAD"
+              text = subprocess.run(["git", "log", revision, "--no-merges", "--pretty=format:- %s", "-n", "10"], check=True, text=True, capture_output=True).stdout.strip()
+          if not text:
+              text = "Improvements and fixes."
+          if len(text) > 1800:
+              text = text[:1800].rstrip() + "…"
+          Path("release-notes.txt").write_text(text, encoding="utf-8")
+          PY
+      - name: Create and validate the updater manifest and download page
+        run: node tools/releasing/build-manifest.mjs "$CHANNEL" "$RELEASE_VERSION" release-files release-notes.txt .
+      - name: Publish the complete update set atomically to GitHub Pages
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/releases_deploy_key"
+          printf '%s\n' "$RELEASES_DEPLOY_KEY" > "$key_path"
+          chmod 600 "$key_path"
+          export GIT_SSH_COMMAND="ssh -i $key_path -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          site="$RUNNER_TEMP/updates-site"
+          git clone --quiet --depth 1 --branch gh-pages "git@github.com:${RELEASES_REPO}.git" "$site"
+          destination="$site"
+          if [ "$CHANNEL" = "test" ]; then destination="$site/test"; fi
+          mkdir -p "$destination"
+          find "$destination" -maxdepth 1 -type f \( -name '*.exe' -o -name '*.sig' -o -name '*.zip' -o -name '*.dmg' -o -name 'latest.json' -o -name 'downloads.html' \) -delete
+          cp release-files/* "$destination/"
+          cp latest.json downloads.html "$destination/"
+          git -C "$site" checkout --quiet --orphan publish
+          git -C "$site" add -A
+          git -C "$site" -c user.name="worktreeai-ci" -c user.email="ci@worktreeai.invalid" commit --quiet -m "WorkTreeAI $RELEASE_VERSION ($CHANNEL)"
+          git -C "$site" push --quiet --force origin publish:gh-pages
+          rm -f "$key_path"
+      - name: Verify every public updater URL
+        run: |
+          set -euo pipefail
+          node -e 'const m = require("./latest.json"); console.log([...new Set(Object.values(m.platforms).map((p) => p.url))].join("\n"))' > "$RUNNER_TEMP/updater-urls.txt"
+          while IFS= read -r url; do
+            ok=false
+            for attempt in $(seq 1 24); do
+              status="$(curl --silent --show-error --head --output /dev/null --write-out '%{http_code}' "$url" || true)"
+              if [ "$status" = "200" ]; then ok=true; break; fi
+              sleep 10
+            done
+            $ok || { echo "Public updater URL did not return HTTP 200: $url" >&2; exit 1; }
+          done < "$RUNNER_TEMP/updater-urls.txt"
+      - name: Publish stable GitHub release
+        if: ${{ needs.version.outputs.channel == 'stable' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: |
+            release-files/*
+            latest.json
+            downloads.html
+      - name: Publish test pre-release
+        # The test build is a pre-release under Releases, so it can be downloaded straight from the
+        # repository. It is not "Latest" and does not touch the root of the update site, so the
+        # stable app notices nothing.
+        if: ${{ needs.version.outputs.channel == 'test' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: test-v${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Test build ${{ needs.version.outputs.version }} (not released)
+          prerelease: true
+          make_latest: "false"
+          body: |
+            Test build of WorkTreeAI ${{ needs.version.outputs.version }} from commit ${{ github.sha }}. Not released.
+
+            The test build is called "WorkTreeAI Updater Test" and has its own app id, so it installs next to the regular app without replacing it. It only looks for updates on the test channel.
+            Release for real by running the workflow with channel = stable.
+          files: |
+            release-files/*.exe
+            release-files/*.dmg

@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, ipcMain, session, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
 import { isSameFileUrl, isTrustedSender, mainWindowOptions, type SenderInfo } from "./security";
 import { runSmoke } from "./smoke";
+import { startUpdater } from "./update";
 import {
   createSmokeOutcome,
   errorMessage,
@@ -97,6 +98,7 @@ function createMainWindow(): void {
 
   window.once("ready-to-show", () => window.show());
   window.loadFile(rendererFile).catch(onStartupFailure);
+  startUpdater(() => mainWindow);
 }
 
 app

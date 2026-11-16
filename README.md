@@ -34,6 +34,18 @@ item, and the decisions needed to close Stage 1.
 Claude implements; ChatGPT/Codex reviews independently. Work proceeds one stage at a time, and
 Stage 2 does not start until Stage 1 is reviewed.
 
+## Download and updates
+
+- **Latest release:** [Download WorkTreeAI](https://github.com/SEASTICK/0rqestra/releases/latest)
+  (Windows `.exe`, macOS `.dmg`). The same files are on the
+  [download page](https://seastick.github.io/0rqestra-releases/downloads.html).
+- An installed app updates itself: it downloads and verifies a new version in the background and
+  asks before restarting.
+- Releases are started by hand under **Actions → Publish WorkTreeAI release**: `test` first, then
+  `stable`, which waits for an `approve` or `deny` comment. See [`docs/release.md`](docs/release.md).
+
+No release has been published yet; the links work after the first one.
+
 ## Documentation
 
 | Document | Covers |
@@ -42,6 +54,7 @@ Stage 2 does not start until Stage 1 is reviewed.
 | [`docs/provider-integrations.md`](docs/provider-integrations.md) | Claude Code and Codex integration facts verified against official sources, with dates, plus open legal and runtime gates |
 | [`docs/architecture.md`](docs/architecture.md) | Agreed components; chosen stack (Electron + TypeScript + React); Electron security requirements; credential ownership; the development foundation and its verified checks |
 | [`docs/tree-routing-and-permissions.md`](docs/tree-routing-and-permissions.md) | Two confirmed requirements ("+" adds a connected child agent; highest-priority idle selection), plus draft proposals pending your decision: edge and provenance rules, correction loops, bounds, snapshots and rebase, permission layers, process ownership and recovery |
+| [`docs/release.md`](docs/release.md) | Release channels (`test`, `stable`), the approval step, one-time setup, and how the app updates itself |
 | [`docs/acceptance-criteria.md`](docs/acceptance-criteria.md) | Draft Given/When/Then specifications AC-01–AC-22 with deterministic fixtures (future tests, not passing tests) |
 
 ## Using provider tools
