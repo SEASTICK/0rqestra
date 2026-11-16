@@ -28,6 +28,10 @@ concurrency:
 env:
   RELEASES_REPO: SEASTICK/0rqestra-realeases
   RELEASES_PAGES_URL: https://seastick.github.io/0rqestra-realeases
+  # The installers are far larger than the 100 MB that a Git branch accepts, so they are attached to
+  # releases of this repository. The releases repository's Pages site only holds the small files that
+  # the apps and the download page read: latest.json and downloads.html.
+  DOWNLOAD_BASE: ${{ github.server_url }}/${{ github.repository }}/releases/download
 
 jobs:
   version:
@@ -268,39 +272,7 @@ jobs:
           PY
       - name: Create and validate the updater manifest and download page
         run: node tools/releasing/build-manifest.mjs "$CHANNEL" "$RELEASE_VERSION" release-files release-notes.txt .
-      - name: Publish the complete update set atomically to GitHub Pages
-        run: |
-          set -euo pipefail
-          key_path="$RUNNER_TEMP/releases_deploy_key"
-          printf '%s\n' "$RELEASES_DEPLOY_KEY" > "$key_path"
-          chmod 600 "$key_path"
-          export GIT_SSH_COMMAND="ssh -i $key_path -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
-          site="$RUNNER_TEMP/updates-site"
-          git clone --quiet --depth 1 --branch gh-pages "git@github.com:${RELEASES_REPO}.git" "$site"
-          destination="$site"
-          if [ "$CHANNEL" = "test" ]; then destination="$site/test"; fi
-          mkdir -p "$destination"
-          find "$destination" -maxdepth 1 -type f \( -name '*.exe' -o -name '*.sig' -o -name '*.zip' -o -name '*.dmg' -o -name 'latest.json' -o -name 'downloads.html' \) -delete
-          cp release-files/* "$destination/"
-          cp latest.json downloads.html "$destination/"
-          git -C "$site" checkout --quiet --orphan publish
-          git -C "$site" add -A
-          git -C "$site" -c user.name="0rqestra-ci" -c user.email="ci@0rqestra.invalid" commit --quiet -m "0rqestra $RELEASE_VERSION ($CHANNEL)"
-          git -C "$site" push --quiet --force origin publish:gh-pages
-          rm -f "$key_path"
-      - name: Verify every public updater URL
-        run: |
-          set -euo pipefail
-          node -e 'const m = require("./latest.json"); console.log([...new Set(Object.values(m.platforms).map((p) => p.url))].join("\n"))' > "$RUNNER_TEMP/updater-urls.txt"
-          while IFS= read -r url; do
-            ok=false
-            for attempt in $(seq 1 24); do
-              status="$(curl --silent --show-error --head --output /dev/null --write-out '%{http_code}' "$url" || true)"
-              if [ "$status" = "200" ]; then ok=true; break; fi
-              sleep 10
-            done
-            $ok || { echo "Public updater URL did not return HTTP 200: $url" >&2; exit 1; }
-          done < "$RUNNER_TEMP/updater-urls.txt"
+      # 1. The installers first: the manifest must never point at files that do not exist yet.
       - name: Publish stable GitHub release
         if: ${{ needs.version.outputs.channel == 'stable' }}
         uses: softprops/action-gh-release@v2
@@ -330,5 +302,40 @@ jobs:
             The test build is called "0rqestra Updater Test" and has its own app id, so it installs next to the regular app without replacing it. It only looks for updates on the test channel.
             Release for real by running the workflow with channel = stable.
           files: |
-            release-files/*.exe
-            release-files/*.dmg
+            release-files/*
+            latest.json
+            downloads.html
+      # 2. Every file the manifest names must answer before any installed app is told about it.
+      - name: Verify every public update file
+        run: |
+          set -euo pipefail
+          node -e 'const m = require("./latest.json"); console.log([...new Set(Object.values(m.platforms).map((p) => p.url))].join("\n"))' > "$RUNNER_TEMP/updater-urls.txt"
+          while IFS= read -r url; do
+            ok=false
+            for attempt in $(seq 1 24); do
+              status="$(curl --silent --show-error --location --head --output /dev/null --write-out '%{http_code}' "$url" || true)"
+              if [ "$status" = "200" ]; then ok=true; break; fi
+              sleep 10
+            done
+            $ok || { echo "Update file did not return HTTP 200: $url" >&2; exit 1; }
+          done < "$RUNNER_TEMP/updater-urls.txt"
+      # 3. Last: the small files that the installed apps and the download page read.
+      - name: Require the deploy key for the update site
+        run: test -n "$RELEASES_DEPLOY_KEY" || { echo "Repository secret RELEASES_DEPLOY_KEY is missing." >&2; exit 1; }
+      - name: Publish latest.json and the download page to GitHub Pages
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/releases_deploy_key"
+          printf '%s\n' "$RELEASES_DEPLOY_KEY" > "$key_path"
+          chmod 600 "$key_path"
+          export GIT_SSH_COMMAND="ssh -i $key_path -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          site="$RUNNER_TEMP/updates-site"
+          git clone --quiet --depth 1 --branch gh-pages "git@github.com:${RELEASES_REPO}.git" "$site"
+          destination="$site"
+          if [ "$CHANNEL" = "test" ]; then destination="$site/test"; fi
+          mkdir -p "$destination"
+          cp latest.json downloads.html "$destination/"
+          git -C "$site" add -A
+          git -C "$site" -c user.name="0rqestra-ci" -c user.email="ci@0rqestra.invalid" commit --quiet -m "0rqestra $RELEASE_VERSION ($CHANNEL)"
+          git -C "$site" push --quiet origin HEAD:gh-pages
+          rm -f "$key_path"

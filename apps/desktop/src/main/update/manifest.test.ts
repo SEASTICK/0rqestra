@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isUnderFeed, parseManifest, parseUpdateConfig, platformKey } from "./manifest.js";
+import { isUnderBase, parseManifest, parseUpdateConfig, platformKey } from "./manifest.js";
 
 const FEED = "https://updates.example/app";
 const entry = (url: string) => ({ url, signature: "c2ln" });
@@ -7,18 +7,18 @@ const manifest = (platforms: unknown, version: unknown = "1.2.3") => JSON.string
 
 describe("update config", () => {
   it("accepts a valid config and trims the feed URL", () => {
-    expect(parseUpdateConfig(JSON.stringify({ channel: "test", feedUrl: `${FEED}/test/`, publicKey: " key " }))).toEqual({
-      channel: "test",
-      feedUrl: `${FEED}/test`,
-      publicKey: "key",
-    });
+    expect(
+      parseUpdateConfig(JSON.stringify({ channel: "test", feedUrl: `${FEED}/test/`, downloadBase: `${FEED}/`, publicKey: " key " })),
+    ).toEqual({ channel: "test", feedUrl: `${FEED}/test`, downloadBase: FEED, publicKey: "key" });
   });
 
   it("rejects a bad channel, a non-HTTPS feed, and malformed input", () => {
-    const ok = { channel: "stable", feedUrl: FEED, publicKey: "" };
+    const ok = { channel: "stable", feedUrl: FEED, downloadBase: FEED, publicKey: "" };
     expect(parseUpdateConfig(JSON.stringify(ok))).not.toBeNull();
     expect(parseUpdateConfig(JSON.stringify({ ...ok, channel: "beta" }))).toBeNull();
     expect(parseUpdateConfig(JSON.stringify({ ...ok, feedUrl: "http://updates.example/app" }))).toBeNull();
+    expect(parseUpdateConfig(JSON.stringify({ ...ok, downloadBase: "http://updates.example/app" }))).toBeNull();
+    expect(parseUpdateConfig(JSON.stringify({ ...ok, downloadBase: undefined }))).toBeNull();
     expect(parseUpdateConfig(JSON.stringify({ ...ok, publicKey: 1 }))).toBeNull();
     expect(parseUpdateConfig("{")).toBeNull();
     expect(parseUpdateConfig("null")).toBeNull();
@@ -36,9 +36,9 @@ describe("platform keys", () => {
 });
 
 describe("update file URLs", () => {
-  it("allows only HTTPS URLs below the feed", () => {
-    expect(isUnderFeed(`${FEED}/App_1.2.3.exe`, FEED)).toBe(true);
-    expect(isUnderFeed(`${FEED}/test/App_1.2.3.exe`, FEED)).toBe(true);
+  it("allows only HTTPS URLs below the download address", () => {
+    expect(isUnderBase(`${FEED}/App_1.2.3.exe`, FEED)).toBe(true);
+    expect(isUnderBase(`${FEED}/test/App_1.2.3.exe`, FEED)).toBe(true);
     for (const bad of [
       "http://updates.example/app/a.exe",
       "https://evil.example/app/a.exe",
@@ -51,13 +51,13 @@ describe("update file URLs", () => {
       "https://updates.example:8443/app/a.exe",
       "not a url",
     ]) {
-      expect(isUnderFeed(bad, FEED), bad).toBe(false);
+      expect(isUnderBase(bad, FEED), bad).toBe(false);
     }
   });
 
-  it("keeps a stable app off the test channel's parent and a test app inside /test", () => {
-    expect(isUnderFeed(`${FEED}/a.exe`, `${FEED}/test`)).toBe(false);
-    expect(isUnderFeed(`${FEED}/test/a.exe`, `${FEED}/test`)).toBe(true);
+  it("does not treat a sibling path as below the base", () => {
+    expect(isUnderBase(`${FEED}/a.exe`, `${FEED}/test`)).toBe(false);
+    expect(isUnderBase(`${FEED}/test/a.exe`, `${FEED}/test`)).toBe(true);
   });
 });
 
@@ -82,6 +82,6 @@ describe("latest.json", () => {
   });
 
   it("rejects a manifest that points outside the update site", () => {
-    expect(() => parseManifest(manifest({ "windows-x86_64": entry("https://evil.example/a.exe") }), FEED)).toThrow(/outside/);
+    expect(() => parseManifest(manifest({ "windows-x86_64": entry("https://evil.example/a.exe") }), FEED)).toThrow(/outside the release downloads/);
   });
 });

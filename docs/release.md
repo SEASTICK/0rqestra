@@ -12,11 +12,21 @@ Status: the release scripts and the app's update logic are covered by unit tests
 itself, the Windows installer step, and the macOS bundle swap have **not** been run yet. The first
 `test` release is that test.
 
+## Where things are published
+
+- **Installers and update files** (`.exe`, `.dmg`, `.zip`, `.sig`) are attached to this repository's
+  GitHub releases: `vX.Y.Z` for stable, `test-vX.Y.Z` for test. They cannot live on the Pages
+  branch, because a Git branch rejects files over 100 MB and the installers are larger.
+- **`latest.json` and `downloads.html`**, the small files the installed apps and the download page
+  read, are published to the `gh-pages` branch of `SEASTICK/0rqestra-realeases` (under `/test` for
+  the test channel). They are written last, after every file they name answers.
+- The `.exe`/`.dmg` links on the download page point to the release files in this repository.
+
 ## Channels
 
 | Channel | What it does |
 |---|---|
-| `test` | Builds and publishes under `/test` on the public update site. Creates a pre-release `test-vX.Y.Z` under Releases (not "Latest") and no `v` tag. Skips the approval. The test app is called **0rqestra Updater Test** and has its own app id, so it only follows the test channel. |
+| `test` | Builds and publishes `/test/latest.json` on the update site. Creates a pre-release `test-vX.Y.Z` under Releases (not "Latest") and no `v` tag. Skips the approval. The test app is called **0rqestra Updater Test** and has its own app id, so it only follows the test channel. |
 | `stable` | Builds, **pauses for approval**, publishes at the root of the update site, and creates a regular release tagged `vX.Y.Z`, shown as "Latest" on the repository page. Everyone who has the app receives the update. |
 
 ## How to release
@@ -88,8 +98,9 @@ If the releases repository gets another name, change `RELEASES_REPO` and `RELEAS
   "Later" stays quiet about that version for a day; **Check for Updates…** always shows it.
 - A file that cannot be verified is deleted and never installed. Without a network nothing is
   shown unless you asked by hand.
-- Update files are fetched only over HTTPS from below the app's own update address, so a stable
-  app cannot be pointed at the test channel or another site.
+- `latest.json` is read only from the app's own update address, and update files are fetched only
+  over HTTPS from this repository's release downloads (`downloadBase` in
+  `apps/desktop/update-config.json`). Anything else in a manifest is refused.
 - The signature covers the version number and the file's SHA-512 (Ed25519). An older signed file
   cannot be republished as a newer version.
 - Windows: the NSIS installer runs silently and starts the app again. macOS: the new app bundle
