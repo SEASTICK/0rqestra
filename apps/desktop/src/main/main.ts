@@ -54,7 +54,7 @@ function onStartupFailure(error: unknown): void {
     smoke.fail("startup", errorMessage(error));
     return;
   }
-  console.error("WorkTreeAI failed to start:", error);
+  console.error("0rqestra failed to start:", error);
   app.exit(1);
 }
 

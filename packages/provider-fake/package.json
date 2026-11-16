@@ -1,5 +1,5 @@
 {
-  "name": "@worktreeai/provider-fake",
+  "name": "@0rqestra/provider-fake",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,6 +10,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@worktreeai/contracts": "0.0.0"
+    "@0rqestra/contracts": "0.0.0"
   }
 }

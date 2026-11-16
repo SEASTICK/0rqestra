@@ -1,4 +1,4 @@
-import type { ProviderAdapter, ProviderEvent, TaskRequest } from "@worktreeai/contracts";
+import type { ProviderAdapter, ProviderEvent, TaskRequest } from "@0rqestra/contracts";
 
 export type FakeScript = readonly ProviderEvent[] | ((request: TaskRequest) => readonly ProviderEvent[]);
 
