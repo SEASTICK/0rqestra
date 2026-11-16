@@ -29,7 +29,7 @@ itself, the Windows installer step, and the macOS bundle swap have **not** been 
 2. **Run `test` first.** Run workflow with `channel = test`. Wait until `version`,
    `build-windows`, `build-macos`, and `publish` are green, and `approve` is **skipped** (grey).
 3. **Check the test.**
-   - `https://seastick.github.io/0rqestra-releases/test/latest.json` exists and contains
+   - `https://seastick.github.io/0rqestra-realeases/test/latest.json` exists and contains
      `windows-x86_64`, `darwin-aarch64`, and `darwin-x86_64`.
    - The pre-release `test-vX.Y.Z` is under Releases. Download the `.exe` or `.dmg`, install,
      start.
@@ -45,23 +45,23 @@ itself, the Windows installer step, and the macOS bundle swap have **not** been 
 
    Only `SEASTICK` and `edwinfighter42-star` count. The first decision applies. The job waits at
    most 300 minutes and closes the issue if the run is cancelled.
-6. **Check.** `https://seastick.github.io/0rqestra-releases/latest.json` shows the new version
+6. **Check.** `https://seastick.github.io/0rqestra-realeases/latest.json` shows the new version
    and the release `vX.Y.Z` exists.
 
 Tags that start the workflow must be `v*` only. The version calculation reads only tags of the
 form `vX.Y.Z` and `test-vX.Y.Z`.
 
-First-time download: `https://seastick.github.io/0rqestra-releases/downloads.html`, or the
+First-time download: `https://seastick.github.io/0rqestra-realeases/downloads.html`, or the
 "Latest" release on the repository page.
 
 ## One-time setup (done by a person, never by Claude)
 
-1. **Public repository** `SEASTICK/0rqestra-releases` with a branch `gh-pages` (at least one
-   commit) and GitHub Pages enabled from `gh-pages`. It holds only installers and `latest.json`,
-   never the source code.
+1. **Public repository** `SEASTICK/0rqestra-realeases` (created, spelling as created). The branch
+   `gh-pages` exists. Still to do by hand: Settings → Pages → *Deploy from a branch* → `gh-pages`
+   → `/ (root)`. The repository holds only installers and `latest.json`, never the source code.
 2. **Deploy key:** create a key pair
-   (`ssh-keygen -t ed25519 -f 0rqestra-releases-deploy -N ""`). Add the **public** key as a deploy
-   key with **write access** in `0rqestra-releases`.
+   (`ssh-keygen -t ed25519 -f 0rqestra-deploy-key -N ""`). Add the **public** key as a deploy
+   key with **write access** in `0rqestra-realeases`.
 3. **Update signing key:** `node tools/releasing/generate-update-key.mjs 0rqestra-updater.key`
    (set `UPDATE_SIGNING_PRIVATE_KEY_PASSWORD` first to protect it with a password). Do not reuse
    the Trader_go or Vinstly key. Put the **public** key it prints in

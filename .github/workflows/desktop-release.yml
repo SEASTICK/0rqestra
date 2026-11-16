@@ -26,8 +26,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASES_REPO: SEASTICK/0rqestra-releases
-  RELEASES_PAGES_URL: https://seastick.github.io/0rqestra-releases
+  RELEASES_REPO: SEASTICK/0rqestra-realeases
+  RELEASES_PAGES_URL: https://seastick.github.io/0rqestra-realeases
 
 jobs:
   version:

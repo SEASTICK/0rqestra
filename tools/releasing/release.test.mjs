@@ -11,7 +11,7 @@ import { buildManifest } from "./build-manifest.mjs";
 import { loadPrivateKey, publicKeyBase64, releaseFileNames, sha512File, signDigest } from "./lib.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const PAGES = "https://seastick.github.io/0rqestra-releases";
+const PAGES = "https://seastick.github.io/0rqestra-realeases";
 
 // Child processes get the real environment (Windows needs it) minus anything that steers the scripts.
 function childEnv(extra = {}) {
