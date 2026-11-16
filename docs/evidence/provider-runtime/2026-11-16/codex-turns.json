@@ -1,0 +1,208 @@
+{
+  "probe": "codex-turns",
+  "ranAt": "2026-11-16T12:13:46.787Z",
+  "platform": "win32",
+  "usedBefore": 0,
+  "scenarios": [
+    {
+      "name": "basic-reply",
+      "startedAt": "2026-11-16T12:13:47.483Z",
+      "account": {
+        "type": "chatgpt",
+        "planType": "plus",
+        "requiresOpenaiAuth": true
+      },
+      "requestNumber": 1,
+      "thread": {
+        "requestedModel": "gpt-5.6-luna",
+        "model": "gpt-5.6-luna",
+        "modelProvider": "openai",
+        "approvalPolicy": "never",
+        "sandbox": "readOnly",
+        "reasoningEffort": null
+      },
+      "durationMs": 4948,
+      "methodCounts": {
+        "response:": 4,
+        "remoteControl/status/changed": 1,
+        "account/updated": 1,
+        "thread/started": 1,
+        "mcpServer/startupStatus/updated": 8,
+        "thread/status/changed": 2,
+        "turn/started": 1,
+        "item/started": 2,
+        "item/completed": 2,
+        "item/agentMessage/delta": 1,
+        "thread/tokenUsage/updated": 1,
+        "account/rateLimits/updated": 1,
+        "turn/completed": 1
+      },
+      "errors": [],
+      "turnCompleted": [
+        {
+          "status": "completed",
+          "error": null
+        }
+      ],
+      "modelNotifications": [],
+      "tokenUsage": {
+        "totalTokens": 13724,
+        "inputTokens": 13719,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 5,
+        "reasoningOutputTokens": 0
+      },
+      "agentText": "OK",
+      "serverRequests": [],
+      "probeFileCreated": false,
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderrTail": ""
+    },
+    {
+      "name": "approval-declined",
+      "startedAt": "2026-11-16T12:13:53.145Z",
+      "account": {
+        "type": "chatgpt",
+        "planType": "plus",
+        "requiresOpenaiAuth": true
+      },
+      "requestNumber": 2,
+      "thread": {
+        "requestedModel": "gpt-5.6-luna",
+        "model": "gpt-5.6-luna",
+        "modelProvider": "openai",
+        "approvalPolicy": "untrusted",
+        "sandbox": "readOnly",
+        "reasoningEffort": null
+      },
+      "approvalRequestsAnswered": 1,
+      "durationMs": 8439,
+      "methodCounts": {
+        "response:": 4,
+        "remoteControl/status/changed": 1,
+        "account/updated": 1,
+        "thread/started": 1,
+        "mcpServer/startupStatus/updated": 6,
+        "thread/status/changed": 4,
+        "turn/started": 1,
+        "item/started": 5,
+        "item/completed": 5,
+        "serverRequest:item/commandExecution/requestApproval": 1,
+        "serverRequest/resolved": 1,
+        "thread/tokenUsage/updated": 2,
+        "account/rateLimits/updated": 2,
+        "item/agentMessage/delta": 2,
+        "turn/completed": 1
+      },
+      "errors": [],
+      "turnCompleted": [
+        {
+          "status": "completed",
+          "error": null
+        }
+      ],
+      "modelNotifications": [],
+      "tokenUsage": {
+        "totalTokens": 29066,
+        "inputTokens": 28815,
+        "cachedInputTokens": 14080,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 251,
+        "reasoningOutputTokens": 149
+      },
+      "agentText": "BANANA",
+      "serverRequests": [
+        {
+          "method": "item/commandExecution/requestApproval",
+          "command": "\"C:\\\\WINDOWS\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Set-Content -LiteralPath .\\\\probe.txt -Value 'hi' -NoNewline\"",
+          "cwd": "C:\\Users\\<user>\\AppData\\Local\\Temp\\worktreeai-probe-codex-project-RJpPUN",
+          "itemId": "exec-efe9ded7-1efc-4541-a305-db1a8420907e",
+          "atMs": 6369
+        }
+      ],
+      "probeFileCreated": false,
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderrTail": "\u001b[2m2026-11-16T12:13:59.516198Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_core::tools::router\u001b[0m\u001b[2m:\u001b[0m \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mexec_command failed: CreateProcess { message: \"Rejected(\\\"rejected by user\\\")\" }\n"
+    },
+    {
+      "name": "approval-unanswered-then-interrupt",
+      "startedAt": "2026-11-16T12:14:02.310Z",
+      "account": {
+        "type": "chatgpt",
+        "planType": "plus",
+        "requiresOpenaiAuth": true
+      },
+      "requestNumber": 3,
+      "thread": {
+        "requestedModel": "gpt-5.6-luna",
+        "model": "gpt-5.6-luna",
+        "modelProvider": "openai",
+        "approvalPolicy": "untrusted",
+        "sandbox": "readOnly",
+        "reasoningEffort": null
+      },
+      "eventsWhileUnanswered": {},
+      "turnEndedWhileUnanswered": false,
+      "interruptResult": {},
+      "msFromInterruptToTurnCompleted": 108,
+      "requestResolvedNotification": 1,
+      "durationMs": 18898,
+      "methodCounts": {
+        "response:": 5,
+        "remoteControl/status/changed": 1,
+        "account/updated": 1,
+        "thread/started": 1,
+        "mcpServer/startupStatus/updated": 6,
+        "thread/status/changed": 3,
+        "turn/started": 1,
+        "item/started": 3,
+        "item/completed": 2,
+        "serverRequest:item/commandExecution/requestApproval": 1,
+        "thread/tokenUsage/updated": 1,
+        "account/rateLimits/updated": 1,
+        "turn/completed": 1,
+        "serverRequest/resolved": 1
+      },
+      "errors": [],
+      "turnCompleted": [
+        {
+          "status": "interrupted",
+          "error": null
+        }
+      ],
+      "modelNotifications": [],
+      "tokenUsage": {
+        "totalTokens": 14483,
+        "inputTokens": 14294,
+        "cachedInputTokens": 6912,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 189,
+        "reasoningOutputTokens": 96
+      },
+      "agentText": "",
+      "serverRequests": [
+        {
+          "method": "item/commandExecution/requestApproval",
+          "command": "\"C:\\\\WINDOWS\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Set-Content -LiteralPath .\\\\probe.txt -Value 'hi' -NoNewline\"",
+          "cwd": "C:\\Users\\<user>\\AppData\\Local\\Temp\\worktreeai-probe-codex-project-sdpYZo",
+          "itemId": "exec-e59772d3-1a85-4ce4-91cb-8dcf22d60391",
+          "atMs": 6603
+        }
+      ],
+      "probeFileCreated": false,
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderrTail": ""
+    }
+  ],
+  "usedAfter": 3
+}

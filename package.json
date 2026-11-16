@@ -1,0 +1,31 @@
+{
+  "name": "worktreeai",
+  "private": true,
+  "type": "module",
+  "description": "Open-source desktop app for coordinating a configurable tree of AI coding agents.",
+  "engines": {
+    "node": "^24.11.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "build": "npm run build --workspaces --if-present",
+    "smoke": "npm run smoke -w @worktreeai/desktop",
+    "start": "npm run start -w @worktreeai/desktop",
+    "check": "npm run lint && npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "4.1.12"
+  }
+}

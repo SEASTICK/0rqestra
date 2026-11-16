@@ -1,0 +1,30 @@
+{
+  "codex": [
+    {
+      "label": "basic-reply",
+      "at": "2026-11-16T12:13:48.682Z"
+    },
+    {
+      "label": "approval-declined",
+      "at": "2026-11-16T12:13:53.677Z"
+    },
+    {
+      "label": "approval-unanswered-then-interrupt",
+      "at": "2026-11-16T12:14:02.984Z"
+    }
+  ],
+  "claude": [
+    {
+      "label": "profile-a-reply",
+      "at": "2026-11-16T12:31:31.577Z"
+    },
+    {
+      "label": "write-denied",
+      "at": "2026-11-16T12:31:34.508Z"
+    },
+    {
+      "label": "interrupt-via-stream-json",
+      "at": "2026-11-16T12:31:38.236Z"
+    }
+  ]
+}

@@ -1,0 +1,145 @@
+{
+  "probe": "codex-handshake",
+  "ranAt": "2026-11-16T12:12:58.012Z",
+  "platform": "win32",
+  "modelRequests": 0,
+  "initialize": {
+    "userAgent": "worktreeai_probe/0.166.0-alpha.5.1 (Windows 10.0.26300; x86_64) unknown (worktreeai_probe; 0.0.0)",
+    "platformOs": "windows",
+    "codexHome": "<home>\\.codex"
+  },
+  "account": {
+    "type": "chatgpt",
+    "planType": "plus",
+    "requiresOpenaiAuth": true
+  },
+  "models": [
+    {
+      "id": "gpt-6.1-sol",
+      "model": "gpt-6.1-sol",
+      "isDefault": true,
+      "hidden": false,
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ]
+    },
+    {
+      "id": "gpt-6-astra",
+      "model": "gpt-6-astra",
+      "isDefault": false,
+      "hidden": false,
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ]
+    },
+    {
+      "id": "gpt-6.1-terra",
+      "model": "gpt-6.1-terra",
+      "isDefault": false,
+      "hidden": false,
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ]
+    },
+    {
+      "id": "gpt-6-sol",
+      "model": "gpt-6-sol",
+      "isDefault": false,
+      "hidden": false,
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ]
+    },
+    {
+      "id": "gpt-6-luna",
+      "model": "gpt-6-luna",
+      "isDefault": false,
+      "hidden": false,
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
+    },
+    {
+      "id": "gpt-5.6-sol",
+      "model": "gpt-5.6-sol",
+      "isDefault": false,
+      "hidden": false,
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ]
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "model": "gpt-5.6-terra",
+      "isDefault": false,
+      "hidden": false,
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ]
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "model": "gpt-5.6-luna",
+      "isDefault": false,
+      "hidden": false,
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
+    }
+  ],
+  "rateLimits": {
+    "primaryUsedPercent": 18,
+    "primaryWindowMinutes": 300,
+    "secondaryUsedPercent": 3,
+    "secondaryWindowMinutes": 10080,
+    "planType": "plus",
+    "credits": {
+      "hasCredits": false,
+      "unlimited": false,
+      "balance": "0"
+    }
+  },
+  "exit": {
+    "code": 0,
+    "signal": null
+  },
+  "stderrTail": ""
+}

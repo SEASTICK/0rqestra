@@ -1,0 +1,39 @@
+{
+  "name": "@worktreeai/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "WorkTreeAI desktop app (Electron).",
+  "author": "WorkTreeAI contributors",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/renderer','dist/renderer',{recursive:true})\"",
+    "start": "npm run build && electron .",
+    "smoke": "npm run build && electron . --smoke",
+    "smoke:failures": "npm run build && node scripts/verify-smoke-failures.mjs",
+    "package": "npm run build && electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "44.10.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "dev.worktreeai.desktop",
+    "productName": "WorkTreeAI",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools"
+    }
+  }
+}

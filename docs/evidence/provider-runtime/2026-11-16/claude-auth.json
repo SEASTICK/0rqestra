@@ -1,0 +1,309 @@
+{
+  "probe": "claude-auth",
+  "ranAt": "2026-11-16T12:31:31.288Z",
+  "platform": "win32",
+  "claudeVersion": "2.1.325 (Claude Code)",
+  "requestedModel": "claude-haiku-5-5",
+  "usedBefore": 0,
+  "scenarios": [
+    {
+      "name": "profile-a-reply",
+      "startedAt": "2026-11-16T12:31:31.329Z",
+      "auth": {
+        "loggedIn": true,
+        "authMethod": "claude.ai",
+        "apiProvider": "firstParty",
+        "subscriptionType": "pro"
+      },
+      "requestNumber": 1,
+      "args": [
+        "-p",
+        "Reply with exactly: OK",
+        "--safe-mode",
+        "--setting-sources",
+        "user",
+        "--settings",
+        "{\"disableAllHooks\":true,\"switchModelsOnFlag\":false}",
+        "--strict-mcp-config",
+        "--tools",
+        "Read",
+        "--disallowedTools",
+        "Agent",
+        "mcp__*",
+        "--permission-mode",
+        "default",
+        "--permission-prompts",
+        "none",
+        "--model",
+        "claude-haiku-5-5",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--no-session-persistence",
+        "--max-turns",
+        "1"
+      ],
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 2689,
+      "stderr": "",
+      "typeCounts": {
+        "system/init": 1,
+        "assistant": 1,
+        "rate_limit_event": 1,
+        "result/success": 1
+      },
+      "init": {
+        "model": "claude-haiku-5-5",
+        "permissionMode": "default",
+        "apiKeySource": "none",
+        "tools": [
+          "Read"
+        ],
+        "mcp_servers": [],
+        "agents": [
+          "claude",
+          "Explore",
+          "general-purpose",
+          "Plan"
+        ],
+        "plugins": [
+          "cc-plugin-agents-md@builtin",
+          "cc-plugin-telemetry@builtin",
+          "cc-plugin-privacy@builtin",
+          "cc-plugin-plugin-authoring@builtin"
+        ]
+      },
+      "hookEvents": 0,
+      "apiRetries": [],
+      "toolUses": [],
+      "assistantText": "OK",
+      "assistantTextLength": 2,
+      "result": {
+        "subtype": "success",
+        "is_error": false,
+        "num_turns": 1,
+        "result": "OK",
+        "total_cost_usd": 0.0005085000000000001,
+        "modelUsage": {
+          "claude-haiku-5-5": {
+            "inputTokens": 2,
+            "outputTokens": 4
+          }
+        },
+        "permission_denials": [],
+        "atMs": 1994
+      },
+      "markers": {
+        "hookRan": false,
+        "mcpServerStarted": false
+      },
+      "probeFileCreated": false
+    },
+    {
+      "name": "write-denied",
+      "startedAt": "2026-11-16T12:31:34.270Z",
+      "auth": {
+        "loggedIn": true,
+        "authMethod": "claude.ai",
+        "apiProvider": "firstParty",
+        "subscriptionType": "pro"
+      },
+      "requestNumber": 2,
+      "args": [
+        "-p",
+        "Use the Write tool to create a file named probe.txt containing the text hi. Then reply with one short sentence saying whether it worked.",
+        "--safe-mode",
+        "--setting-sources",
+        "user",
+        "--settings",
+        "{\"disableAllHooks\":true,\"switchModelsOnFlag\":false}",
+        "--strict-mcp-config",
+        "--tools",
+        "Read,Write",
+        "--disallowedTools",
+        "Agent",
+        "mcp__*",
+        "--permission-mode",
+        "default",
+        "--permission-prompts",
+        "none",
+        "--model",
+        "claude-haiku-5-5",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--no-session-persistence",
+        "--max-turns",
+        "3"
+      ],
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 3477,
+      "stderr": "",
+      "typeCounts": {
+        "system/init": 1,
+        "assistant": 2,
+        "system/permission_denied": 1,
+        "user": 1,
+        "rate_limit_event": 1,
+        "result/success": 1
+      },
+      "init": {
+        "model": "claude-haiku-5-5",
+        "permissionMode": "default",
+        "apiKeySource": "none",
+        "tools": [
+          "Read",
+          "Write"
+        ],
+        "mcp_servers": [],
+        "agents": [
+          "claude",
+          "Explore",
+          "general-purpose",
+          "Plan"
+        ],
+        "plugins": [
+          "cc-plugin-agents-md@builtin",
+          "cc-plugin-telemetry@builtin",
+          "cc-plugin-privacy@builtin",
+          "cc-plugin-plugin-authoring@builtin"
+        ]
+      },
+      "hookEvents": 0,
+      "apiRetries": [],
+      "toolUses": [
+        "Write"
+      ],
+      "assistantText": "The write did not work: the Write tool was denied permission for `probe.txt` in the temp worktree, and this session has no way to approve prompts. You would need to approve the write yourself or run it with a different permission mode for it to succeed.",
+      "assistantTextLength": 253,
+      "result": {
+        "subtype": "success",
+        "is_error": false,
+        "num_turns": 2,
+        "result": "The write did not work: the Write tool was denied permission for `probe.txt` in the temp worktree, and this session has no way to approve prompts. You would need to approve the write yourself or run it with a different permission mode for it to succeed.",
+        "total_cost_usd": 0.0007338199999999999,
+        "modelUsage": {
+          "claude-haiku-5-5": {
+            "inputTokens": 4,
+            "outputTokens": 195
+          }
+        },
+        "permission_denials": [
+          {
+            "tool_name": "Write"
+          }
+        ],
+        "atMs": 2769
+      },
+      "markers": {
+        "hookRan": false,
+        "mcpServerStarted": false
+      },
+      "probeFileCreated": false
+    },
+    {
+      "name": "interrupt-via-stream-json",
+      "startedAt": "2026-11-16T12:31:37.989Z",
+      "auth": {
+        "loggedIn": true,
+        "authMethod": "claude.ai",
+        "apiProvider": "firstParty",
+        "subscriptionType": "pro"
+      },
+      "requestNumber": 3,
+      "args": [
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--safe-mode",
+        "--setting-sources",
+        "user",
+        "--settings",
+        "{\"disableAllHooks\":true,\"switchModelsOnFlag\":false}",
+        "--strict-mcp-config",
+        "--tools",
+        "",
+        "--disallowedTools",
+        "Agent",
+        "mcp__*",
+        "--permission-mode",
+        "default",
+        "--permission-prompts",
+        "none",
+        "--model",
+        "claude-haiku-5-5",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--no-session-persistence",
+        "--max-turns",
+        "1"
+      ],
+      "exitCode": 1,
+      "signal": null,
+      "durationMs": 1933,
+      "stderr": "",
+      "typeCounts": {
+        "system/init": 1,
+        "system/status": 1,
+        "stream_event": 6,
+        "control_response": 1,
+        "assistant": 1,
+        "user": 1,
+        "result/error_during_execution": 1
+      },
+      "init": {
+        "model": "claude-haiku-5-5",
+        "permissionMode": "default",
+        "apiKeySource": "none",
+        "tools": [],
+        "mcp_servers": [],
+        "agents": [
+          "claude",
+          "Explore",
+          "general-purpose",
+          "Plan"
+        ],
+        "plugins": [
+          "cc-plugin-agents-md@builtin",
+          "cc-plugin-telemetry@builtin",
+          "cc-plugin-privacy@builtin",
+          "cc-plugin-plugin-authoring@builtin"
+        ]
+      },
+      "hookEvents": 0,
+      "apiRetries": [],
+      "toolUses": [],
+      "assistantText": "1\n2\n3\n4",
+      "assistantTextLength": 7,
+      "result": {
+        "subtype": "error_during_execution",
+        "is_error": true,
+        "num_turns": 2,
+        "total_cost_usd": 0,
+        "modelUsage": {},
+        "permission_denials": [],
+        "atMs": 1216
+      },
+      "timing": {
+        "firstTextDeltaMs": 1205,
+        "resultBeforeInterrupt": false,
+        "interruptSentMs": 1205,
+        "controlResponse": {
+          "subtype": "success",
+          "atMs": 1208
+        },
+        "resultAfterInterrupt": true
+      },
+      "markers": {
+        "hookRan": false,
+        "mcpServerStarted": false
+      },
+      "probeFileCreated": false
+    }
+  ],
+  "usedAfter": 3
+}

@@ -1,0 +1,22 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Dependencies and build output
+node_modules/
+dist/
+release/
+coverage/
+*.tsbuildinfo
+
+# Logs and local env
+*.log
+.env
+.env.local
+
+# Provider probe output (raw results stay local)
+tools/provider-probes/out/

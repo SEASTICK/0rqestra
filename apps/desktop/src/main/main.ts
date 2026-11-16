@@ -1,0 +1,105 @@
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { app, BrowserWindow, ipcMain, session, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
+import { isSameFileUrl, isTrustedSender, mainWindowOptions, type SenderInfo } from "./security";
+import { runSmoke } from "./smoke";
+import {
+  createSmokeOutcome,
+  errorMessage,
+  installProcessFailureHandlers,
+  parseSmokeTimeout,
+} from "./smoke-outcome";
+
+// In smoke mode the verdict and watchdog exist before any asynchronous startup begins.
+const smoke = process.argv.includes("--smoke")
+  ? createSmokeOutcome({
+      timeoutMs: parseSmokeTimeout(process.argv),
+      exit: (code) => app.exit(code),
+      log: (line) => console.log(line),
+    })
+  : null;
+if (smoke) installProcessFailureHandlers(smoke);
+
+const rendererFile = path.join(__dirname, "..", "renderer", "index.html");
+const rendererUrl = pathToFileURL(rendererFile).href;
+const preloadFile = path.join(__dirname, "..", "preload", "preload.js");
+const caseInsensitivePaths = process.platform === "win32";
+const isRendererUrl = (url: string | undefined) => isSameFileUrl(url, rendererUrl, caseInsensitivePaths);
+
+let mainWindow: BrowserWindow | null = null;
+
+function senderInfo(event: IpcMainEvent | IpcMainInvokeEvent): SenderInfo {
+  const frame = event.senderFrame;
+  return {
+    webContentsId: event.sender.id,
+    isMainFrame: frame !== null && frame.frameTreeNodeId === event.sender.mainFrame.frameTreeNodeId,
+    frameUrl: frame?.url,
+  };
+}
+
+function isFromMainWindow(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
+  return (
+    mainWindow !== null &&
+    !mainWindow.isDestroyed() &&
+    isTrustedSender(senderInfo(event), {
+      webContentsId: mainWindow.webContents.id,
+      rendererUrl,
+      caseInsensitivePaths,
+    })
+  );
+}
+
+function onStartupFailure(error: unknown): void {
+  if (smoke) {
+    smoke.fail("startup", errorMessage(error));
+    return;
+  }
+  console.error("WorkTreeAI failed to start:", error);
+  app.exit(1);
+}
+
+app.enableSandbox();
+
+app.on("web-contents-created", (_event, contents) => {
+  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  contents.on("will-navigate", (event, url) => {
+    if (!isRendererUrl(url)) event.preventDefault();
+  });
+  contents.on("will-attach-webview", (event) => event.preventDefault());
+});
+
+ipcMain.handle("app:get-info", (event) => {
+  if (!isFromMainWindow(event)) {
+    throw new Error("Rejected IPC from an untrusted sender.");
+  }
+  return {
+    appVersion: app.getVersion(),
+    electronVersion: process.versions.electron,
+    platform: process.platform,
+  };
+});
+
+if (!smoke) {
+  app.on("window-all-closed", () => app.quit());
+}
+
+function createMainWindow(): void {
+  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
+
+  const window = new BrowserWindow(mainWindowOptions(preloadFile, smoke !== null));
+  mainWindow = window;
+
+  if (smoke) {
+    runSmoke({ window, outcome: smoke, rendererFile, isRendererUrl, isTrusted: isFromMainWindow });
+    return;
+  }
+
+  window.once("ready-to-show", () => window.show());
+  window.loadFile(rendererFile).catch(onStartupFailure);
+}
+
+app
+  .whenReady()
+  .then(createMainWindow)
+  .catch(onStartupFailure);

@@ -1,0 +1,434 @@
+WorkTreeAI — Product brief and development stages
+(Source of truth for Stage 1. Supersedes earlier Mac-only / Windows+Mac-only drafts discussed
+in conversation — this is the corrected, final version: Windows PC and macOS are both full
+desktop targets from the start, with an iOS companion planned later for monitoring/controlling
+a connected desktop runner.)
+
+PRODUCT
+
+WorkTreeAI is a public, open-source desktop application for Windows PC and macOS, with an iOS
+companion planned later.
+
+Users open an existing local software project and manage a team of AI agents through an
+editable visual tree.
+
+The interface has:
+- An agent tree on the left.
+- Chat and live agent activity on the right.
+- Node settings for role, provider, model, instructions, tools, and usage limits.
+
+Users connect supported official provider CLI tools, initially OpenAI Codex CLI and Claude
+Code CLI, through supported authentication methods. Provider documentation and subscription
+conditions must be verified before implementation, not assumed.
+
+The desktop app runs the provider CLIs and project commands locally. AI inference is handled
+by the connected providers, not by WorkTreeAI itself.
+
+AGENT BEHAVIOUR
+
+The Manager is the user's only conversation partner.
+
+For every prompt, the Manager:
+- Interprets the request for routing.
+- Delegates specialist planning and work to configured agents.
+- Tracks task progress.
+- Routes problems to appropriate specialists.
+- Passes findings and results between agents.
+- Reports outcomes and asks the user questions when necessary.
+
+The Manager does not write code, perform specialist reviews, or solve technical problems
+itself.
+
+App-provided specialist roles include:
+- Planner
+- Builder
+- Code Reviewer
+- Debugger
+- Tester
+- Security Reviewer
+
+Users can customize the tree, add multiple agents with the same role, and choose each agent's
+model and instructions.
+
+The Manager:
+- Uses only configured agents.
+- Follows permitted tree connections.
+- Never silently creates agents or changes models.
+- Runs work automatically within configured permissions.
+- Asks the user when a role is missing, a decision requires input, or a retry limit is reached.
+- Pauses affected tasks while independent work may continue.
+
+Agent activity is visible, but all user-facing questions and final summaries come through the
+Manager.
+
+DEVELOPMENT RESPONSIBILITIES
+
+Claude implements.
+ChatGPT/Codex independently reviews.
+Keep changes focused and reviewable.
+Do not mark implementation tasks complete merely because documentation describes them.
+Do not push or publish without instruction.
+Work one stage at a time; do not start Stage 2 until Stage 1 is reviewed.
+
+STAGE 1 — PRODUCT AND FOUNDATION
+
+Status legend:
+  [x]  Agreed product decision (recorded in docs; not an implementation), or task complete
+       with deliverables and verification in place.
+  [~]  Deliverable drafted; awaiting independent review and/or listed follow-ups.
+  [ ]  Open.
+
+Verification types used below:
+  Documentation verification = claims checked against official sources, with URLs and dates.
+  Runtime testing            = behavior observed by actually running software. Performed so far,
+                               on Windows only:
+                               - the development foundation (item 9). CI on Windows and macOS
+                                 runners passed for fbf8dd3 as reported by the user; Claude
+                                 did not observe the run;
+                               - first provider probes (item 6): Claude Code 2.1.325 and Codex
+                                 CLI 0.166.0-alpha.5.1, the builds bundled with the desktop
+                                 apps, 3 model requests each. These are partial observations
+                                 of those builds; no provider gate is closed by them.
+
+[x] 1. Define target users: developers building software with multiple AI agents.
+    Evidence: docs/product-brief.md §1
+
+[x] 2. Define workflow: open project -> configure tree -> prompt Manager -> delegate -> review
+    -> report.
+    Evidence: docs/product-brief.md §2
+
+[x] 3. Define Manager and selectable specialist roles.
+    Evidence: docs/product-brief.md §3
+
+[x] 4. Define node settings: role, provider, model, instructions, tools, limits.
+    Evidence: docs/product-brief.md §4
+
+[x] 5. Define routing, delegation, problem handling, and escalation rules.
+    Evidence: docs/product-brief.md §5 (agreed rules).
+    Confirmed by the user on 2026-11-16 and recorded in product-brief §5 and
+    tree-routing-and-permissions §1:
+          - clicking "+" beside a node adds a child agent with the chosen role, provider, and
+            model, automatically connected by an edge from that node;
+          - among eligible agents with the same role, the highest-priority idle agent is
+            selected;
+          - decision A1: review findings return to the author for fixes without a drawn
+            return edge (implicit correction returns);
+          - decision A2: when nothing can verify finished work, the Manager asks before
+            finishing it as "Completed - unverified";
+          - decision A3: an agent added to a paused request applies only after the user
+            approves a change summary, once no task of the request is running;
+          - decision A4: each request runs on a snapshot of the tree taken when the prompt was
+            sent; later edits apply to new requests only;
+          - decision A5: default limits (25 launches per request, 2 retries, 3 review rounds,
+            3 outage retries, 50 Manager turns); at the request limit, running work finishes
+            and queued work pauses;
+          - decision A6: when a Planner is connected, implementation requests go to it first;
+          - decision A7: priority wins over an agent named in the prompt; "+" agents get the
+            lowest priority; when all are busy, work waits for the top-priority agent;
+          - decision A8: the "+" picker starts with role, provider, and model unselected.
+    Note: all other detailed semantics in docs/tree-routing-and-permissions.md are DRAFT
+    PROPOSALS awaiting the user's decision (§2.12 lists them). They are not covered by this
+    checkmark. They include: small same-role details (ties, an unavailable top-priority
+    agent); what Cancel does in the "+" picker; process ownership, recovery, and cancellation
+    (Category B).
+
+[~] 6. Verify official Codex and Claude Code integration approaches, authentication,
+    subscription conditions, and Windows/macOS support.
+    Evidence: docs/provider-integrations.md (revision 3, 2026-11-16).
+    Done (documentation verification):
+          - primary sources A1-A9 and O1-O7, with A1, A4, and O1 re-fetched for revision 3;
+          - provider statements, WorkTreeAI decisions, and unresolved interpretation are
+            separated;
+          - "no bundling" is labelled as WorkTreeAI policy, not an Anthropic prohibition;
+          - OpenAI's local/open-source continuation statement is quoted alongside its
+            commercial/hosted restriction;
+          - it is stated that terminal login does not change deployment conditions;
+          - the Claude deny-all-MCP profile (A) is split from the permission-MCP profile (B);
+          - it is stated that startup metadata detects but cannot undo hooks.
+    First runtime tests (2026-11-16, Windows; docs/provider-runtime-results.md, evidence in
+    docs/evidence/provider-runtime/2026-11-16/):
+          - Claude Code 2.1.325: 3 of 5 model requests, on the Claude.ai Pro subscription,
+            after the user signed in through Claude Code's own flow. The proposed launch
+            profile suppressed project hooks, MCP servers, and project subagents, kept
+            subscription auth, reported a denied write, and honored a stream-json interrupt;
+          - Codex CLI 0.166.0-alpha.5.1: 3 of 5 model requests, on the ChatGPT subscription.
+            Approvals, an unanswered approval, and turn/interrupt behaved as recorded.
+            Whether Codex could delegate (fan out) in these runs is unverified;
+          - after review, the results were corrected offline (results doc §7) and the runners
+            were hardened to stop on any failure, with offline fake-process tests. No probe
+            was rerun and the evidence files are unchanged;
+          - both were the builds bundled with the providers' desktop apps; neither CLI is
+            installed standalone.
+    Not done:
+          - the remaining runtime gates listed in provider-runtime-results.md §5 (user-level
+            provider configuration, interrupt during a running command, Profile B, expired
+            credentials, standalone installs, macOS);
+          - independent review of these runtime results;
+          - Codex project-config suppression (§2.4);
+          - reading the Anthropic Usage Policy, OpenAI terms, and the open-source Sign in with
+            ChatGPT guide;
+          - the maintainer's interpretation decisions in §1.1 and §2.2.
+    Stays [~] until review accepts the documentation verification. The runtime and legal items
+    are gates before real adapters are enabled (provider-integrations.md §4).
+
+[x] 7. Choose public, open-source release.
+    Evidence: docs/product-brief.md §7.
+    Separate pending decision: which license. No LICENSE file exists yet; one is added only
+    after the user chooses.
+
+[x] 8. Define high-level structure: Windows/macOS desktop apps, local orchestration engine,
+    provider adapters, future iOS companion.
+    Evidence: docs/architecture.md §1. Stack chosen 2026-11-16: Electron + TypeScript + React
+    (docs/architecture.md §3).
+
+[~] 9. Prepare repository documentation, choose the technical stack, and establish the
+    development foundation.
+    Stack chosen by the user on 2026-11-16: Electron + TypeScript + React
+    (docs/architecture.md §3).
+    Foundation established: npm workspaces (packages/contracts, packages/provider-fake,
+          packages/engine, apps/desktop), ESLint, TypeScript, Vitest, secure Electron shell,
+          electron-builder config, CI workflow (docs/architecture.md §8).
+    Verified locally on Windows (runtime, 2026-11-16, Node 24.14.1):
+          - npm ci: exit 0;
+          - npm run check: exit 0 (lint, typecheck, 22 unit tests in 3 files);
+          - npm run smoke: exit 0. The 5 runtime checks include process.sandboxed and
+            process.contextIsolated reported from the preload. The verdict and 20 s watchdog
+            exist before asynchronous startup;
+          - npm run smoke:failures: 20/20 cases as expected. The unmodified copy passes; 19
+            controlled breakages each exit exactly 1 with one SMOKE FAILED, caught by an
+            expected handler. These include whenReady rejection or never-ready, permission
+            setup, BrowserWindow construction, and uncaught or unhandled startup errors. 11 of
+            12 handlers are exercised; "unresponsive" is not;
+          - package, and smoke of the packaged app: exit 0;
+          - engine-strict rejects a non-matching Node version (probe, earlier round).
+          Details: docs/architecture.md §8.
+    CI (reported by the user on 2026-11-16, not observed by Claude): both jobs of the CI run
+          for fbf8dd3 passed — windows-latest and macos-latest. That run covers lint,
+          typecheck, tests, smoke, and the smoke failure cases, including the macOS install
+          and smoke. fbf8dd3 contains all current code.
+    Not yet done:
+          - the reviewer has not confirmed the CI result or accepted item 9;
+          - nothing has been run on a physical Mac (not required for this gate).
+          Stays [~] pending independent inspection of the CI evidence for fbf8dd3 by the
+          reviewer. A user report alone does not close this item. See G9.4.
+
+[~] 10. Write testable acceptance criteria for the first complete workflow.
+    Evidence: docs/acceptance-criteria.md (revision 5).
+          - AC-01 to AC-22, with fixtures for routing (T1-T9), process ownership (fake-cli
+            cooperative / uncooperative / detached / parent-exits modes, injected crash points),
+            and attribution (P7/P8 pre-existing changes, concurrent and external writes);
+          - fixture, live, and eval test types;
+          - change attribution with serialized writers and baselines that retain bytes
+            (content-addressed store, integrity checks, fail-closed capture);
+          - five check outcomes (passed, failed, infrastructure error, interrupted, not run);
+          - AC-15 timing: up to 10 s graceful when clean interruption is supported; immediate
+            forced cleanup when it is unavailable (Claude on native Windows until its gate
+            passes); 13 s deadline in every path;
+          - AC-20 user-approved rebase;
+          - AC-22 "+" child agent: the agreed interaction, parent-to-child edge, and picker
+            that starts with role, provider, and model unselected (A8). Only remaining picker
+            details, such as what Cancel does, are still proposed.
+    These are specifications for future tests, not passing tests. The independent review
+    accepted the latest corrections (see REVIEW LOG). The item stays [~] because many criteria
+    implement Draft rules that are still pending the user's decision (see DECISIONS), and
+    change if the user picks alternatives.
+
+STATUS RULE
+
+Checked Stage 1 items are product decisions agreed in conversation, not existing
+implementations. Only mark remaining tasks complete when their deliverables and verification
+exist.
+
+REVIEW LOG
+
+2026-11-16 — Independent review of the final Stage 1 documentation corrections (commit d43a6d8):
+  - Accepted: the AC-18 baseline reconstruction correction (retained bytes, integrity checks,
+    fail-closed capture).
+  - Accepted: the AC-15 cancellation timing correction (up to 10 s graceful when clean
+    interruption is supported; immediate forced cleanup when it is unavailable; 13 s deadline).
+  - Accepted: the AC-22 split between agreed and proposed details.
+  - No further changes requested within this review's scope.
+  - Limits of the review:
+      - the reviewer read the current files but could not verify the commit diff (Git access
+        was denied in the reviewer's environment);
+      - no tests were re-run for this documentation-only review.
+  - This acceptance does not complete Stage 1. Items 6, 9, and 10 remain [~].
+  - Follow-up check: the reviewer confirmed this log entry and the regrouped decision list are
+    accurate; no corrections were needed.
+
+2026-11-16 — Independent review of the three documentation corrections (commit d28e707):
+  - Accepted: outage backoff timings labelled Draft (routing §2.6); priority-uniqueness
+    enforcement moved under Draft (routing §2.8); the stale picker-defaults statement removed
+    from item 10.
+  - No further corrections requested within that scope.
+  - Limits of the review:
+      - the reviewer inspected the current files because Git access was denied, so the commit
+        diff itself was not verified;
+      - no tests were re-run.
+  - This acceptance does not complete Stage 1. Items 6, 9, and 10 remain [~].
+
+ALREADY DECIDED (not to be asked again)
+
+  - Desktop stack: Electron + TypeScript + React (2026-11-16).
+  - Clicking "+" beside a node adds a child agent with the chosen role, provider, and model,
+    automatically connected from that node (2026-11-16).
+  - Among eligible agents with the same role, the highest-priority idle agent is selected
+    (2026-11-16).
+  - A1, correction returns: review findings go back to the authoring agent for fixes without a
+    drawn return edge (2026-11-16).
+  - A2, missing verification: the Manager asks first; if the user finishes without checking,
+    the work is reported as "Completed - unverified (user chose to skip verification)"
+    (2026-11-16).
+  - A3, adding an agent to a paused request: the user approves a change summary; the request
+    continues on the updated tree once none of its tasks are running; finished results are
+    kept and queued work is re-checked (2026-11-16).
+  - A4, tree edits during a request: the running request keeps the tree it started with; edits
+    apply to new requests only, or through the A3 approval (2026-11-16).
+  - A5, limits: defaults of 25 launches per request (retries and corrections count), 2
+    retries, 3 review rounds, 3 outage retries, 50 Manager turns; at the request limit,
+    running work finishes and queued work pauses (2026-11-16).
+  - A6, planning: when a Planner is connected, every building or debugging request goes to it
+    first; with no Planner, the Manager asks once whether to add one or proceed (2026-11-16).
+  - A7, same-role details (2026-11-16):
+      - priority always wins, even when the prompt names another agent (differs from the
+        earlier draft);
+      - an agent added with "+" gets the next free (lowest) priority in its role;
+      - when every eligible agent is busy, new work waits for the top-priority one, even if a
+        lower-priority agent becomes free sooner (differs from the earlier draft).
+  - A8, "+" picker: role, provider, and model start unselected; the agent can be added only
+    when all three are chosen (2026-11-16).
+
+DECISIONS NEEDED FROM THE USER
+
+A. Before Stage 2 (interface) implementation — these shape what the interface shows and asks.
+   Draft choices are in docs/tree-routing-and-permissions.md §2.12.
+   A1. (Decided 2026-11-16) Correction returns: yes, implicitly, without a drawn return edge.
+   A2. (Decided 2026-11-16) Missing verification: ask first.
+   A3. (Decided 2026-11-16) Adding an agent to a paused request: user-approved rebase once
+       nothing is running.
+   A4. (Decided 2026-11-16) Tree edits during a request: no effect; each request uses a
+       snapshot.
+   A5. (Decided 2026-11-16) Limits: 25 launches per request, including retries and
+       corrections; 2 retries; 3 review rounds; 3 outage retries; 50 Manager turns. At the
+       limit, running work finishes and queued work pauses.
+   A6. (Decided 2026-11-16) Planning: yes, plan first when a Planner is connected.
+   A7. (Decided 2026-11-16) Same-role details: priority wins over a named agent; "+" agents get
+       the lowest priority; when all are busy, wait for the top-priority agent.
+   A8. (Decided 2026-11-16) "+" picker: starts empty.
+
+   All Category A decisions are made. Small details still drafted, not blocking: the wait
+   times between outage retries (5 s / 20 s / 60 s); enforcing unique priorities within a role;
+   tie-breaking by creation order; showing each selection in the activity feed; what happens
+   if the top-priority agent becomes unavailable while work waits for it; what Cancel does in
+   the "+" picker.
+
+B. Before orchestration work (a later stage) — not needed for the interface.
+   B1. Process recovery after a crash: terminate leftover processes that can be positively
+       identified automatically, or ask first? (Draft: automatically, and report it.)
+       Processes of unknown ownership always block resume until the user decides.
+   B2. Processes left behind by a finished task: terminate the tracked ones? (Draft: yes.)
+   B3. Writer isolation: one writing task per project at a time, or a separate workspace per
+       writing task? (Draft: one at a time.)
+
+C. Before a public release — not blocking interface work.
+   C1. License: MIT or Apache-2.0 (or another)? No LICENSE file is added until chosen.
+
+REMAINING VERIFICATION GATES AND SMALLEST NEXT STEPS
+
+Where each step can happen:
+  [local]   possible on the current Windows machine, with no push and no provider account
+  [push]    needs the user's approval to push to GitHub
+  [account] needs the user's own provider account and explicit authorization (may use plan
+            allowance)
+  [mac]     needs a physical Mac (signing, notarization, Keychain, visual checks)
+  [macOS environment] needs any macOS environment where the CLIs can run
+  [user]    needs a decision or an action only the user can take
+
+Item 9 — development foundation. Gate: CI passes on the Windows and macOS runners, then review
+accepts.
+  Observed 2026-11-16: local Git records show main was pushed to origin through commit fbf8dd3
+  at 12:49:55 (+0100). Claude did not run that push. fbf8dd3 contains all current code (code
+  last changed in 4e812f3). Not pushed: d28e707 and later checklist edits, which are
+  documentation only. Claude could not observe the CI run directly: the repository's GitHub
+  pages return 404 when signed out (it appears to be private), the gh tool is not installed,
+  and a direct Git query to the remote waited for sign-in. The result below is as reported by
+  the user.
+  G9.1 [user]  DONE (user-reported, 2026-11-16): both jobs of the "CI" run for fbf8dd3 passed
+               on windows-latest and macos-latest. Claude has not seen the run itself.
+  G9.2 [user]  DONE (user-reported): macOS install and smoke are covered by the macos-latest
+               job of the same run.
+  G9.3         Not needed: no job failed.
+  G9.4 [user]  OPEN: independent inspection of the CI evidence for fbf8dd3 by the reviewer
+               (review of 1ff1db6: item 9 stays partial until then). Evidence to prepare:
+                 1. the run URL (the "CI" run for commit fbf8dd3 under the repository's
+                    Actions tab);
+                 2. if the reviewer cannot open the private repository: screenshots or the
+                    exported log archive (run page -> "Download log archive") showing BOTH
+                    jobs, "Check (windows-latest)" and "Check (macos-latest)", succeeded, and
+                    each job's steps: npm ci, npm run lint, npm run typecheck, npm test,
+                    npm run smoke, npm run smoke:failures.
+               Only the user can collect this: Claude cannot open the private repository
+               without the user's GitHub sign-in.
+  Not part of this gate (later): [mac] macOS code signing, notarization, Keychain, and visual
+  checks.
+
+Item 6 — provider verification. Gate: review accepts the documentation verification. The
+runtime and legal items below gate enabling real provider adapters, not the interface.
+  G6.1 [local] Explicit review verdict on docs/provider-integrations.md revision 3 as a whole.
+               Next step: ask the reviewer for that verdict.
+  G6.2 [local] Unread official documents. Next step: read the Anthropic Usage Policy, then the
+               OpenAI terms and the open-source Sign in with ChatGPT guide, and record
+               provider statements with dates. Reading costs nothing and runs no provider task.
+  G6.3 [local] Codex project-supplied configuration (provider-integrations §2.4). Next step:
+               read the official Codex configuration documentation and record what a
+               repository can supply and how to suppress it.
+  G6.4 [user]  Do the providers' terms cover WorkTreeAI's use pattern (§1.1, §2.2)? Next step:
+               the user decides whether to ask Anthropic and OpenAI; a draft question can be
+               prepared locally.
+  G6.5 [account] Runtime tests on Windows. AUTHORIZED by the user (2026-11-16): minimal
+               subscription-based integration tests, and the implementation they need, using
+               the supported official provider tools and the existing subscription allowance.
+               Do not ask again for tests within this authorization. Its limits:
+                 - at most 5 top-level model requests per provider;
+                 - no automatic retries and no subagent fan-out;
+                 - stop if the billing mode is ambiguous; never switch to API billing, buy
+                   credits, or enable overage;
+                 - kept separate from Stage 2 interface work.
+               Tests: Claude launch profile against the hostile fixture project (does the hook
+               run? what does system/init list?); model reported vs. requested; missing
+               credential behavior; clean interrupt on Windows; Codex app-server handshake,
+               approvals, and project config. Results: docs/provider-runtime-results.md.
+               Status 2026-11-16: Codex 3 of 5 requests used; Claude Code 3 of 5 used (the
+               user signed in through Claude Code's own login flow). The probes retried
+               nothing. Codex fan-out restrictions are unverified. All provider gates
+               remain partial. Results
+               await independent review.
+  G6.6 [macOS environment] The same adapter runtime tests in a macOS environment (SIGINT, OS
+               sandbox). A physical Mac is not required for CLI runtime tests; any macOS
+               environment where the CLIs can be installed and signed in will do. Next step:
+               none until such an environment is available.
+
+Item 10 — acceptance criteria. Gate: the criteria stop depending on undecided rules, then
+review accepts the document as a whole.
+  G10.1 [user]  Category B drafts still shape AC-15 and AC-18. Next step: the user answers B1
+                (crash recovery), B2 (leftover processes), and B3 (one writer at a time).
+  G10.2 [user]  Small drafted details. Next step: the user confirms or changes them in one
+                pass: outage backoff timings; unique priorities; tie-breaking; activity-feed
+                visibility; an unavailable top-priority agent; Cancel in the "+" picker.
+  G10.3 [local] Next step after G10.1 and G10.2: update the criteria, then ask the reviewer
+                for a verdict on docs/acceptance-criteria.md as a whole.
+  Not part of this gate: making the criteria pass. They are specifications for future stages.
+
+Before a public release (not a Stage 1 item): [user] choose the license (C1).
+
+STAGE 1 DELIVERABLES
+
+- docs/product-brief.md
+- docs/provider-integrations.md
+- docs/architecture.md
+- docs/tree-routing-and-permissions.md   (added after review)
+- docs/acceptance-criteria.md
+- README.md
+- This checklist, with evidence links
+- Appropriate repository setup and documented development prerequisites (done locally; CI
+  reported passing by the user; review acceptance pending)
