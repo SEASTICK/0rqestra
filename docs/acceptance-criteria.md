@@ -19,7 +19,8 @@ user chooses an alternative, those criteria change with it.
 **Test types**
 
 - **[fixture]** — headless, deterministic, against the fake provider or fake CLI below. No
-  account, no network, no cost. Must pass in CI on Windows and macOS once implemented.
+  account, no network, no cost. Must pass in CI on Windows and macOS once implemented. (macOS
+  verification is deferred by the user since 2026-11-17; the requirement is kept.)
 - **[live]** — against a real, user-installed CLI with the user's own account. Opt-in and manual,
   never in CI. A live pass shows technical behavior. It does **not** establish that a provider's
   terms permit it.

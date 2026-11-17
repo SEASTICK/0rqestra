@@ -10,23 +10,27 @@ coding agents against a local software project, through an editable visual tree.
   themselves. Initially these are OpenAI Codex and Anthropic's Claude Code.
 
 **Targets:** Windows PC and macOS as full desktop apps. An iOS companion is planned later, for
-monitoring and controlling a Windows or Mac runner.
+monitoring and controlling a Windows or Mac runner. Windows is the current development target;
+macOS verification is deferred (not passed, not dropped).
 
 **Execution:** provider tools and project operations run on the user's own machine. AI inference
 runs with the providers. Cloud execution is out of scope for the initial release.
 
 ## Project status
 
-**Stage 1 (product and foundation), revised after independent review.**
+**Stage 1 (product and foundation) is in progress, not complete.**
 
 - The desktop stack is chosen: **Electron + TypeScript + React**.
 - A development foundation exists: workspace, tooling, a secure Electron shell with a
-  placeholder page, a fake provider, and tests.
+  placeholder page, a fake provider, and tests. The user accepted it for the Windows-only scope
+  on 2026-11-17. macOS CI currently fails intermittently in one smoke failure case; macOS
+  verification is deferred.
+- A release pipeline and in-app updates exist (see `docs/release.md`).
 - No product features exist yet. The agreed Stage 2 is the interface. Orchestration and real
   provider adapters come in later stages.
-- No provider CLI has been run as part of this project.
-- Statements in `docs/` about providers are documentation research and proposals, not test
-  results.
+- Provider CLIs have been run only in limited Stage 1 probes on Windows (Claude Code and Codex,
+  3 model requests each). Results and limits: `docs/provider-runtime-results.md`. Other
+  statements about providers in `docs/` are documentation research and proposals.
 
 See [`WorkTreeAI stages.txt`](WorkTreeAI%20stages.txt) for the checklist, the status of each
 item, and the decisions needed to close Stage 1.
@@ -44,7 +48,7 @@ Stage 2 does not start until Stage 1 is reviewed.
 - Releases are started by hand under **Actions → Publish 0rqestra release**: `test` first, then
   `stable`, which waits for an `approve` or `deny` comment. See [`docs/release.md`](docs/release.md).
 
-No release has been published yet; the links work after the first one.
+Release `v0.1.0` was published on 2026-11-16.
 
 ## Documentation
 
@@ -53,7 +57,7 @@ No release has been published yet; the links work after the first one.
 | [`docs/product-brief.md`](docs/product-brief.md) | Agreed product decisions: users, workflow, roles, node settings, routing rules, distribution |
 | [`docs/provider-integrations.md`](docs/provider-integrations.md) | Claude Code and Codex integration facts verified against official sources, with dates, plus open legal and runtime gates |
 | [`docs/architecture.md`](docs/architecture.md) | Agreed components; chosen stack (Electron + TypeScript + React); Electron security requirements; credential ownership; the development foundation and its verified checks |
-| [`docs/tree-routing-and-permissions.md`](docs/tree-routing-and-permissions.md) | Two confirmed requirements ("+" adds a connected child agent; highest-priority idle selection), plus draft proposals pending your decision: edge and provenance rules, correction loops, bounds, snapshots and rebase, permission layers, process ownership and recovery |
+| [`docs/tree-routing-and-permissions.md`](docs/tree-routing-and-permissions.md) | Agreed requirements ("+" adds a connected child agent; highest-priority idle selection; decisions A1–A8), plus draft proposals pending your decision: edge and provenance rules, correction loops, bounds, snapshots and rebase, permission layers, process ownership and recovery |
 | [`docs/release.md`](docs/release.md) | Release channels (`test`, `stable`), the approval step, one-time setup, and how the app updates itself |
 | [`docs/acceptance-criteria.md`](docs/acceptance-criteria.md) | Draft Given/When/Then specifications AC-01–AC-22 with deterministic fixtures (future tests, not passing tests) |
 

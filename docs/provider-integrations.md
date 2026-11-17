@@ -26,7 +26,9 @@ Every finding is in one of three kinds of block:
 | **WorkTreeAI decision** | An engineering or policy choice WorkTreeAI makes. It may be stricter than the provider requires. Proposals are labelled as such. |
 | **Unresolved** | Interpretation the sources don't settle, or behavior only a runtime test can confirm. Must not be relied on. |
 
-No provider CLI was run and no billable request was made for this document.
+No provider CLI was run and no billable request was made for this document itself. Limited
+runtime probes were run later (2026-11-16, Windows); their results are in
+[`provider-runtime-results.md`](provider-runtime-results.md), not here.
 
 ## Sources (all fetched directly on 2026-11-16)
 
@@ -226,8 +228,9 @@ Further caveats from A2 and A9:
 - managed-settings denies cannot be overridden by flags;
 - file-tool write blocking does not cover shell commands.
 
-**WorkTreeAI proposals — two separate launch profiles.** Neither has been run, and the combined
-behavior of the flags in each is untested.
+**WorkTreeAI proposals — two separate launch profiles.** When this section was written, neither
+had been run. Profile A was later probed on Windows with Claude Code 2.1.325 (see
+[`provider-runtime-results.md`](provider-runtime-results.md)); Profile B has not been run.
 
 **Profile A — deny-all MCP (default for specialists).** No MCP server loads, and anything that
 would prompt is denied.

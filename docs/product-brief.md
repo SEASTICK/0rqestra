@@ -144,6 +144,8 @@ file exists until the user chooses.
 - WorkTreeAI ships as a **Windows PC app and a macOS app** (both full desktop targets from the
   start), plus a **future iOS companion** for monitoring/controlling a connected desktop
   runner. It is not a Mac-only or Windows-only product.
+- **Agreed 2026-11-17:** Windows is the current development target. macOS verification is
+  deferred: not passed, and macOS is not removed as a target.
 - The system is composed of: a **desktop UI**, a **local orchestration engine** (runs on the
   user's machine, drives the tree, routes work), **provider adapters** (one per supported CLI
   tool, e.g. Codex CLI, Claude Code CLI), and, later, an **iOS companion** that talks to a

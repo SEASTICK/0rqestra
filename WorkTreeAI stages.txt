@@ -4,6 +4,12 @@ in conversation — this is the corrected, final version: Windows PC and macOS a
 desktop targets from the start, with an iOS companion planned later for monitoring/controlling
 a connected desktop runner.)
 
+Project renamed 0rqestra on 2026-11-16 (repository SEASTICK/0rqestra). This file keeps its old
+name on purpose.
+
+Platform scope (user decision, 2026-11-17): Windows is the current development target. macOS
+remains a product target, but macOS verification is DEFERRED: not passed, and not removed.
+
 PRODUCT
 
 WorkTreeAI is a public, open-source desktop application for Windows PC and macOS, with an iOS
@@ -77,14 +83,23 @@ Status legend:
        with deliverables and verification in place.
   [~]  Deliverable drafted; awaiting independent review and/or listed follow-ups.
   [ ]  Open.
+  Item 9 is [x] for the Windows-only scope, accepted by the user; its macOS part is deferred
+  (see item 9).
+
+Status words used below:
+  Agreed      = the user decided it. A requirement, not an implementation.
+  Implemented = code exists in the repository.
+  Verified    = behavior observed by running it (who ran it, where, and when is stated).
+  Deferred    = deliberately postponed by the user; neither passed nor dropped.
+  Draft       = proposed, waiting for the user's decision.
 
 Verification types used below:
   Documentation verification = claims checked against official sources, with URLs and dates.
-  Runtime testing            = behavior observed by actually running software. Performed so far,
-                               on Windows only:
-                               - the development foundation (item 9). CI on Windows and macOS
-                                 runners passed for fbf8dd3 as reported by the user; Claude
-                                 did not observe the run;
+  Runtime testing            = behavior observed by actually running software. Performed so far
+                               on Windows (locally), plus GitHub Actions CI runs on
+                               windows-latest and macos-latest runners:
+                               - the development foundation (item 9). See item 9 for the CI
+                                 history, including the known macOS failures;
                                - first provider probes (item 6): Claude Code 2.1.325 and Codex
                                  CLI 0.166.0-alpha.5.1, the builds bundled with the desktop
                                  apps, 3 model requests each. These are partial observations
@@ -162,7 +177,7 @@ Verification types used below:
     Not done:
           - the remaining runtime gates listed in provider-runtime-results.md §5 (user-level
             provider configuration, interrupt during a running command, Profile B, expired
-            credentials, standalone installs, macOS);
+            credentials, standalone installs; macOS is deferred by the user);
           - independent review of these runtime results;
           - Codex project-config suppression (§2.4);
           - reading the Anthropic Usage Policy, OpenAI terms, and the open-source Sign in with
@@ -181,14 +196,23 @@ Verification types used below:
     Evidence: docs/architecture.md §1. Stack chosen 2026-11-16: Electron + TypeScript + React
     (docs/architecture.md §3).
 
-[~] 9. Prepare repository documentation, choose the technical stack, and establish the
+[x] 9. Prepare repository documentation, choose the technical stack, and establish the
     development foundation.
-    Stack chosen by the user on 2026-11-16: Electron + TypeScript + React
+    ACCEPTED BY THE USER FOR THE WINDOWS-ONLY SCOPE (2026-11-17). macOS verification is
+    explicitly DEFERRED: not passed, not removed. This acceptance is the user's decision; it is
+    not an independent review verdict on the CI evidence (former gate G9.4 is closed by that
+    decision, not by inspection).
+    Agreed: stack Electron + TypeScript + React, chosen by the user on 2026-11-16
     (docs/architecture.md §3).
-    Foundation established: npm workspaces (packages/contracts, packages/provider-fake,
+    Implemented: npm workspaces (packages/contracts, packages/provider-fake,
           packages/engine, apps/desktop), ESLint, TypeScript, Vitest, secure Electron shell,
-          electron-builder config, CI workflow (docs/architecture.md §8).
-    Verified locally on Windows (runtime, 2026-11-16, Node 24.14.1):
+          electron-builder config, CI workflow (docs/architecture.md §8). Added later by other
+          contributors after the move to 0rqestra: a release workflow, in-app updates with
+          signature checks, and downloadable builds (docs/release.md). Those are outside the
+          scope of this item and were not reviewed as part of it.
+    Verified locally on Windows, latest run (2026-11-17, Node 24.14.1, commit 83f8a88):
+          - npm run check: exit 0 (lint, typecheck, 103 tests in 9 files).
+    Verified locally on Windows, historical (runtime, 2026-11-16, Node 24.14.1):
           - npm ci: exit 0;
           - npm run check: exit 0 (lint, typecheck, 22 unit tests in 3 files);
           - npm run smoke: exit 0. The 5 runtime checks include process.sandboxed and
@@ -202,15 +226,27 @@ Verification types used below:
           - package, and smoke of the packaged app: exit 0;
           - engine-strict rejects a non-matching Node version (probe, earlier round).
           Details: docs/architecture.md §8.
-    CI (reported by the user on 2026-11-16, not observed by Claude): both jobs of the CI run
-          for fbf8dd3 passed — windows-latest and macos-latest. That run covers lint,
-          typecheck, tests, smoke, and the smoke failure cases, including the macOS install
-          and smoke. fbf8dd3 contains all current code.
-    Not yet done:
-          - the reviewer has not confirmed the CI result or accepted item 9;
-          - nothing has been run on a physical Mac (not required for this gate).
-          Stays [~] pending independent inspection of the CI evidence for fbf8dd3 by the
-          reviewer. A user report alone does not close this item. See G9.4.
+    CI, old repository (reported by the user on 2026-11-16, not observed by Claude): both jobs
+          of the CI run for fbf8dd3 passed, windows-latest and macos-latest.
+    CI, new repository SEASTICK/0rqestra (observed by Claude through the GitHub CLI on
+          2026-11-17; 12 "CI" runs from be12f67 to 83f8a88):
+          - both jobs passed for be12f67, 97a88ef, 895d808, 7371844, b57f908, f95ee9c;
+          - KNOWN macOS FAILURE: the macos-latest job failed for 36ee43c, 06faa18, 7752279 and
+            83f8a88 (latest). Each time, the failing step was npm run smoke:failures, case
+            "navigation guard removed": with the guard removed, the smoke exited 0 instead of
+            failing closed (expected handler did-fail-load or check). The same case passed on
+            macOS in the other runs, so it is intermittent. Not investigated or fixed;
+          - KNOWN Windows FAILURE (intermittent): the windows-latest job failed for f877f7d,
+            5da0a98 and 36ee43c, case "BrowserWindow construction throws": the process
+            crashed with exit code 3221225477 (0xC0000005, access violation) instead of
+            exiting 1. The windows-latest job passed in the 6 runs since, through 83f8a88;
+          - CI has not been changed to hide either failure.
+    Deferred (user decision, 2026-11-17):
+          - macOS verification: fixing or explaining the macOS "navigation guard removed"
+            failure, a passing macOS CI job, and anything on a physical Mac.
+    Not done and not covered by the acceptance:
+          - root cause of the intermittent Windows crash in the failure-case verifier;
+          - the "unresponsive" handler is still not exercised.
 
 [~] 10. Write testable acceptance criteria for the first complete workflow.
     Evidence: docs/acceptance-criteria.md (revision 5).
@@ -267,8 +303,17 @@ REVIEW LOG
       - no tests were re-run.
   - This acceptance does not complete Stage 1. Items 6, 9, and 10 remain [~].
 
+2026-11-17 — User decision (not an independent review):
+  - Move on from item 9: accepted for the Windows-only scope. macOS verification is deferred,
+    not passed and not removed. The known macOS CI failure is recorded under item 9.
+  - Items 6 and 10 remain [~]. Stage 1 as a whole is not complete.
+
 ALREADY DECIDED (not to be asked again)
 
+  - Platform scope: Windows is the current development target; macOS verification is
+    deferred, not passed or removed (2026-11-17).
+  - Item 9 accepted for the Windows-only scope (2026-11-17).
+  - Public, open-source release (license still open, see C1).
   - Desktop stack: Electron + TypeScript + React (2026-11-16).
   - Clicking "+" beside a node adds a child agent with the chosen role, provider, and model,
     automatically connected from that node (2026-11-16).
@@ -344,33 +389,20 @@ Where each step can happen:
   [macOS environment] needs any macOS environment where the CLIs can run
   [user]    needs a decision or an action only the user can take
 
-Item 9 — development foundation. Gate: CI passes on the Windows and macOS runners, then review
-accepts.
-  Observed 2026-11-16: local Git records show main was pushed to origin through commit fbf8dd3
-  at 12:49:55 (+0100). Claude did not run that push. fbf8dd3 contains all current code (code
-  last changed in 4e812f3). Not pushed: d28e707 and later checklist edits, which are
-  documentation only. Claude could not observe the CI run directly: the repository's GitHub
-  pages return 404 when signed out (it appears to be private), the gh tool is not installed,
-  and a direct Git query to the remote waited for sign-in. The result below is as reported by
-  the user.
-  G9.1 [user]  DONE (user-reported, 2026-11-16): both jobs of the "CI" run for fbf8dd3 passed
-               on windows-latest and macos-latest. Claude has not seen the run itself.
-  G9.2 [user]  DONE (user-reported): macOS install and smoke are covered by the macos-latest
-               job of the same run.
-  G9.3         Not needed: no job failed.
-  G9.4 [user]  OPEN: independent inspection of the CI evidence for fbf8dd3 by the reviewer
-               (review of 1ff1db6: item 9 stays partial until then). Evidence to prepare:
-                 1. the run URL (the "CI" run for commit fbf8dd3 under the repository's
-                    Actions tab);
-                 2. if the reviewer cannot open the private repository: screenshots or the
-                    exported log archive (run page -> "Download log archive") showing BOTH
-                    jobs, "Check (windows-latest)" and "Check (macos-latest)", succeeded, and
-                    each job's steps: npm ci, npm run lint, npm run typecheck, npm test,
-                    npm run smoke, npm run smoke:failures.
-               Only the user can collect this: Claude cannot open the private repository
-               without the user's GitHub sign-in.
-  Not part of this gate (later): [mac] macOS code signing, notarization, Keychain, and visual
-  checks.
+Item 9 — development foundation. CLOSED for the Windows-only scope by the user's decision on
+2026-11-17. History kept below.
+  G9.1 [user]  DONE (user-reported, 2026-11-16, old repository): both jobs of the "CI" run for
+               fbf8dd3 passed on windows-latest and macos-latest. Claude did not see that run.
+  G9.2         Superseded. The macos-latest job has since failed intermittently in the new
+               repository (see item 9). macOS verification is DEFERRED by the user.
+  G9.3         Superseded by the CI history recorded under item 9.
+  G9.4         Closed by the user's decision to move on (2026-11-17), not by reviewer
+               inspection of the CI evidence.
+  DEFERRED (macOS, by user decision): a reliably passing macos-latest job, including the
+  "navigation guard removed" smoke failure case; [mac] code signing, notarization, Keychain,
+  and visual checks.
+  Not deferred, still open: the intermittent Windows crash in "BrowserWindow construction
+  throws" (see item 9).
 
 Item 6 — provider verification. Gate: review accepts the documentation verification. The
 runtime and legal items below gate enabling real provider adapters, not the interface.
@@ -404,9 +436,9 @@ runtime and legal items below gate enabling real provider adapters, not the inte
                remain partial. Results
                await independent review.
   G6.6 [macOS environment] The same adapter runtime tests in a macOS environment (SIGINT, OS
-               sandbox). A physical Mac is not required for CLI runtime tests; any macOS
-               environment where the CLIs can be installed and signed in will do. Next step:
-               none until such an environment is available.
+               sandbox). DEFERRED with all macOS verification (user decision, 2026-11-17).
+               A physical Mac is not required for CLI runtime tests; any macOS environment
+               where the CLIs can be installed and signed in will do.
 
 Item 10 — acceptance criteria. Gate: the criteria stop depending on undecided rules, then
 review accepts the document as a whole.
@@ -430,5 +462,7 @@ STAGE 1 DELIVERABLES
 - docs/acceptance-criteria.md
 - README.md
 - This checklist, with evidence links
-- Appropriate repository setup and documented development prerequisites (done locally; CI
-  reported passing by the user; review acceptance pending)
+- Appropriate repository setup and documented development prerequisites (accepted by the user
+  for the Windows-only scope on 2026-11-17; macOS verification deferred)
+
+STAGE 1 IS NOT COMPLETE. Items 6 and 10 remain [~].

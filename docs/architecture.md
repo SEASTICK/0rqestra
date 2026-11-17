@@ -312,13 +312,33 @@ as `%7E`; Chromium does not. URLs are now compared as decoded file paths.
 | Smoke failure cases | `npm run smoke:failures -w @worktreeai/desktop` | exit 0; 20/20 as expected (1 pass, 19 fail-closed with exit 1); 11/12 handlers exercised |
 | Package | `npm run package -w @worktreeai/desktop` | exit 0; unsigned `win-unpacked`, default icon |
 | Smoke (packaged app) | `release/win-unpacked/WorkTreeAI.exe --smoke` | exit 0; `SMOKE PASSED` |
-| CI on Windows and macOS runners | GitHub Actions run for `fbf8dd3` | **Passed on both runners, as reported by the user on 2026-11-16.** Not observed by Claude (the repository appears private) and not yet confirmed by the reviewer |
+| CI on Windows and macOS runners | GitHub Actions run for `fbf8dd3` (old repository) | **Passed on both runners, as reported by the user on 2026-11-16.** Not observed by Claude |
 | macOS install and smoke | Same run, `macos-latest` job | **Passed, as reported by the user.** Not run on a physical Mac |
+
+The table above is a historical record from the old repository. Its commands used the old
+workspace name; the current one is `@0rqestra/desktop`.
+
+**CI history in SEASTICK/0rqestra (observed by Claude through the GitHub CLI, 2026-11-17)**
+
+| Commits | Result |
+|---|---|
+| `be12f67`, `97a88ef`, `895d808`, `7371844`, `b57f908`, `f95ee9c` | Both jobs passed |
+| `f877f7d`, `5da0a98` | `windows-latest` failed: smoke failure case "BrowserWindow construction throws" crashed with exit code 3221225477 (0xC0000005) instead of exiting 1 |
+| `36ee43c` | Both failed: the Windows crash above, and the macOS case below |
+| `06faa18`, `7752279`, `83f8a88` | `macos-latest` failed: smoke failure case "navigation guard removed" exited 0 instead of failing closed (`did-fail-load` or `check` expected) |
+
+Both failures are intermittent (the same cases pass in other runs) and are not yet explained.
+CI was not changed to hide them. The user accepted item 9 for the Windows-only scope on
+2026-11-17 and **deferred** macOS verification: it is neither passed nor dropped.
+
+**Latest local run (2026-11-17, Windows 11, Node 24.14.1, commit `83f8a88`):** `npm run check`
+exit 0, 103 tests in 9 files (including tests added later for the release tools and in-app
+updates).
 
 **Later addition.** Offline tests for the provider probe runners were added under
 `tools/provider-probes/`. `npm run check` now runs 60 tests in 4 files (22 foundation tests plus
-38 probe-runner tests against fake processes). They passed locally on Windows; they have not run
-in CI.
+38 probe-runner tests against fake processes). They passed locally on Windows. They have since
+run in CI as part of `npm test` in the new repository.
 
 No environment failures occurred in this run. One permission-classifier timeout in the assistant
 tooling delayed a command; it was retried unchanged and is unrelated to the application.
