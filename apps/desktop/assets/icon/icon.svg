@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- 0rqestra app icon, master (64 px and up). Recreated from the approved reference: a diagonal
+       graphite conductor baton and three teal dots connected as a branching tree, on an ivory
+       rounded-square tile. Transparent outside the tile; no external shadow. -->
+  <title>0rqestra</title>
+  <rect x="40" y="40" width="944" height="944" rx="210" fill="#FBF7F0"/>
+  <rect x="42" y="42" width="940" height="940" rx="208" fill="none" stroke="#E7DFD2" stroke-width="4"/>
+  <g fill="none" stroke="#569E85" stroke-width="12" stroke-linecap="round">
+    <path d="M391.4 288.6 L580.2 307.5 L704 246.7"/>
+    <path d="M580.2 307.5 Q482.5 391.4 312.7 489"/>
+  </g>
+  <g fill="#569E85">
+    <circle cx="391.4" cy="288.6" r="55.6"/>
+    <circle cx="704" cy="246.7" r="60.8"/>
+    <circle cx="312.7" cy="489" r="57.7"/>
+  </g>
+  <path fill="#343434" d="M 231.2 855.8 L 859.8 369.5 A 8 8 0 0 0 850.4 356.7 L 199.2 812.4 A 27 27 0 0 0 231.2 855.8 Z"/>
+</svg>

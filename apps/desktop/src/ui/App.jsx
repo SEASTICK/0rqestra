@@ -34,6 +34,24 @@ const ICONS = {
   panel: <><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M16 3v18"/></>,
   sun: <><circle cx="12" cy="12" r="4"/><path d="M12 1v2m0 18v2M1 12h2m18 0h2M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"/></>,
 };
+// The 0rqestra app mark. Same drawings as assets/icon/icon.svg (master, used above 48 px) and
+// icon-small.svg (heavier, used at 48 px and below), so the in-app logo matches the app icon.
+function AppMark({size=32}) {
+  const small=size<=48;
+  return <svg width={size} height={size} viewBox="0 0 1024 1024" role="img" aria-label="0rqestra">{small?<>
+    <rect x="8" y="8" width="1008" height="1008" rx="232" fill="#FBF7F0"/>
+    <rect x="16" y="16" width="992" height="992" rx="224" fill="none" stroke="#D9CFBF" strokeWidth="16"/>
+    <g fill="none" stroke="#3F8A70" strokeWidth="44" strokeLinecap="round" strokeLinejoin="round"><path d="M372 276 L578 300 L712 236"/><path d="M578 300 Q480 392 296 500"/></g>
+    <g fill="#3F8A70"><circle cx="372" cy="276" r="82"/><circle cx="712" cy="236" r="88"/><circle cx="296" cy="500" r="84"/></g>
+    <path fill="#2B2B2B" d="M 260.4 872.7 L 862.6 392.6 A 28 28 0 0 0 829.4 347.4 L 191.6 779.3 A 58 58 0 0 0 260.4 872.7 Z"/>
+  </>:<>
+    <rect x="40" y="40" width="944" height="944" rx="210" fill="#FBF7F0"/>
+    <rect x="42" y="42" width="940" height="940" rx="208" fill="none" stroke="#E7DFD2" strokeWidth="4"/>
+    <g fill="none" stroke="#569E85" strokeWidth="12" strokeLinecap="round"><path d="M391.4 288.6 L580.2 307.5 L704 246.7"/><path d="M580.2 307.5 Q482.5 391.4 312.7 489"/></g>
+    <g fill="#569E85"><circle cx="391.4" cy="288.6" r="55.6"/><circle cx="704" cy="246.7" r="60.8"/><circle cx="312.7" cy="489" r="57.7"/></g>
+    <path fill="#343434" d="M 231.2 855.8 L 859.8 369.5 A 8 8 0 0 0 850.4 356.7 L 199.2 812.4 A 27 27 0 0 0 231.2 855.8 Z"/>
+  </>}</svg>;
+}
 function Icon({name, size=18, ...rest}) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...rest}>{ICONS[name] || ICONS.spark}</svg>; }
 const ROLES = AGREED_ROLES;
 const MODELS = { OpenAI:['Codex (demo)','GPT (demo)'], Anthropic:['Claude (demo)'], Google:['Gemini (demo)'], xAI:['Grok (demo)'] };
@@ -140,7 +158,7 @@ function App() {
   }
   return <div className="application">
     <header className="titlebar">
-      <div className="brand"><span className="brand-mark"><Icon name="tree" size={21}/></span><span>WorkTree<span className="brand-ai">AI</span></span><span className="title-divider"/><span className="breadcrumb">Personal workspace <Icon name="chevron" size={12}/> <strong>{project.name}</strong></span></div>
+      <div className="brand"><span className="brand-mark brand-mark-app"><AppMark size={32}/></span><span>WorkTree<span className="brand-ai">AI</span></span><span className="title-divider"/><span className="breadcrumb">Personal workspace <Icon name="chevron" size={12}/> <strong>{project.name}</strong></span></div>
       <div className="title-actions"><span className="preview-badge"><span/> UI preview</span><button className="icon-button" onClick={()=>setNavOpen(!navOpen)} title={navOpen?'Hide navigation':'Show navigation'} aria-label={navOpen?'Hide navigation':'Show navigation'}><Icon name="panel"/></button></div>
     </header>
     <div className="workspace">
@@ -150,7 +168,7 @@ function App() {
           {view!=='tree'&&<section className="chat-panel" aria-label="Manager chat">
             <div className="panel-header"><div className="panel-heading"><span className="mini-avatar green"><Icon name="tree" size={17}/></span><div><strong>Manager</strong><span>Your point of contact</span></div></div><button className="icon-button" title="Expand chat" aria-label="Expand chat" onClick={()=>setView('chat')}><Icon name="expand" size={15}/></button></div>
             <div className="chat-scroll">
-              {project.messages.length===0?<div className="welcome"><div className="welcome-symbol"><Icon name="tree" size={30}/><span className="tiny-spark"><Icon name="spark" size={12}/></span></div><div className="eyebrow welcome-eyebrow">ONE CONVERSATION. A WHOLE TEAM.</div><h2>Big ideas.<br/><span>A clear way forward.</span></h2><p>Give your project a direction.<br/>Your Manager brings the right agents together.</p><div className="welcome-team"><div className="avatar-stack">{graph.nodes.slice(0,4).map(n=><span key={n.id} className={`mini-avatar ${ROLE_COLOR[n.role]}`}><Icon name={ROLE_ICON[n.role]} size={14}/></span>)}</div><span>{graph.nodes.length} agents in your worktree</span></div><button className="welcome-tree-link" onClick={()=>setView('split')}>Shape your team <Icon name="chevron" size={13}/></button><div className="suggestions"><button onClick={()=>setInput('Help me plan the first version of my app.')}><Icon name="spark"/><span>Start with an idea<small>Turn a thought into a plan</small></span><Icon name="plus" size={15}/></button><button onClick={()=>setView('split')}><Icon name="tree"/><span>Build your worktree<small>Choose who works on what</small></span><Icon name="chevron" size={15}/></button></div></div>:<div className="messages">{project.messages.map(m=><div className={`message message-${m.kind}`} key={m.id}>{m.kind==='manager'&&<div className="message-author"><span className="mini-avatar green"><Icon name="tree" size={14}/></span>Manager<span>Preview response</span></div>}<div className="message-body">{m.text}</div></div>)}<div ref={chatEnd}/></div>}
+              {project.messages.length===0?<div className="welcome"><div className="welcome-symbol welcome-symbol-app"><AppMark size={68}/><span className="tiny-spark"><Icon name="spark" size={12}/></span></div><div className="eyebrow welcome-eyebrow">ONE CONVERSATION. A WHOLE TEAM.</div><h2>Big ideas.<br/><span>A clear way forward.</span></h2><p>Give your project a direction.<br/>Your Manager brings the right agents together.</p><div className="welcome-team"><div className="avatar-stack">{graph.nodes.slice(0,4).map(n=><span key={n.id} className={`mini-avatar ${ROLE_COLOR[n.role]}`}><Icon name={ROLE_ICON[n.role]} size={14}/></span>)}</div><span>{graph.nodes.length} agents in your worktree</span></div><button className="welcome-tree-link" onClick={()=>setView('split')}>Shape your team <Icon name="chevron" size={13}/></button><div className="suggestions"><button onClick={()=>setInput('Help me plan the first version of my app.')}><Icon name="spark"/><span>Start with an idea<small>Turn a thought into a plan</small></span><Icon name="plus" size={15}/></button><button onClick={()=>setView('split')}><Icon name="tree"/><span>Build your worktree<small>Choose who works on what</small></span><Icon name="chevron" size={15}/></button></div></div>:<div className="messages">{project.messages.map(m=><div className={`message message-${m.kind}`} key={m.id}>{m.kind==='manager'&&<div className="message-author"><span className="mini-avatar green"><Icon name="tree" size={14}/></span>Manager<span>Preview response</span></div>}<div className="message-body">{m.text}</div></div>)}<div ref={chatEnd}/></div>}
             </div>
             <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><textarea aria-label="Message your Manager" placeholder="Tell your Manager what you want to build…" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(e);}}} rows={2}/><div className="composer-footer"><span className="composer-model"><Icon name="tree" size={13}/> Manager <span>·</span> Demo mode</span><button className="send-button" type="submit" disabled={!input.trim()} title="Send preview message" aria-label="Send preview message"><Icon name="arrow" size={17}/></button></div></form><p className="composer-note">Interface preview · Messages stay on this device · No model requests</p></div>
           </section>}

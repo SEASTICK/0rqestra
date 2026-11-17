@@ -60,4 +60,8 @@ const body = Object.entries(modules)
 const bundle = `/* 0rqestra interface. Third-party notices: THIRD-PARTY-LICENSE.txt */\n(()=>{'use strict';const modules={${body}};const cache={};const aliases=${JSON.stringify(aliases)};function require(name){if(name==='./app.css')return {};name=aliases[name]||name;if(cache[name])return cache[name].exports;if(!modules[name])throw Error('Unknown module '+name);const m=cache[name]={exports:{}};modules[name](m,m.exports,require);return m.exports;}require('app');})();\n`;
 fs.writeFileSync(path.join(outdir, 'app.js'), bundle);
 fs.copyFileSync(path.join(vendor, 'THIRD-PARTY-LICENSE.txt'), path.join(outdir, 'THIRD-PARTY-LICENSE.txt'));
+// App icon for the window (dist/icon.ico on Windows, dist/icon.png elsewhere) and the page favicon.
+const iconDir = path.join(root, 'assets', 'icon');
+for (const file of ['icon.ico', 'icon.png']) fs.copyFileSync(path.join(iconDir, file), path.join(root, 'dist', file));
+fs.copyFileSync(path.join(iconDir, 'png', 'icon-32.png'), path.join(outdir, 'favicon.png'));
 console.log('Built the 0rqestra interface offline (no provider code; simulated activity only).');

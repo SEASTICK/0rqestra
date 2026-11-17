@@ -31,6 +31,13 @@ describe("Electron renderer security settings", () => {
     });
   });
 
+  it("sets the app icon only when a path is given, without touching web preferences", () => {
+    const withIcon = mainWindowOptions("/p.js", false, "/app/dist/icon.ico");
+    expect(withIcon.icon).toBe("/app/dist/icon.ico");
+    expect(withIcon.webPreferences).toEqual(mainWindowOptions("/p.js").webPreferences);
+    expect("icon" in mainWindowOptions("/p.js")).toBe(false);
+  });
+
   it("applies exactly the required settings to the normal window", () => {
     expect(prefs).toEqual({ ...SECURE_WEB_PREFERENCES, preload: "/app/dist/preload/preload.js" });
   });

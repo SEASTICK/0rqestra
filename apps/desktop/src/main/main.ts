@@ -24,6 +24,8 @@ if (smoke) installProcessFailureHandlers(smoke);
 const rendererFile = path.join(__dirname, "..", "renderer", "index.html");
 const rendererUrl = pathToFileURL(rendererFile).href;
 const preloadFile = path.join(__dirname, "..", "preload", "preload.js");
+// Copied next to the renderer by scripts/build-ui.mjs from assets/icon/.
+const iconFile = path.join(__dirname, "..", process.platform === "win32" ? "icon.ico" : "icon.png");
 const caseInsensitivePaths = process.platform === "win32";
 const isRendererUrl = (url: string | undefined) => isSameFileUrl(url, rendererUrl, caseInsensitivePaths);
 
@@ -88,7 +90,7 @@ function createMainWindow(): void {
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
 
-  const window = new BrowserWindow(mainWindowOptions(preloadFile, smoke !== null));
+  const window = new BrowserWindow(mainWindowOptions(preloadFile, smoke !== null, iconFile));
   mainWindow = window;
 
   if (smoke) {

@@ -15,12 +15,13 @@ export const SECURE_WEB_PREFERENCES = {
 
 export const SMOKE_RENDERER_FLAG = "--worktreeai-smoke";
 
-export function mainWindowOptions(preloadPath: string, smokeMode = false): BrowserWindowConstructorOptions {
+export function mainWindowOptions(preloadPath: string, smokeMode = false, iconPath?: string): BrowserWindowConstructorOptions {
   return {
     width: 1280,
     height: 800,
     show: false,
     title: "0rqestra",
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       ...SECURE_WEB_PREFERENCES,
       preload: preloadPath,
