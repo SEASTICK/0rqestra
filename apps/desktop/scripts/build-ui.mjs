@@ -49,13 +49,23 @@ modules.demo = compile('demo-run.mjs', plain);
 modules.camera = compile('camera.mjs', plain);
 modules.treeRules = compile('tree-rules.mjs', plain);
 modules.updateGate = compile('update-gate.mjs', plain);
+modules.storageKeys = compile('storage-keys.mjs', plain);
 modules.workflow = compile('task-workflow.mjs', plain);
 
 const aliases = {
   './SimulatedProviders.jsx': 'simulatedProviders', './UpdateDialog.jsx': 'updateUI', './TaskPanels.jsx': 'taskUI', './task-workflow.mjs': 'workflow',
-  './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './demo-run.mjs': 'demo', './allowance.mjs': 'allowance', 'react-dom/client': 'react-dom-client',
+  './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './storage-keys.mjs': 'storageKeys', './demo-run.mjs': 'demo', './allowance.mjs': 'allowance', 'react-dom/client': 'react-dom-client',
   'next/dist/compiled/react': 'react', 'next/dist/compiled/react-dom': 'react-dom', 'next/dist/compiled/scheduler': 'scheduler',
 };
+// Every local import must resolve inside the bundle. A missing entry above compiles fine but throws
+// "Unknown module" when the window starts, which shows as a blank window. Fail the build instead.
+const unresolved = [];
+for (const [key, code] of Object.entries(modules)) {
+  for (const [, , target] of code.matchAll(/require\((["'])(\.[^"']+)\1\)/g)) {
+    if (target !== './app.css' && !modules[aliases[target] ?? target]) unresolved.push(`${key} requires ${target}`);
+  }
+}
+if (unresolved.length) throw new Error(`The interface bundle is missing modules:\n  ${unresolved.join('\n  ')}\nAdd them to modules and aliases in scripts/build-ui.mjs.`);
 const body = Object.entries(modules)
   .map(([key, code]) => `${JSON.stringify(key)}:function(module,exports,require){\n${code}\n}`)
   .join(',\n');
