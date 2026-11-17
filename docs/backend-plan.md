@@ -85,6 +85,21 @@ D1 (TypeScript in this repo) followed from that. D2–D6 keep their defaults unt
   so a red check means something again. (Claude, S)
 - **Done when:** the decisions are written into `product-brief.md`, and CI is reliably green.
 
+**Status 2026-11-17: CI made stable (in review).** Over 56 recent CI jobs, about 13 failed without a
+code change: the `smoke:failures` step on both systems, a timing-dependent test in the old probe
+tooling on macOS, and a Windows test-cleanup error in the new provider tests. Causes and fixes:
+- The probe tooling's reader handled two lines from one chunk back to back, so under load an approval
+  request was seen before the answer to `turn/start` had set the turn id. Lines are now handled one at
+  a time. The tests that failed in CI now pass four times in a row with the CPU saturated.
+- Time limits were too tight for a busy machine (8 s to start Electron, 2 s for fake tools, 5 s per
+  test). Cases that must finish now get 30 s; only cases that are meant to hang keep a short limit.
+- `smoke:failures` runs a failing case one more time and says so (a warning annotation on the run, and
+  "Passed only on the second try" in the log); a case that fails twice is an error annotation with the
+  tool's last output, readable without signing in to GitHub.
+- The provider tests clean up their temporary folder after all tests, which Windows needs.
+Not verified: the Electron step itself could not be run here, only its logic with a stand-in. If a
+`smoke:failures` case still fails twice, the annotation now says which one and why.
+
 ### Phase 1 — A real chat through your own subscriptions (Claude, L)
 **Status 2026-11-17: built, not yet run against the real tools.** What exists:
 - Adapters in `apps/desktop/src/main/providers/` (in the app's main process rather than a

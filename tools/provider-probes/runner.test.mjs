@@ -210,8 +210,8 @@ describe("runSequence", () => {
 
 describe("Claude probe runner end to end (fake process)", () => {
   const runProbe = (modes) => claudeMain({
-    bin: node, prefixArgs: [fakeClaude, modes], configDir: path.join(outDir, "config"), timeoutMs: 5_000,
-    firstDeltaTimeoutMs: 2_000, log: quiet,
+    bin: node, prefixArgs: [fakeClaude, modes], configDir: path.join(outDir, "config"), timeoutMs: 20_000,
+    firstDeltaTimeoutMs: 15_000, log: quiet,
   });
 
   it("completes all three scenarios, classifying the interrupt as cancelled", async () => {
@@ -302,7 +302,9 @@ describe("Claude probe runner end to end (fake process)", () => {
 describe("Codex probe runner end to end (fake process)", () => {
   const runProbe = (modes, options = {}) => codexTurns({
     bin: node, prefixArgs: [fakeAppServer, modes, path.join(outDir, "threads-started")],
-    turnTimeoutMs: 2_000, approvalTimeoutMs: 2_000, unansweredWaitMs: 100, log: quiet, ...options,
+    // Upper bounds: a busy CI machine can take several seconds to start a process. Tests that expect a
+    // timeout pass their own short value.
+    turnTimeoutMs: 20_000, approvalTimeoutMs: 20_000, unansweredWaitMs: 100, log: quiet, ...options,
   });
 
   it("completes all three scenarios, classifying the interrupt as cancelled", async () => {

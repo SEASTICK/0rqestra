@@ -30,4 +30,4 @@ jobs:
       - run: npm run smoke
         timeout-minutes: 3
       - run: npm run smoke:failures -w @0rqestra/desktop
-        timeout-minutes: 8
+        timeout-minutes: 12

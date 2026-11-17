@@ -143,13 +143,18 @@ export class AppServer {
     this.child.stdin.on("error", () => {});
     this.child.stderr.on("data", (data) => { this.stderr = (this.stderr + data).slice(-2000); });
     let buffer = "";
+    // Lines are handled one at a time, with a turn of the event loop between them. When a busy machine
+    // delivers several lines in one chunk (for example the answer to turn/start and an approval request
+    // that follows it), the code waiting for the answer must get to run before the next line is handled.
+    // Otherwise the approval is seen before the turn id is known and cannot be matched to the turn.
+    let chain = Promise.resolve();
     this.child.stdout.on("data", (data) => {
       buffer += data;
       let index;
       while ((index = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, index).trim();
         buffer = buffer.slice(index + 1);
-        if (line) this.handle(line);
+        if (line) chain = chain.then(() => { this.handle(line); return new Promise((resolve) => setImmediate(resolve)); });
       }
     });
   }
