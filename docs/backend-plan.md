@@ -160,6 +160,11 @@ run yet; that is phase 3.
   model and effort chosen by hand.
 
 ### Phase 3 — The Manager and the team work together, locally (Claude, L)
+**Already built (2026-11-17): the Manager asks questions.** When a decision from the user would
+change what it does, the Manager ends its reply with one multiple-choice question (2–4 options and
+its own recommendation). The chat shows it as a card, as Lovable does: the Manager's pick is
+preselected, the user can write their own answer or skip, and the answer becomes the next message.
+Phase 3 uses the same question card when the plan needs a decision.
 The port of the Python engine's core, in TypeScript.
 - **Manager** asks clarifying questions or makes a **plan**: tasks, order, difficulty, and a
   cost cap. It never does specialist work itself.
@@ -193,6 +198,22 @@ The port of the Python engine's core, in TypeScript.
 - Measured on a fixed set of 10–20 test requests, compared with always using one strong model,
   for quality, usage, and time. If it does not win, we say so and keep it manual.
 - **Done when:** the evaluation exists and the result is written down, whichever way it goes.
+
+### Phase 5b — Products in the tree, with live previews (Claude, L; not a priority yet)
+The user's idea (2026-11-17), inspired by Lovable's preview window, but built for many products at once.
+- **A product is its own branch in the tree**: for example "Web app", "Landing page", "API". The agents
+  that work on it (design, code, test) are connected to that product node, so it is visible which
+  agents work on which product.
+- **Each product node opens a live preview** of what is being built, which updates while the agents
+  change it. In a big project several previews can be open side by side.
+- **The Manager creates product nodes** when a request means several products, and asks the user
+  (with a question card) when it is unclear how to split the work.
+- **Needs first:** phase 3 (agents that write files), and a sandbox for running what agents write
+  (phase 7), because a preview runs code that an agent wrote. The preview shows in its own isolated
+  view with no access to the app, the user's files outside the product's folder, or any keys, and it
+  can only load the product's own local address.
+- **Done when:** a request for a small web app shows a product node with a preview, and the preview
+  changes while a Builder agent works on it.
 
 ### Phase 6 — Supabase (Claude builds, Philip creates the project, L)
 - **Accounts** (sign-in), and the tables for projects, messages, runs, tasks, events, and agent

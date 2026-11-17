@@ -100,3 +100,41 @@ kbd{font:inherit;font-size:11px;padding:1px 6px;border-radius:5px;border:1px sol
 .update-intro-button{margin-top:8px;animation:boot-up .45s 1.1s ease-out both}
 @keyframes intro-draw{to{stroke-dashoffset:0}}
 @media (prefers-reduced-motion:reduce){.profile-menu,.shell-scrim,.settings-dialog,.help-dialog,.update-intro,.update-intro *{animation:none!important;transition:none!important}.update-intro-check circle,.update-intro-check path{stroke-dashoffset:0}}
+
+/* Crisp, not dimmed: white work surfaces, near-black text, and type large enough to read at a glance
+   (as in Claude, Codex and Lovable). Text colors in the other sheets were darkened by
+   tools/ui/raise-contrast.py; this layer sets surfaces and sizes. */
+:root{--shell-bg:light-dark(#ffffff,#212121);--shell-side:light-dark(#f9f9f9,#1a1a1a);--shell-text:light-dark(#141414,#f2f2f2);--shell-muted:light-dark(#5c5c5c,#b8b8b8);--shell-line:light-dark(#ebebeb,#333333);--shell-hover:light-dark(#efefef,#2c2c2c);--shell-active:light-dark(#e9e9e9,#303030)}
+html,body,.application>.titlebar,.workspace,.main-area{background:var(--shell-bg)}
+.application>.navigation{background:var(--shell-side)}
+.nav-brand{font-size:16px}
+.nav-item{font-size:13.5px;color:var(--shell-text);padding:9px 11px}
+.nav-item:hover{background:var(--shell-hover)}
+.nav-item-active{background:var(--shell-active);color:var(--shell-text);font-weight:600}
+.nav-section-label{font-size:11px;color:var(--shell-muted);letter-spacing:.8px}
+.project-button,.project-children button{font-size:13px;color:var(--shell-text)}
+.child-active{background:var(--shell-active);color:var(--shell-text);font-weight:600}
+.connection-card strong{font-size:12.5px;color:var(--shell-text)}
+.connection-card p,.connection-card button{font-size:12px;color:var(--shell-muted)}
+.breadcrumb{font-size:13.5px;color:var(--shell-muted)}
+.breadcrumb strong{color:var(--shell-text);font-weight:600}
+.preview-badge{font-size:11px;color:var(--shell-muted)}
+.eyebrow{font-size:10.5px;color:var(--shell-muted)}
+.project-header h1{font-size:26px;font-weight:650;color:var(--shell-text)}
+.chat-panel{box-shadow:none;border-color:var(--shell-line)}
+.panel-header{background:var(--shell-bg);border-bottom-color:var(--shell-line)}
+.panel-heading strong{font-size:14.5px;color:var(--shell-text)}
+.panel-heading span{font-size:12px;color:var(--shell-muted)}
+.message-author{font-size:13px;color:var(--shell-text);font-weight:600}
+.message-author>span:last-child{font-size:11.5px;color:var(--shell-muted);font-weight:400}
+.message-body{font-size:15px;line-height:1.65;color:var(--shell-text)}
+.message-user{font-size:15px;line-height:1.6;color:var(--shell-text);background:light-dark(#f3f3f3,#2e2e2e);border-color:transparent}
+.composer{border-color:light-dark(#dedede,#3a3a3a);box-shadow:0 2px 10px #0000000d}
+.composer textarea{font-size:15px;color:var(--shell-text)}
+.composer textarea::placeholder{color:light-dark(#8a8a8a,#8f8f8f)}
+.composer-note{font-size:11.5px;color:var(--shell-muted)}
+.chat-select{font-size:12.5px;color:var(--shell-text)}
+.live-note{font-size:12.5px;color:var(--shell-muted)}
+.button{color:var(--shell-text)}
+.profile-text strong{font-size:13px}
+.profile-text span{font-size:12px}

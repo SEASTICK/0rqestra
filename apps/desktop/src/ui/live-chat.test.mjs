@@ -104,3 +104,47 @@ describe('agents in the tree', () => {
     expect(isTerminal(undefined)).toBe(false);
   });
 });
+
+import { answerFor, parseQuestion, visibleText } from './live-chat.mjs';
+
+describe('questions from the Manager', () => {
+  const block = (json) => `Kul! Ett val först.\n<orqestra-question>\n${json}\n</orqestra-question>\n`;
+  const good = JSON.stringify({ question: 'Vad ska appen främst hjälpa dig med?', options: [
+    { label: 'Logga gympass', description: 'Övningar, set, reps och vikt.' }, { label: 'Träningsprogram', description: 'Färdiga scheman.' }, { label: 'Löpning' },
+  ], recommended: 0 });
+
+  it('reads a question at the end of a reply and keeps the text before it', () => {
+    const { body, question } = parseQuestion(block(good));
+    expect(body).toBe('Kul! Ett val först.');
+    expect(question).toEqual({ question: 'Vad ska appen främst hjälpa dig med?', recommended: 0, options: [
+      { label: 'Logga gympass', description: 'Övningar, set, reps och vikt.' }, { label: 'Träningsprogram', description: 'Färdiga scheman.' }, { label: 'Löpning', description: null },
+    ] });
+  });
+
+  it('shows the reply as plain text when the question is malformed', () => {
+    for (const bad of ['not json', '{"question":"x","options":[{"label":"only one"}]}', '{"question":"","options":[{"label":"a"},{"label":"b"}]}',
+      '{"question":"x","options":[{"label":"a"},{}]}', JSON.stringify({ question: 'x', options: Array(7).fill({ label: 'a' }) })]) {
+      expect(parseQuestion(block(bad)).question, bad).toBeNull();
+    }
+    expect(parseQuestion('Just an answer.')).toEqual({ body: 'Just an answer.', question: null });
+    expect(parseQuestion(`${block(good)} and more text after`).question).toBeNull();
+  });
+
+  it('drops a recommendation that does not point at an option', () => {
+    expect(parseQuestion(block(JSON.stringify({ question: 'q', options: [{ label: 'a' }, { label: 'b' }], recommended: 5 }))).question.recommended).toBeNull();
+  });
+
+  it('hides the question markup while the reply is being written', () => {
+    expect(visibleText('Kul! <orqestra-question>{"quest')).toBe('Kul!');
+    expect(visibleText('Kul! <orqes')).toBe('Kul! ');
+    expect(visibleText('a < b')).toBe('a < b');
+  });
+
+  it('turns the choice into the next message', () => {
+    const { question } = parseQuestion(block(good));
+    expect(answerFor(question, { kind: 'option', index: 0 })).toBe('Logga gympass (Övningar, set, reps och vikt.)');
+    expect(answerFor(question, { kind: 'option', index: 2 })).toBe('Löpning');
+    expect(answerFor(question, { kind: 'own', text: '  Yoga  ' })).toBe('Yoga');
+    expect(answerFor(question, { kind: 'skip' })).toMatch(/Decide yourself/);
+  });
+});

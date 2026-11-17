@@ -41,3 +41,23 @@
 .agent-try-result{font-size:12px;line-height:1.55;color:var(--shell-text);white-space:pre-wrap;overflow-wrap:anywhere;background:var(--shell-bg);border-radius:8px;padding:10px 12px}
 .agent-try-result .live-note,.agent-try-result .live-error{padding-left:0;margin-top:6px;white-space:normal}
 .agent-try-result.is-running{color:var(--shell-muted)}
+
+/* A question from the Manager, answered like a short form (Lovable-style). */
+.question-card{margin:14px 0 4px 32px;border:1px solid var(--shell-line);border-radius:14px;background:var(--shell-card);overflow:hidden;max-width:640px;box-shadow:0 2px 12px #0000000a}
+.question-title{padding:14px 18px;font-size:15px;font-weight:600;color:var(--shell-text);border-bottom:1px solid var(--shell-line)}
+.question-options{display:flex;flex-direction:column;gap:4px;padding:10px}
+.question-option{display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:10px;cursor:pointer;color:var(--shell-text)}
+.question-option:hover{background:var(--shell-hover)}
+.question-option.is-selected{background:var(--shell-active)}
+.question-option input[type=radio]{margin-top:3px;accent-color:light-dark(#1f1f1f,#ececec);width:16px;height:16px;flex:none}
+.question-text{display:flex;flex-direction:column;gap:3px}
+.question-text strong{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.question-text small{font-size:13px;color:var(--shell-muted);line-height:1.45}
+.question-pick{font-style:normal;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:light-dark(#e8efff,#1e2a44);color:light-dark(#2f5bd3,#9db8ff)}
+.question-own{align-items:center}
+.question-own-input{flex:1;font:inherit;font-size:14px;color:var(--shell-text);background:var(--shell-bg);border:1px solid var(--shell-line);border-radius:9px;padding:9px 12px}
+.question-own-input:focus{outline:2px solid light-dark(#1f1f1f22,#ececec33)}
+.question-actions{display:flex;justify-content:flex-end;gap:8px;padding:10px 14px 14px}
+.question-answered{margin:12px 0 0 32px;display:flex;flex-direction:column;gap:3px;padding:10px 14px;border-left:3px solid var(--shell-line);max-width:640px}
+.question-answered span{font-size:12.5px;color:var(--shell-muted)}
+.question-answered strong{font-size:14px;color:var(--shell-text);font-weight:600}

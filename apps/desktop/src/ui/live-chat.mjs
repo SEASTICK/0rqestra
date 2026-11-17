@@ -130,3 +130,49 @@ export function testState(state, event) {
   const next = applyChatEvent({ text: state.text, status: state.status, model: state.model }, event);
   return { ...state, text: next.text, status: next.status === 'streaming' ? 'running' : next.status, model: next.model ?? state.model, error: next.error ?? null, reason: next.reason ?? null, usage: next.usage ?? null, limits: next.limits ?? [] };
 }
+
+// ---- Questions from the Manager ---------------------------------------------------------------
+// The Manager ends a reply with <orqestra-question>{json}</orqestra-question> when it needs a
+// decision (main/providers/history.ts tells it how). The window shows it as a card with options.
+
+const OPEN_TAG = '<orqestra-question>';
+const QUESTION = /<orqestra-question>\s*([\s\S]*?)\s*<\/orqestra-question>\s*$/;
+
+const text = (value, max) => (typeof value === 'string' && value.trim() && value.length <= max ? value.trim() : null);
+
+export function parseQuestion(raw) {
+  const source = String(raw ?? '');
+  const match = QUESTION.exec(source);
+  if (!match) return { body: source, question: null };
+  const body = source.slice(0, match.index).trimEnd();
+  try {
+    const value = JSON.parse(match[1]);
+    const question = text(value?.question, 300);
+    const options = Array.isArray(value?.options) ? value.options : [];
+    if (!question || options.length < 2 || options.length > 6) return { body: source, question: null };
+    const parsed = options.map((o) => ({ label: text(o?.label, 120), description: text(o?.description, 240) }));
+    if (parsed.some((o) => !o.label)) return { body: source, question: null };
+    const recommended = Number.isInteger(value.recommended) && value.recommended >= 0 && value.recommended < parsed.length ? value.recommended : null;
+    return { body, question: { question, options: parsed, recommended } };
+  } catch {
+    return { body: source, question: null };
+  }
+}
+
+// While a reply is still being written, the question markup is hidden until it is complete.
+export function visibleText(raw) {
+  const source = String(raw ?? '');
+  const start = source.indexOf(OPEN_TAG);
+  if (start >= 0) return source.slice(0, start).trimEnd();
+  for (let n = OPEN_TAG.length - 1; n > 0; n -= 1) {
+    if (source.endsWith(OPEN_TAG.slice(0, n))) return source.slice(0, source.length - n);
+  }
+  return source;
+}
+
+export function answerFor(question, choice) {
+  if (choice.kind === 'skip') return 'I skip this question. Decide yourself and tell me briefly what you chose.';
+  if (choice.kind === 'own') return choice.text.trim();
+  const option = question.options[choice.index];
+  return option.description ? `${option.label} (${option.description})` : option.label;
+}
