@@ -149,9 +149,17 @@ Verification types used below:
 
 [~] 6. Verify official Codex and Claude Code integration approaches, authentication,
     subscription conditions, and Windows/macOS support.
-    Evidence: docs/provider-integrations.md (revision 3, 2026-11-16).
+    Evidence: docs/provider-integrations.md (revision 4, 2026-11-17).
     Done (documentation verification):
           - primary sources A1-A9 and O1-O7, with A1, A4, and O1 re-fetched for revision 3;
+          - revision 4 (2026-11-17, awaiting independent review): read the Anthropic Usage
+            Policy (A10), the OpenAI Terms of Use, Usage Policies, Service Terms, and Sign in
+            with ChatGPT Terms (O8-O11), and the open-source Sign in with ChatGPT guide
+            (O12-O15); re-fetched A1, A6, and O1; documented Codex configuration loading and
+            its documented controls for trust, AGENTS.md, hooks, MCP servers, and subagents
+            (O16-O22, §2.4), separated from what needs runtime tests; added Interpretation and
+            Runtime observation blocks; split the gates into documentation, adapter, release,
+            and macOS (§4);
           - provider statements, WorkTreeAI decisions, and unresolved interpretation are
             separated;
           - "no bundling" is labelled as WorkTreeAI policy, not an Anthropic prohibition;
@@ -183,12 +191,15 @@ Verification types used below:
             provider configuration, interrupt during a running command, Profile B, expired
             credentials, standalone installs; macOS is deferred by the user);
           - independent review of these runtime results;
-          - Codex project-config suppression (§2.4);
-          - reading the Anthropic Usage Policy, OpenAI terms, and the open-source Sign in with
-            ChatGPT guide;
-          - the maintainer's interpretation decisions in §1.1 and §2.2.
+          - independent review of revision 4;
+          - the Codex configuration controls in §2.4 are documented but not runtime-tested;
+            project AGENTS.md has no documented off switch (detection only);
+          - neither provider's sources explicitly cover a local app launching a
+            user-installed, user-signed-in CLI (§1.1, §2.2); the user's decisions on that
+            (G6.4) and on the Codex sign-in path are open.
     Stays [~] until review accepts the documentation verification. The runtime and legal items
-    are gates before real adapters are enabled (provider-integrations.md §4).
+    are gates before real adapters are enabled (provider-integrations.md §4.2); release gates
+    are in §4.3; macOS is deferred (§4.4).
 
 [x] 7. Choose public, open-source release.
     Evidence: docs/product-brief.md §7.
@@ -424,17 +435,21 @@ Item 9 — development foundation. CLOSED for the Windows-only scope by the user
 
 Item 6 — provider verification. Gate: review accepts the documentation verification. The
 runtime and legal items below gate enabling real provider adapters, not the interface.
-  G6.1 [local] Explicit review verdict on docs/provider-integrations.md revision 3 as a whole.
+  Remaining work to accept item 6's documentation:
+  G6.1 [local] Explicit review verdict on docs/provider-integrations.md revision 4 as a whole.
                Next step: ask the reviewer for that verdict.
-  G6.2 [local] Unread official documents. Next step: read the Anthropic Usage Policy, then the
-               OpenAI terms and the open-source Sign in with ChatGPT guide, and record
-               provider statements with dates. Reading costs nothing and runs no provider task.
-  G6.3 [local] Codex project-supplied configuration (provider-integrations §2.4). Next step:
-               read the official Codex configuration documentation and record what a
-               repository can supply and how to suppress it.
-  G6.4 [user]  Do the providers' terms cover WorkTreeAI's use pattern (§1.1, §2.2)? Next step:
-               the user decides whether to ask Anthropic and OpenAI; a draft question can be
-               prepared locally.
+  G6.2 [local] DONE pending review (2026-11-17): Anthropic Usage Policy (A10), OpenAI terms
+               and policies (O8-O11), and the open-source Sign in with ChatGPT guide (O12-O15)
+               read and recorded with dates (provider-integrations §1.1, §2.2).
+  G6.3 [local] DONE for documentation, pending review (2026-11-17): Codex configuration
+               loading and documented controls recorded (§2.4). Its runtime part moves to the
+               adapter gates (§4.2).
+  Gates before enabling real adapters (provider-integrations §4.2):
+  G6.4 [user]  Neither provider explicitly covers a local app launching the user's own
+               signed-in CLI (§1.1, §2.2). The user decides whether to ask Anthropic and
+               OpenAI; a draft question can be prepared locally. For Codex, the user also
+               decides between the user's own "codex login" and Sign in with ChatGPT, which
+               would make 0rqestra handle ChatGPT tokens (§2.2).
   G6.5 [account] Runtime tests on Windows. AUTHORIZED by the user (2026-11-16): minimal
                subscription-based integration tests, and the implementation they need, using
                the supported official provider tools and the existing subscription allowance.
@@ -469,7 +484,9 @@ review accepts the document as a whole.
                 for a verdict on docs/acceptance-criteria.md as a whole.
   Not part of this gate: making the criteria pass. They are specifications for future stages.
 
-Before a public release (not a Stage 1 item): [user] choose the license (C1).
+Before a public release (not a Stage 1 item): [user] choose the license (C1); settle the
+provider-condition decisions (G6.4) for every adapter that ships enabled. Full list:
+provider-integrations.md §4.3.
 
 STAGE 1 DELIVERABLES
 

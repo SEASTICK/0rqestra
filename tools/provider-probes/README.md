@@ -25,7 +25,11 @@ already on the machine and record what those tools do.
   after every scenario and after the handshake. Anything else is a failure.
 - **Fan-out.** Claude scenarios restrict the tool list, and the recorded lists contain no
   delegation tool. For Codex, fan-out is **not** controlled or verified: `approvalsReviewer:
-  "user"` only routes approval requests to this client and does not disable delegation.
+  "user"` only routes approval requests to this client and does not disable delegation. The
+  Codex probes set no project trust entry and no feature overrides, so they exercise Codex's
+  defaults. The documented controls for trust, hooks, MCP servers, and subagents
+  (`docs/provider-integrations.md` §2.4, revision 4) are not used by these scripts and are
+  untested.
 - **Billing check.** Codex turns run only if `account/read` reports ChatGPT (subscription) auth.
   Signed-in Claude checks run only if `claude auth status` reports a Claude.ai login. The no-login
   Claude script cannot reach a model at all: it uses an empty temporary config directory.

@@ -229,7 +229,7 @@ effort `low`.
 - Whether WorkTreeAI's use of app-server fits OpenAI's conditions
   ([provider-integrations.md §2.2](provider-integrations.md#22-authentication-and-deployment-conditions)).
 
-## 5. Effect on the gates in provider-integrations.md §4
+## 5. Effect on the gates in provider-integrations.md §4 (adapter gates: §4.2 since revision 4)
 
 | Gate | Status after these runs |
 |---|---|
@@ -238,7 +238,7 @@ effort `low`.
 | Unanswered-approval behavior in app-server | **Observed** (X3): waits at least 12 s. Upper bound open |
 | Clean interrupt on Windows | **Observed for both** in one case each: Codex `turn/interrupt` (X4), Claude Code stream-json interrupt (C11). Interrupt during a running command is still open |
 | Model-substitution detection | **Partly observed** in the simple case: requested and reported models matched where a model was reported (X1, C9). The interrupted Claude run reported no model usage. A forced substitution was not produced |
-| Codex project-config loading | **Observed that `AGENTS.md` is loaded** (X5). MCP startup activity was seen but its source is unknown (X6). Suppression still open |
+| Codex project-config loading | **Observed that `AGENTS.md` is loaded** (X5). MCP startup activity was seen but its source is unknown (X6). Suppression still open. The documented controls (trust, `features.hooks`, `agents.enabled`, per-server `enabled`, `instructionSources`) were researched on 2026-11-17 (provider-integrations.md §2.4, revision 4); none was exercised by these runs |
 
 Every gate above remains **partial**. None is closed by these runs.
 

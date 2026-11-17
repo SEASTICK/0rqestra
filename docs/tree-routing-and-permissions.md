@@ -365,7 +365,7 @@ Enforcement therefore has three layers, each with different guarantees.
 |---|---|---|
 | Tool availability | `--tools`, `--disallowedTools` (`"Agent"`, `"mcp__*"`). `--allowedTools` only auto-approves | Sandbox + approval policy; tool-restriction surface not yet researched |
 | Per-action approval | Profile A: deny anything that would prompt. Profile B: WorkTreeAI approval MCP tool ([provider-integrations.md §1.4](provider-integrations.md#14-what-ordinary--p-loads-and-suppression-profiles)) | `requestApproval` requests answered by WorkTreeAI |
-| Project hooks, MCP, subagents | Suppressed **before launch** by profile flags | Not yet researched (provider-integrations §2.4) |
+| Project hooks, MCP, subagents | Suppressed **before launch** by profile flags | Documented controls researched, not yet runtime-tested (provider-integrations §2.4, revision 4). Project `AGENTS.md` has no documented off switch; only detection via `instructionSources` |
 | Startup check | `system/init` **detects** unexpected config and stops the run. It cannot undo hooks that already ran | Runtime test required |
 
 ### 3.3 Layer 3 — filesystem and process isolation

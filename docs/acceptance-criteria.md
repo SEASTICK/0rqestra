@@ -262,8 +262,9 @@ The default values and the at-limit behavior are **Agreed** (decision A5).
   - `HOOK_RAN.txt` is never created;
   - `system/init` shows no `.mcp.json` server and no plugins;
   - no subagent messages appear.
-- **Deferred:** Codex-specific assertions. They are defined after provider-integrations §2.4 is
-  resolved. Until then, the Codex adapter cannot be enabled (§4 gates).
+- **Deferred:** Codex-specific assertions. They are defined after the runtime items in
+  provider-integrations §2.4 are resolved (its documentation part was completed in revision 4).
+  Until then, the Codex adapter cannot be enabled (§4.2 gates).
 
 ## AC-14 Session isolation [fixture]
 
