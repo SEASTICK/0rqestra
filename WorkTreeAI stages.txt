@@ -614,3 +614,69 @@ documentation research and independent verification only, item 9 for the Windows
 acceptance test exists or passes). The adapter, runtime, provider-condition, and release gates
 stay open, and macOS verification stays deferred. Declaring Stage 1 complete is the user's
 decision after independent review.
+
+STAGE 2 — INTERFACE (in progress)
+
+Started on 2026-11-17 at the user's instruction ("Use our existing 0rqestra preview template as
+the Stage 2 starting point"). Stage 1 had not been declared complete; its scoped statuses and
+open gates above still apply. Stage 2 builds the interface only: no real provider runs, and
+every activity, model, and usage figure shown is simulated and labelled as such.
+
+Template: previews/desktop-ui on branch preview/task-details-inbox of the old repository
+SEASTICK/WorkTreeAI (a local copy is in the user's Codex folder).
+
+Steps
+  [x] S2.1 Import the template's interface without provider code — commit 27c375e.
+      ACCEPTED BY INDEPENDENT REVIEW (2026-11-17) FOR THE SIMULATED TEMPLATE-IMPORT STEP ONLY.
+      What it is: the template's Manager chat, side navigation, expandable tree and chat, tree
+      editing with the "+" picker, and scroll-to-zoom, built offline into the secure Electron
+      shell. The template's sign-in, key vault, and live-workflow code is not included; AI
+      accounts and Build & review are stand-ins labelled "Simulated — no provider connected".
+      Verification by the implementer only (Windows, 2026-11-17): npm run check exit 0 (142
+      tests in 12 files); npm run smoke passed; npm run smoke:failures 20/20; a hidden-window
+      check of rendering, scroll-to-zoom, the "+" picker defaults, and the simulated screens.
+      The smoke and visual checks were run by the implementer and were NOT independently
+      reproduced.
+      Review verification limits: the reviewer's exact wording of its verification limits was
+      not included in the message relayed to the implementer, so it is not restated here.
+      This acceptance does not cover the agreed-rule gaps below.
+  [~] S2.2 Reconcile roles, specialist cycles, and priority uniqueness with the agreed rules.
+      Implemented 2026-11-17 (uncommitted at the time of writing); awaiting independent review.
+      - Roles: the picker offers exactly Planner, Builder, Code Reviewer, Debugger, Tester,
+        and Security Reviewer; the starter Reviewer is now a Code Reviewer. Agents saved with
+        a template-only role keep it and are labelled "not an agreed role"; nothing is renamed
+        silently.
+      - Cycles (D1): connections that form a loop between specialists are allowed; self-edges,
+        duplicates, and edges into the Manager stay blocked. The simulated run no longer fails
+        on a loop and runs each reachable agent once per pass.
+      - Priorities (A7, D7): "+" still gives the next free priority; the edit form refuses a
+        priority already used in the role and keeps the dialog open; changing an agent's role
+        gives it the next free priority in the new role; ties fall back to creation order.
+      - The rules live in apps/desktop/src/ui/tree-rules.mjs with their own tests. The template
+        test that expected loops to be rejected now expects them to run.
+      Verification by the implementer only (Windows): npm run check exit 0 (152 tests in 13
+      files); npm run smoke passed; npm run smoke:failures 20/20; a hidden-window check showed
+      the agreed role list, a new Builder getting priority 2, a duplicate priority refused,
+      and the simulated run starting on a tree with a loop. Not independently reproduced. The
+      "not an agreed role" label was covered by unit tests only, not checked visually.
+
+Known gaps between the imported template and the agreed rules (to fix in later steps)
+  - Roles, specialist cycles, and priority uniqueness: addressed in S2.2 (pending review).
+    Before S2.2, the template offered Researcher, Database, Designer, and Documentation with no
+    Debugger; rejected every loop; and let the edit form set duplicate priorities within a role
+    (the "+" picker and the starter agents already matched A7).
+  - Providers: the template lists Google and xAI; the plan starts with OpenAI Codex and Claude
+    Code only.
+  - Simulated usage: per-agent usage rings show demo percentages; they need a clearer
+    "simulated" label.
+  - Branding: the interface still says "WorkTreeAI".
+  - React runtime: the vendored React is a Next.js-compiled pre-release build; replace it with
+    pinned official React packages and a proper bundler later.
+
+Tracked before real adapters are introduced
+  - T1 Remove the template's inactive live-workflow calls from App.jsx. They do nothing today
+    because the preload does not expose them, but they must not remain when real adapters
+    arrive: window.worktreeai.workflowProviderStatus (polled every 3 s), workflowList,
+    workflowStatus, and workflowRespond, plus the liveRun / liveWorkflow state and branches
+    that depend on them. Real adapters must come through the reviewed engine and preload API,
+    not through these template paths.

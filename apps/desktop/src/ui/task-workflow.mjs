@@ -1,12 +1,15 @@
 import {demoSequence} from './demo-run.mjs';
 import {activeProfile} from './allowance.mjs';
 
-const TITLES={Manager:'Coordinate the project',Planner:'Plan the implementation',Builder:'Build the requested change',Reviewer:'Review the proposed result',Tester:'Verify the result',Researcher:'Research the approach',Database:'Plan the data changes',Designer:'Explore the interface',Documentation:'Document the result',Security:'Review security boundaries'};
+const TITLES={Manager:'Coordinate the project',Planner:'Plan the implementation',Builder:'Build the requested change','Code Reviewer':'Review the proposed result',Reviewer:'Review the proposed result',Debugger:'Find and fix the cause of the failure','Security Reviewer':'Check the change for security problems',Tester:'Verify the result',Researcher:'Research the approach',Database:'Plan the data changes',Designer:'Explore the interface',Documentation:'Document the result',Security:'Review security boundaries'};
 export function assignmentFor(role){return {
   Manager:'Route specialist work, track its state, and bring questions and decisions back to the user.',
   Planner:'Break the request into a clear plan, identify dependencies, and hand the plan back to the Manager.',
   Builder:'Follow the plan and prepare the requested changes within the approved scope.',
+  'Code Reviewer':'Inspect the builder’s result, report findings to the Manager, and identify corrections.',
   Reviewer:'Inspect the builder’s result, report findings to the Manager, and identify corrections.',
+  Debugger:'Investigate the reported failure, find its cause, and return a fix with evidence to the Manager.',
+  'Security Reviewer':'Review the change for security problems and report findings to the Manager.',
   Tester:'Run the agreed checks and report passed, failed, interrupted, infrastructure error, or not-run outcomes.',
 }[role]||`Carry out the ${role.toLowerCase()} assignment and return findings to the Manager.`;}
 function event(task,at,text){return {...task,events:[...task.events,{at,text}]};}
@@ -15,7 +18,7 @@ function gateFor(run,task){
   if(!run.withApprovals)return null;
   if(task.role==='Planner')return {kind:'question',title:'What should the plan focus on?',body:'The Planner needs a direction before continuing. As Manager, I am bringing this question to you.',scope:'Choose the goal for this simulated planning task. Your answer is saved with this request.'};
   if(task.role==='Builder')return {kind:'permission',title:'Allow the Builder’s demo step?',body:'The Builder is ready for the implementation step. As Manager, I need your approval before this preview continues.',scope:'One simulated implementation step in this run only. No files, commands, provider requests, or operating-system permissions are affected.'};
-  if(task.role==='Reviewer'&&!run.sequence.some(n=>n.role==='Tester'))return {kind:'blocked',title:'There is no Test agent in this worktree.',body:'The review step has no connected Tester to perform verification. Should I continue the demo without verification, or stop?',scope:'Continuing explicitly records “Completed — unverified (user chose to skip verification)”. No real test results will be claimed.'};
+  if(['Code Reviewer','Reviewer'].includes(task.role)&&!run.sequence.some(n=>n.role==='Tester'))return {kind:'blocked',title:'There is no Test agent in this worktree.',body:'The review step has no connected Tester to perform verification. Should I continue the demo without verification, or stop?',scope:'Continuing explicitly records “Completed — unverified (user chose to skip verification)”. No real test results will be claimed.'};
   return null;
 }
 function begin(run,now){
