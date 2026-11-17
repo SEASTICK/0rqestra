@@ -214,29 +214,28 @@ export function registerUpdateIpc(isTrusted: (event: IpcMainInvokeEvent) => bool
   });
 }
 
+// Windows and Linux have no menu bar in the window (main.ts removes it); updates are checked from the
+// profile menu in the interface. macOS keeps its system menu, which the OS expects.
 function installMenu(checkNow: () => void): void {
-  const checkItem: MenuItemConstructorOptions = { label: "Check for Updates…", click: checkNow };
-  const template: MenuItemConstructorOptions[] =
-    process.platform === "darwin"
-      ? [
-          {
-            label: app.name,
-            submenu: [
-              { role: "about" },
-              checkItem,
-              { type: "separator" },
-              { role: "hide" },
-              { role: "hideOthers" },
-              { role: "unhide" },
-              { type: "separator" },
-              { role: "quit" },
-            ],
-          },
-          { role: "editMenu" },
-          { role: "viewMenu" },
-          { role: "windowMenu" },
-        ]
-      : [{ role: "fileMenu" }, { role: "editMenu" }, { role: "viewMenu" }, { role: "windowMenu" }, { label: "Help", submenu: [checkItem] }];
+  if (process.platform !== "darwin") return;
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: app.name,
+      submenu: [
+        { role: "about" },
+        { label: "Check for Updates…", click: checkNow },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    },
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    { role: "windowMenu" },
+  ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 

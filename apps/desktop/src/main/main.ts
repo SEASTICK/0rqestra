@@ -1,7 +1,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, ipcMain, session, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
-import { isSameFileUrl, isTrustedSender, mainWindowOptions, type SenderInfo } from "./security";
+import { app, BrowserWindow, ipcMain, Menu, session, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
+import { isDevToolsShortcut, isSameFileUrl, isTrustedSender, mainWindowOptions, type SenderInfo } from "./security";
 import { runSmoke } from "./smoke";
 import { registerUpdateIpc, startUpdater } from "./update";
 import {
@@ -92,8 +92,20 @@ function createMainWindow(): void {
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
 
+  // No File/Edit/View menu bar on Windows and Linux. (macOS needs its system menu; see update/index.ts.)
+  if (process.platform !== "darwin") Menu.setApplicationMenu(null);
   const window = new BrowserWindow(mainWindowOptions(preloadFile, smoke !== null, iconFile));
   mainWindow = window;
+  if (process.platform !== "darwin") {
+    window.removeMenu();
+    // The menu took the developer-tools shortcut with it, and it is still needed to see a problem.
+    window.webContents.on("before-input-event", (event, input) => {
+      if (isDevToolsShortcut(input)) {
+        event.preventDefault();
+        window.webContents.toggleDevTools();
+      }
+    });
+  }
 
   if (smoke) {
     runSmoke({ window, outcome: smoke, rendererFile, isRendererUrl, isTrusted: isFromMainWindow });

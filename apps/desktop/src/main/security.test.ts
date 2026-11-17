@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isDevToolsShortcut,
   isSameFileUrl,
   isTrustedSender,
   mainWindowOptions,
@@ -98,5 +99,26 @@ describe("IPC sender validation", () => {
 
   it("rejects a sender whose frame is gone", () => {
     expect(isTrustedSender({ ...valid, frameUrl: undefined, isMainFrame: false }, trusted)).toBe(false);
+  });
+});
+
+describe("developer tools shortcut", () => {
+  const key = (over: Partial<{ type: string; key: string; control: boolean; shift: boolean; alt: boolean; meta: boolean }>) => ({
+    type: "keyDown", key: "", control: false, shift: false, alt: false, meta: false, ...over,
+  });
+
+  it("accepts F12 and Ctrl+Shift+I only", () => {
+    expect(isDevToolsShortcut(key({ key: "F12" }))).toBe(true);
+    expect(isDevToolsShortcut(key({ key: "I", control: true, shift: true }))).toBe(true);
+    expect(isDevToolsShortcut(key({ key: "i", control: true, shift: true }))).toBe(true);
+  });
+
+  it("ignores other keys, key releases, and combinations with Alt or Meta", () => {
+    expect(isDevToolsShortcut(key({ key: "i", control: true }))).toBe(false);
+    expect(isDevToolsShortcut(key({ key: "F12", control: true }))).toBe(false);
+    expect(isDevToolsShortcut(key({ key: "F12", type: "keyUp" }))).toBe(false);
+    expect(isDevToolsShortcut(key({ key: "I", control: true, shift: true, alt: true }))).toBe(false);
+    expect(isDevToolsShortcut(key({ key: "I", control: true, shift: true, meta: true }))).toBe(false);
+    expect(isDevToolsShortcut(key({ key: "a" }))).toBe(false);
   });
 });

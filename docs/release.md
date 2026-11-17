@@ -52,7 +52,7 @@ Status (2026-11-17):
    - The pre-release `test-vX.Y.Z` is under Releases. Download the `.exe` or `.dmg`, install,
      start.
    - Run `test` again with a higher version. Start the installed test app, choose
-     **Check for Updates…** (Help menu on Windows, app menu on macOS), and confirm that it
+     **Check for updates** (the profile menu at the bottom left; on macOS also the app menu), and confirm that it
      installs, restarts, and shows the new version.
 4. **Release `stable`** (only after step 3 worked). Run workflow with `channel = stable`.
 5. **Approve.** After the build, an issue **"Godkänn uppdatering vX.Y.Z till användarna"** is
@@ -109,7 +109,7 @@ If the releases repository gets another name, change `RELEASES_REPO` and `RELEAS
 - A strictly newer version is downloaded in the background right away and verified against the
   public key built into the app. Only then does the app ask: **Restart now** or **Later**.
   "Later" stays quiet about that version for a day, and asks again after that day; **Check for
-  updates** (Help menu, or the version label at the bottom of the side panel) always shows it.
+  updates** (the profile menu at the bottom left) always shows it.
 - The window shows the version, the release notes ("What's new?"), the download progress, and
   errors with what to do next. The taskbar button shows the download progress too.
 - If an even newer version is published while one is waiting to be installed, the newer one

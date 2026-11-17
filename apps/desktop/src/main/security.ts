@@ -69,3 +69,19 @@ export function isTrustedSender(sender: SenderInfo, trusted: TrustedRenderer): b
     isSameFileUrl(sender.frameUrl, trusted.rendererUrl, trusted.caseInsensitivePaths)
   );
 }
+
+export interface KeyInput {
+  type: string;
+  key: string;
+  control: boolean;
+  shift: boolean;
+  alt: boolean;
+  meta: boolean;
+}
+
+// F12, or Ctrl+Shift+I, opens the developer tools in the window.
+export function isDevToolsShortcut(input: KeyInput): boolean {
+  if (input.type !== "keyDown" || input.alt || input.meta) return false;
+  if (input.key === "F12") return !input.control && !input.shift;
+  return input.control && input.shift && input.key.toLowerCase() === "i";
+}
