@@ -99,6 +99,10 @@ tooling on macOS, and a Windows test-cleanup error in the new provider tests. Ca
 - The provider tests clean up their temporary folder after all tests, which Windows needs.
 Not verified: the Electron step itself could not be run here, only its logic with a stand-in. If a
 `smoke:failures` case still fails twice, the annotation now says which one and why.
+The first annotated failure (2026-11-17) showed the real Windows cause: in "BrowserWindow construction
+throws", the app printed the right verdict and then Electron crashed while shutting down (exit
+0xC0000005 instead of 1). On Windows that exit is now accepted only with the right verdict and
+handler, and it is reported as a warning every time it happens.
 
 ### Phase 1 — A real chat through your own subscriptions (Claude, L)
 **Status 2026-11-17: built, not yet run against the real tools.** What exists:

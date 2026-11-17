@@ -18,6 +18,10 @@ const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SMOKE_TIMEOUT_MS = 30_000;
 const HANG_TIMEOUT_MS = 8_000;
 const IN_ACTIONS = process.env.GITHUB_ACTIONS === "true";
+// On Windows, Electron sometimes crashes while shutting down after app.exit(1) (exit code 0xC0000005,
+// access violation). The app has already printed the right verdict by then, so that exit is accepted,
+// but only on Windows, only with the right verdict and handler, and it is reported every time.
+const WINDOWS_CRASH_ON_EXIT = 3221225477;
 
 const ALL_HANDLERS = [
   "watchdog",
@@ -169,6 +173,7 @@ const cases = [
 const exercised = new Set();
 let allAsExpected = true;
 const flaky = [];
+const crashedAfterVerdict = [];
 
 function runCase(testCase) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "orqestra-smoke-"));
@@ -190,12 +195,14 @@ function runCase(testCase) {
     if (testCase.expectPass) {
       ok = run.status === 0 && verdicts.length === 1 && verdicts[0] === "SMOKE PASSED";
     } else {
+      const crashedOnExit = process.platform === "win32" && run.status === WINDOWS_CRASH_ON_EXIT;
       ok =
-        run.status === 1 &&
+        (run.status === 1 || crashedOnExit) &&
         verdicts.length === 1 &&
         verdicts[0] === "SMOKE FAILED" &&
         handler !== null &&
         testCase.expect.includes(handler);
+      if (ok && crashedOnExit) crashedAfterVerdict.push(testCase.name);
     }
     const expected = testCase.expectPass ? "pass" : testCase.expect.join("|");
     const line = `${ok ? "OK  " : "BAD "} ${testCase.name}: exit=${run.status} verdicts=${verdicts.length} handler=${handler ?? "-"} expected=${expected} ${reason}`;
@@ -241,5 +248,10 @@ const notExercised = ALL_HANDLERS.filter((h) => !exercised.has(h));
 console.log(`Handlers exercised: ${[...exercised].sort().join(", ")}`);
 console.log(`Handlers not exercised: ${notExercised.join(", ") || "none"}`);
 if (flaky.length) console.log(`Passed only on the second try: ${flaky.join(", ")}`);
+if (crashedAfterVerdict.length) {
+  const names = [...new Set(crashedAfterVerdict)].join(", ");
+  console.log(`Crashed while exiting after the right verdict (Windows): ${names}`);
+  annotate("warning", "Electron crashed while exiting after the right verdict", names);
+}
 console.log(allAsExpected ? "ALL FAILURE CASES BEHAVED AS EXPECTED" : "SOME CASES DID NOT BEHAVE AS EXPECTED");
 process.exit(allAsExpected ? 0 : 1);
