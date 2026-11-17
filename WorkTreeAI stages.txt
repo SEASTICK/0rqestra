@@ -170,7 +170,9 @@ Verification types used below:
             Approvals, an unanswered approval, and turn/interrupt behaved as recorded.
             Whether Codex could delegate (fan out) in these runs is unverified;
           - after review, the results were corrected offline (results doc §7) and the runners
-            were hardened to stop on any failure, with offline fake-process tests. No probe
+            were hardened to stop on any failure, with offline fake-process tests. On
+            2026-11-17 the "denied write" scenarios were tightened to require a confirmed
+            denial (results doc §7). No probe
             was rerun and the evidence files are unchanged;
           - both were the builds bundled with the providers' desktop apps; neither CLI is
             installed standalone.

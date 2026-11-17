@@ -2,6 +2,8 @@
 // Usage: node fake-claude.mjs <modes> <claude args...>
 // <modes> is a comma list, one mode per probe scenario (reply, write, interrupt). A single mode
 // applies to every scenario. "apikey-auth" as the first mode makes `auth status` report an API key.
+import fs from "node:fs";
+import path from "node:path";
 import readline from "node:readline";
 
 const [modesArg, ...args] = process.argv.slice(2);
@@ -30,6 +32,20 @@ switch (mode) {
   case "ok":
     emit(init);
     emit({ type: "assistant", message: { content: [{ type: "text", text: "OK" }] } });
+    // In the write scenario, a well-behaved run reports the denied Write, as the real tool did.
+    emit(scenarioIndex === 1 ? { ...success, permission_denials: [{ tool_name: "Write" }] } : success);
+    process.exitCode = 0;
+    break;
+  case "write-allowed":
+    // Misbehaving run: the write happens and nothing is denied, yet the result is a success.
+    fs.writeFileSync(path.join(process.cwd(), "probe.txt"), "hi");
+    emit(init);
+    emit(success);
+    process.exitCode = 0;
+    break;
+  case "write-no-denial":
+    // Success with no reported denial and no file: the denial cannot be confirmed.
+    emit(init);
     emit(success);
     process.exitCode = 0;
     break;

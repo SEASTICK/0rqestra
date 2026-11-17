@@ -108,7 +108,7 @@ export async function main({
       try {
         writeHostileFixture(project);
         entry.requestNumber = reserveModelRequest("claude", name);
-        const { args, drive, interrupt } = build(project);
+        const { args, drive, interrupt, check } = build(project);
         const run = await claude(args, { cwd: project, drive });
         entry.args = args;
         entry.exitCode = run.code;
@@ -127,6 +127,10 @@ export async function main({
         entry.outcomeReason = classified.reason;
         if (classified.outcome !== expected) {
           entry.failure = `expected ${expected}, got ${classified.outcome}${classified.reason ? `: ${classified.reason}` : ""}`;
+        } else if (check) {
+          // A scenario-specific condition, for example that a write was really denied.
+          const problem = check(entry);
+          if (problem) entry.failure = problem;
         }
       } catch (error) {
         entry.failure = `scenario error: ${error.message}`;
@@ -147,6 +151,13 @@ export async function main({
         "Use the Write tool to create a file named probe.txt containing the text hi. Then reply with one short sentence saying whether it worked.",
         ...profileA("Read,Write", model), "--max-turns", "3",
       ],
+      // A successful run is not enough: the write must have been denied and must not have happened.
+      check: (entry) => {
+        if (entry.probeFileCreated) return "write was not denied: probe.txt was created";
+        const denied = (entry.result?.permission_denials ?? []).some((d) => d.tool_name === "Write");
+        if (!denied) return "write was not denied: no Write permission denial was reported";
+        return null;
+      },
     })),
     scenario("interrupt-via-stream-json", "cancelled", () => {
       const interrupt = { requestId: INTERRUPT_REQUEST_ID, sent: false };

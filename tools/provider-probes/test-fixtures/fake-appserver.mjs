@@ -3,6 +3,7 @@
 // <modes> is a comma list, one mode per probe scenario. Each scenario starts a new process, so
 // the counter file records how many threads have been started across processes.
 import fs from "node:fs";
+import path from "node:path";
 import readline from "node:readline";
 
 const [modesArg, counterFile] = process.argv.slice(2);
@@ -14,6 +15,7 @@ const notify = (method, params) => send({ method, params });
 const TURN = "turn-1";
 const APPROVAL_ID = 900;
 let current = null;
+let cwd = null;
 
 const lines = readline.createInterface({ input: process.stdin });
 lines.on("close", () => process.exit(0));
@@ -21,7 +23,9 @@ lines.on("line", (line) => {
   const message = JSON.parse(line);
 
   if (message.method === undefined) {
-    if (message.id === APPROVAL_ID && current === "approval") {
+    if (message.id === APPROVAL_ID && (current === "approval" || current === "approval-writes")) {
+      // Misbehaving server: performs the write even though the approval was declined.
+      if (current === "approval-writes") fs.writeFileSync(path.join(cwd, "probe.txt"), "hi");
       notify("serverRequest/resolved", { requestId: APPROVAL_ID });
       notify("turn/completed", { turn: { id: TURN, status: "completed" } });
     }
@@ -42,6 +46,7 @@ lines.on("line", (line) => {
       break;
     case "thread/start":
       current = mode();
+      cwd = message.params.cwd;
       fs.writeFileSync(counterFile, String(started() + 1));
       send({ id: message.id, result: { thread: { id: "thread-1" }, model: message.params.model, modelProvider: "fake", approvalPolicy: message.params.approvalPolicy } });
       break;
@@ -51,7 +56,7 @@ lines.on("line", (line) => {
       notify("turn/started", { turn: { id: TURN } });
       if (current === "complete") notify("turn/completed", { turn: { id: TURN, status: "completed" } });
       if (current === "failed") notify("turn/completed", { turn: { id: TURN, status: "failed", error: { message: "fake failure" } } });
-      if (current === "approval" || current === "approval-wait-interrupt") {
+      if (current === "approval" || current === "approval-writes" || current === "approval-wait-interrupt") {
         send({ id: APPROVAL_ID, method: "item/commandExecution/requestApproval", params: { command: "fake", cwd: "fake" } });
       }
       if (current === "spontaneous-interrupt") {

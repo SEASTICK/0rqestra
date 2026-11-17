@@ -285,7 +285,13 @@ The two signed-in runners (`claude-auth.mjs`, `codex-appserver.mjs turns`) now:
 - save the report after **every** scenario, so partial evidence exists before anything stops,
   with `stoppedAfter` and `notRun` recorded;
 - record and check the interrupt correlation described in C12 and X4;
-- exit non-zero when the sequence did not complete.
+- exit non-zero when the sequence did not complete;
+- (added 2026-11-17, after review of `ed7eee0`) treat a "denied write" scenario as failed unless
+  the denial is confirmed: for Claude Code, a `Write` entry in `permission_denials` and no
+  `probe.txt`; for Codex, at least one approval request answered and no `probe.txt`. Before
+  this, a run in which the write happened could have been recorded as `succeeded`. The
+  existing evidence already meets these conditions (Claude: one `Write` denial, no file; Codex:
+  one approval answered, no file), and it was not changed.
 
 These changes are verified only by offline tests against fake processes
 (`tools/provider-probes/runner.test.mjs`): no provider binary runs and no model request is

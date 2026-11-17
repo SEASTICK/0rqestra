@@ -12,7 +12,9 @@ already on the machine and record what those tools do.
   `out/request-ledger.json` before each request is sent. The scripts refuse to exceed it.
 - **No retries.** The scripts retry nothing.
 - **Stop on failure.** The signed-in runners stop after the first scenario that ends in a spawn
-  error, timeout, missing result, unexpected exit, error result, or exception. The report is
+  error, timeout, missing result, unexpected exit, error result, or exception. A "denied write"
+  scenario also fails unless the denial is confirmed (Claude: a `Write` permission denial and
+  no `probe.txt`; Codex: an approval request was answered and no `probe.txt`). The report is
   saved after every scenario, so partial evidence survives a stop.
 - **Fan-out.** Claude scenarios restrict the tool list, and the recorded lists contain no
   delegation tool. For Codex, fan-out is **not** controlled or verified: `approvalsReviewer:

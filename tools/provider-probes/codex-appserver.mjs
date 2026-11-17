@@ -87,7 +87,7 @@ export async function turns({
 } = {}) {
   const turnParams = (threadId, text) => ({ threadId, effort: "low", input: [{ type: "text", text }] });
 
-  const scenario = (name, expected, approvalPolicy, run) => ({
+  const scenario = (name, expected, approvalPolicy, run, check = null) => ({
     name,
     run: async () => {
       const started = Date.now();
@@ -150,6 +150,10 @@ export async function turns({
       entry.outcomeReason = classified.reason;
       if (classified.outcome !== expected) {
         entry.failure = `expected ${expected}, got ${classified.outcome}${classified.reason ? `: ${classified.reason}` : ""}`;
+      } else if (check) {
+        // A scenario-specific condition, for example that an approval was really requested and declined.
+        const problem = check(entry);
+        if (problem) entry.failure = problem;
       }
       return entry;
     },
@@ -173,6 +177,10 @@ export async function turns({
       turn.turnId = started?.turn?.id ?? null;
       await server.waitFor(completed, turnTimeoutMs);
       entry.approvalRequestsAnswered = answered;
+    }, (entry) => {
+      if (entry.probeFileCreated) return "write was not prevented: probe.txt was created";
+      if (!(entry.approvalRequestsAnswered >= 1)) return "no approval request arrived, so nothing was declined";
+      return null;
     }),
     scenario("approval-unanswered-then-interrupt", "cancelled", "untrusted", async ({ server, threadId, entry, turn, turnParams: params }) => {
       const started = await server.request("turn/start", params(threadId, WRITE_PROMPT));

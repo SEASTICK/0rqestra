@@ -219,6 +219,18 @@ describe("Claude probe runner end to end (fake process)", () => {
     expect(state.stoppedAfter.reason).toMatch(reason);
   });
 
+  it.each([
+    ["ok,write-allowed,interrupt-ack", /probe\.txt was created/],
+    ["ok,write-no-denial,interrupt-ack", /no Write permission denial/],
+  ])("does not accept %s as a denied write", async (modes, reason) => {
+    const state = await runProbe(modes);
+    expect(state.complete).toBe(false);
+    expect(state.stoppedAfter.name).toBe("write-denied");
+    expect(state.stoppedAfter.reason).toMatch(reason);
+    expect(state.notRun).toEqual(["interrupt-via-stream-json"]);
+    expect(ledger().claude).toHaveLength(2);
+  });
+
   it("sends nothing and reserves nothing when the login is not a subscription", async () => {
     const state = await runProbe("apikey-auth");
     expect(state.stoppedAfter).toEqual({ name: "profile-a-reply", reason: "Not a Claude.ai subscription login. No model request sent." });
@@ -272,6 +284,18 @@ describe("Codex probe runner end to end (fake process)", () => {
     expect(state.complete).toBe(false);
     expect(state.stoppedAfter.name).toBe("approval-unanswered-then-interrupt");
     expect(state.stoppedAfter.reason).toMatch(/before our turn\/interrupt was sent/);
+  });
+
+  it.each([
+    ["complete,complete,approval-wait-interrupt", /no approval request arrived/],
+    ["complete,approval-writes,approval-wait-interrupt", /probe\.txt was created/],
+  ])("does not accept %s as a declined approval", async (modes, reason) => {
+    const state = await runProbe(modes);
+    expect(state.complete).toBe(false);
+    expect(state.stoppedAfter.name).toBe("approval-declined");
+    expect(state.stoppedAfter.reason).toMatch(reason);
+    expect(state.notRun).toEqual(["approval-unanswered-then-interrupt"]);
+    expect(ledger().codex).toHaveLength(2);
   });
 
   it("sends nothing and reserves nothing when the account is not a ChatGPT subscription", async () => {
