@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ClaudeCodeAdapter, claudeArgs, isClaudeSubscription } from "./claude-code.js";
 import { CodexAdapter } from "./codex.js";
 import { buildPrompt, MAX_HISTORY_CHARS } from "./history.js";
@@ -12,6 +12,16 @@ const fixtures = path.join(__dirname, "test-fixtures");
 const node = { path: process.execPath, viaCmd: false };
 let dir: string;
 let logFile: string;
+// The tools' working directory. On Windows a folder cannot be removed while a process that has just
+// answered is still closing inside it, so this one is shared and removed after all tests.
+const cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), "orq-chat-cwd-"));
+afterAll(() => {
+  try {
+    fs.rmSync(cwdDir, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
+  } catch {
+    // A leftover empty temporary folder is harmless.
+  }
+});
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "orq-providers-"));
@@ -22,7 +32,7 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 }));
 
 const request = (over: Partial<ChatRequest> = {}): ChatRequest => ({
-  provider: "claude", model: null, effort: null, history: [], text: "Hej", cwd: dir, ...over,
+  provider: "claude", model: null, effort: null, history: [], text: "Hej", cwd: cwdDir, ...over,
 });
 
 const env = (extra: Record<string, string>) => ({
@@ -160,7 +170,7 @@ describe("Codex adapter", () => {
       limits: [{ label: "5-hour limit", usedPercent: 19, windowMinutes: 300 }],
     });
     const log = readLog();
-    expect(log.thread).toMatchObject({ approvalPolicy: "never", sandbox: "read-only", ephemeral: true, model: "gpt-6.1-sol", cwd: dir });
+    expect(log.thread).toMatchObject({ approvalPolicy: "never", sandbox: "read-only", ephemeral: true, model: "gpt-6.1-sol", cwd: cwdDir });
     expect(log.turn).toMatchObject({ threadId: "th-1", effort: "high" });
     expect(log.apiKeyReached).toBe(false);
   });
