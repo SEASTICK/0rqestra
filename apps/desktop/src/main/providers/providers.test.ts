@@ -17,7 +17,9 @@ beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "orq-providers-"));
   logFile = path.join(dir, "log.json");
 });
-afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+// On Windows a tool that has just answered can still be closing with this folder as its working
+// directory for a moment, and the folder cannot be removed until it has gone. Node retries EPERM.
+afterEach(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 }));
 
 const request = (over: Partial<ChatRequest> = {}): ChatRequest => ({
   provider: "claude", model: null, effort: null, history: [], text: "Hej", cwd: dir, ...over,
