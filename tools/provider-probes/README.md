@@ -15,9 +15,11 @@ already on the machine and record what those tools do.
   error, timeout, missing result, unexpected exit, error result, or exception. A "denied write"
   scenario also fails unless the denial is confirmed (Claude: a `Write` permission denial and
   no `probe.txt`; Codex: a supported approval request for the active thread and turn was
-  declined and no `probe.txt`). Unrelated server requests never count; each is answered without
-  granting anything, and every answer is recorded. The report is saved after every scenario, so
-  partial evidence survives a stop.
+  declined and no `probe.txt`). Unrelated server requests never count. In `approval-declined`,
+  every server request is answered without granting anything and every answer is recorded.
+  `approval-unanswered-then-interrupt` deliberately leaves the correlated approval unanswered
+  until it sends `turn/interrupt`, because that scenario tests the unanswered state. The report
+  is saved after every scenario, so partial evidence survives a stop.
 - **Exit checks.** Claude Code must exit 0 after a success and 1 after a correlated
   cancellation, with no signal. The Codex app-server must exit 0 by itself once stdin closes,
   after every scenario and after the handshake. Anything else is a failure.

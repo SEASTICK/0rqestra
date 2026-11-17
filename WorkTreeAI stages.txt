@@ -173,7 +173,8 @@ Verification types used below:
             were hardened to stop on any failure, with offline fake-process tests. On
             2026-11-17 the "denied write" scenarios were tightened to require a confirmed
             denial, Codex approvals are counted only when correlated with the active turn,
-            and final exit codes are checked for both providers (results doc §7). No probe
+            and final exit codes are checked for both providers (results doc §7). The
+            independent review accepted these code fixes (36443bb; see REVIEW LOG). No probe
             was rerun and the evidence files are unchanged;
           - both were the builds bundled with the providers' desktop apps; neither CLI is
             installed standalone.
@@ -279,6 +280,20 @@ implementations. Only mark remaining tasks complete when their deliverables and 
 exist.
 
 REVIEW LOG
+
+2026-11-17 — Independent review of the probe-runner code fixes (commit 36443bb):
+  - Accepted: Codex approvals are counted only when they are supported approval requests
+    correlated with the active thread and turn.
+  - Accepted: final exit codes and signals are validated for both providers, including
+    cancellation and app-server shutdown.
+  - Tests: 118 passed when run with Vitest's native configuration loader. The exact command
+    npm run check was blocked at Vitest startup by an EPERM error in the reviewer's
+    environment; lint and typecheck passed.
+  - Historical evidence unchanged; no real provider requests were made.
+  - Documentation clarification requested and made: "every server request is answered and
+    recorded" applies to approval-declined only; approval-unanswered-then-interrupt
+    deliberately leaves the correlated approval unanswered until it interrupts.
+  - This acceptance does not complete Stage 1. Item 6 remains [~].
 
 2026-11-16 — Independent review of the final Stage 1 documentation corrections (commit d43a6d8):
   - Accepted: the AC-18 baseline reconstruction correction (retained bytes, integrity checks,

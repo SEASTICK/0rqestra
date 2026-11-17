@@ -295,11 +295,14 @@ The two signed-in runners (`claude-auth.mjs`, `codex-appserver.mjs turns`) now:
 - (added 2026-11-17, after review of `6aa633c`) count, for the Codex declined approval and the
   unanswered approval, only **supported** approval requests (`item/commandExecution/requestApproval`
   or `item/fileChange/requestApproval`) whose `threadId` and `turnId` match the active thread
-  and turn. Every server request now gets an answer that grants nothing, and each answer is
-  recorded (`serverRequestResponses`): the first correlated approval is declined; any other
-  approval is cancelled; any other request (for example `item/tool/requestUserInput`) gets a
-  JSON-RPC error. An approval that arrives before `turn/start` has returned the turn ID cannot
-  be correlated and does not count.
+  and turn. In `approval-declined`, every server request gets an answer that grants nothing,
+  and each answer is recorded (`serverRequestResponses`): the first correlated approval is
+  declined; any other approval is cancelled; any other request (for example
+  `item/tool/requestUserInput`) gets a JSON-RPC error. `approval-unanswered-then-interrupt`
+  deliberately does not answer: it waits for a correlated approval, leaves it unanswered, and
+  then sends `turn/interrupt`, because that scenario tests the unanswered state. An approval
+  that arrives before `turn/start` has returned the turn ID cannot be correlated and does not
+  count.
   - That approval requests carry `threadId` and `turnId` comes from the app-server
     documentation (O1, re-checked 2026-11-17), **not from the evidence**: the 2026-11-16 runs
     recorded the method, command, working directory, and item ID of each approval, not its
