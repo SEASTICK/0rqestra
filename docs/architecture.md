@@ -339,7 +339,8 @@ updates).
 `tools/provider-probes/`. `npm run check` now runs 60 tests in 4 files (22 foundation tests plus
 38 probe-runner tests against fake processes). They passed locally on Windows. They have since
 run in CI as part of `npm test` in the new repository. On 2026-11-17 four regression tests were
-added for the denied-write checks, bringing the probe-runner tests to 42.
+added for the denied-write checks, bringing the probe-runner tests to 42; later the same day
+11 more were added for approval correlation and exit checks, bringing them to 53.
 
 No environment failures occurred in this run. One permission-classifier timeout in the assistant
 tooling delayed a command; it was retried unchanged and is unrelated to the application.

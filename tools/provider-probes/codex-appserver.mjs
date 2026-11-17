@@ -18,9 +18,20 @@ import { fileURLToPath } from "node:url";
 import {
   cleanEnv, modelRequestsUsed, removeDir, reserveModelRequest, saveResult, tempDir, writeHostileFixture,
 } from "./lib.mjs";
-import { AppServer, classifyCodexTurn, runSequence } from "./runner.mjs";
+import { abnormalShutdown, AppServer, classifyCodexTurn, runSequence } from "./runner.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// The approval requests the app-server documents (O1). Both carry itemId, threadId, and turnId.
+export const SUPPORTED_APPROVALS = ["item/commandExecution/requestApproval", "item/fileChange/requestApproval"];
+
+// An approval request counts for a scenario only if it is a supported approval for the active
+// thread AND the active turn. A request that arrives before turn/start has returned its turn id
+// cannot be correlated and does not count (fail closed).
+export function isCorrelatedApproval(message, threadId, turnId) {
+  return SUPPORTED_APPROVALS.includes(message.method)
+    && Boolean(threadId) && Boolean(turnId)
+    && message.params?.threadId === threadId && message.params?.turnId === turnId;
+}
 const WRITE_PROMPT = "Create a file named probe.txt in the current directory containing the text hi. Use one shell command and nothing else.";
 
 function methodCounts(log) {
@@ -72,9 +83,14 @@ export async function handshake({ bin, prefixArgs = [], log = console.log } = {}
   } catch (error) {
     report.error = error.message;
   } finally {
+    report.exitedBeforeStop = server.exitedBeforeStop || Boolean(server.exitInfo);
     report.exit = await server.stop();
     report.stderrTail = server.stderr.slice(-400);
   }
+  // The handshake fails (exit 1) on an early exit or an abnormal shutdown, not only on a request error.
+  if (!report.error && report.exitedBeforeStop) report.error = `app-server exited unexpectedly (${JSON.stringify(report.exit)})`;
+  const shutdown = abnormalShutdown(report.exit);
+  if (!report.error && shutdown) report.error = `abnormal app-server shutdown: ${shutdown}`;
   log(JSON.stringify({ account: report.account, models: report.models?.map((m) => m.id), rateLimits: report.rateLimits, error: report.error }, null, 1));
   log(`saved ${saveResult("codex-handshake", report)}`);
   return report;
@@ -168,25 +184,45 @@ export async function turns({
       await server.waitFor(completed, turnTimeoutMs);
     }),
     scenario("approval-declined", "succeeded", "untrusted", async ({ server, threadId, entry, turn, turnParams: params }) => {
-      let answered = 0;
+      // Every server request gets an answer that grants nothing, and every answer is recorded.
+      // Only correlated, supported approvals count toward the scenario.
+      const responses = [];
+      entry.serverRequestResponses = responses;
       server.onServerRequest = (message) => {
-        answered += 1;
-        server.send({ id: message.id, result: { decision: answered === 1 ? "decline" : "cancel" } });
+        const correlated = isCorrelatedApproval(message, threadId, turn.turnId);
+        const record = {
+          method: message.method, itemId: message.params?.itemId ?? null, threadId: message.params?.threadId ?? null,
+          turnId: message.params?.turnId ?? null, correlated,
+        };
+        if (SUPPORTED_APPROVALS.includes(message.method)) {
+          // Never accept. The first correlated approval is declined; anything else is cancelled.
+          const firstCorrelated = correlated && !responses.some((r) => r.correlated);
+          record.decision = firstCorrelated ? "decline" : "cancel";
+          server.send({ id: message.id, result: { decision: record.decision } });
+        } else {
+          record.error = "unsupported server request";
+          server.send({ id: message.id, error: { code: -32601, message: `probe does not handle ${message.method}` } });
+        }
+        responses.push(record);
       };
       const started = await server.request("turn/start", params(threadId, WRITE_PROMPT));
       turn.turnId = started?.turn?.id ?? null;
       await server.waitFor(completed, turnTimeoutMs);
-      entry.approvalRequestsAnswered = answered;
+      entry.approvalRequestsAnswered = responses.filter((r) => r.correlated).length;
+      entry.unrelatedServerRequests = responses.filter((r) => !r.correlated).length;
     }, (entry) => {
       if (entry.probeFileCreated) return "write was not prevented: probe.txt was created";
-      if (!(entry.approvalRequestsAnswered >= 1)) return "no approval request arrived, so nothing was declined";
+      const declined = (entry.serverRequestResponses ?? []).some((r) => r.correlated && r.decision === "decline");
+      if (!declined) return "no supported approval request for this turn was declined";
       return null;
     }),
     scenario("approval-unanswered-then-interrupt", "cancelled", "untrusted", async ({ server, threadId, entry, turn, turnParams: params }) => {
       const started = await server.request("turn/start", params(threadId, WRITE_PROMPT));
       turn.turnId = started?.turn?.id ?? null;
-      const request = await server.waitFor((e) => e.kind === "serverRequest", approvalTimeoutMs);
-      if (!request) throw new Error("no approval request arrived before the timeout");
+      const request = await server.waitFor(
+        (e) => e.kind === "serverRequest" && isCorrelatedApproval(e, threadId, turn.turnId), approvalTimeoutMs,
+      );
+      if (!request) throw new Error("no supported approval request for this turn arrived before the timeout");
       const before = server.log.length;
       await sleep(unansweredWaitMs);
       entry.eventsWhileUnanswered = methodCounts(server.log.slice(before));

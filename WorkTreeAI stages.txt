@@ -172,7 +172,8 @@ Verification types used below:
           - after review, the results were corrected offline (results doc §7) and the runners
             were hardened to stop on any failure, with offline fake-process tests. On
             2026-11-17 the "denied write" scenarios were tightened to require a confirmed
-            denial (results doc §7). No probe
+            denial, Codex approvals are counted only when correlated with the active turn,
+            and final exit codes are checked for both providers (results doc §7). No probe
             was rerun and the evidence files are unchanged;
           - both were the builds bundled with the providers' desktop apps; neither CLI is
             installed standalone.

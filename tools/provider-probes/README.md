@@ -14,8 +14,13 @@ already on the machine and record what those tools do.
 - **Stop on failure.** The signed-in runners stop after the first scenario that ends in a spawn
   error, timeout, missing result, unexpected exit, error result, or exception. A "denied write"
   scenario also fails unless the denial is confirmed (Claude: a `Write` permission denial and
-  no `probe.txt`; Codex: an approval request was answered and no `probe.txt`). The report is
-  saved after every scenario, so partial evidence survives a stop.
+  no `probe.txt`; Codex: a supported approval request for the active thread and turn was
+  declined and no `probe.txt`). Unrelated server requests never count; each is answered without
+  granting anything, and every answer is recorded. The report is saved after every scenario, so
+  partial evidence survives a stop.
+- **Exit checks.** Claude Code must exit 0 after a success and 1 after a correlated
+  cancellation, with no signal. The Codex app-server must exit 0 by itself once stdin closes,
+  after every scenario and after the handshake. Anything else is a failure.
 - **Fan-out.** Claude scenarios restrict the tool list, and the recorded lists contain no
   delegation tool. For Codex, fan-out is **not** controlled or verified: `approvalsReviewer:
   "user"` only routes approval requests to this client and does not disable delegation.

@@ -74,7 +74,10 @@ export function runStreamProcess(bin, args, { cwd, env, timeoutMs = 120_000, dri
 //
 // "cancelled" is returned only when OUR interrupt is acknowledged and the turn then ends: a
 // control_response with the same request_id and subtype "success", followed by a result with
-// subtype "error_during_execution". Any other error result is an independent failure.
+// subtype "error_during_execution", and then a process exit with code 1 and no signal (the
+// exit observed for an interrupted run, C12). Any other error result is an independent failure,
+// and any other final exit stops the sequence even when the cancellation itself was correlated.
+export const CLAUDE_CANCELLED_EXIT_CODE = 1;
 export function classifyClaudeRun(run, interrupt = null) {
   if (run.spawnError) return fail(`spawn error: ${run.spawnError}`);
   if (run.driveError) return fail(`driver error: ${run.driveError}`);
@@ -89,6 +92,9 @@ export function classifyClaudeRun(run, interrupt = null) {
     const acknowledged = ack?.response?.subtype === "success";
     const resultAfterAck = acknowledged && run.events.indexOf(result) > run.events.indexOf(ack);
     if (resultAfterAck && result.subtype === "error_during_execution") {
+      if (run.code !== CLAUDE_CANCELLED_EXIT_CODE || run.signal) {
+        return fail(`correlated cancellation, but abnormal process exit: code ${run.code}, signal ${run.signal} (expected code ${CLAUDE_CANCELLED_EXIT_CODE})`);
+      }
       return { outcome: "cancelled", reason: "interrupt acknowledged, then the turn ended" };
     }
     if (result.is_error) {
@@ -101,7 +107,7 @@ export function classifyClaudeRun(run, interrupt = null) {
   }
 
   if (result.is_error) return fail(`result error: ${result.subtype}`);
-  if (run.code !== 0) return fail(`unexpected exit code ${run.code} (signal ${run.signal})`);
+  if (run.code !== 0 || run.signal) return fail(`unexpected exit code ${run.code} (signal ${run.signal})`);
   return { outcome: "succeeded" };
 }
 
@@ -213,23 +219,39 @@ export class AppServer {
     return null;
   }
 
+  // Closes stdin and waits for the process to exit by itself. If it does not within 5 s it is
+  // killed, and the returned exit info says so (forcedKill), which counts as an abnormal shutdown.
   async stop() {
     this.stopRequested = true;
     if (!this.exitInfo) this.child.stdin.end();
     const exited = await Promise.race([this.exit, sleep(5_000).then(() => null)]);
-    if (!exited) this.child.kill();
-    return exited ?? (await this.exit);
+    if (exited) return exited;
+    this.child.kill();
+    return { ...(await this.exit), forcedKill: true };
   }
+}
+
+// A normal app-server shutdown: it exited by itself after stdin closed, with code 0 and no signal.
+// Returns null when normal, otherwise a reason.
+export function abnormalShutdown(exitInfo) {
+  if (!exitInfo) return "no exit recorded";
+  if (exitInfo.spawnError) return `spawn error: ${exitInfo.spawnError}`;
+  if (exitInfo.forcedKill) return "did not exit after stdin closed and was killed";
+  if (exitInfo.code !== 0 || exitInfo.signal) return `exit code ${exitInfo.code}, signal ${exitInfo.signal}`;
+  return null;
 }
 
 // Classifies one Codex turn from what the client recorded.
 //
 // "cancelled" requires OUR turn/interrupt to have been acknowledged for this turn and a
 // turn/completed with status "interrupted" for the same turn id, arriving after our request. An interrupted or failed turn
-// without that correlation is a failure.
+// without that correlation is a failure. Every outcome, cancellation included, also requires a
+// normal app-server shutdown afterwards (abnormalShutdown).
 export function classifyCodexTurn({ error, exitedBeforeStop, exitInfo, turnId, completions = [], errorNotifications = [], interrupt = null }) {
   if (error) return fail(`scenario error: ${error}`);
   if (exitedBeforeStop) return fail(`app-server exited unexpectedly (${JSON.stringify(exitInfo)})`);
+  const shutdown = abnormalShutdown(exitInfo);
+  if (shutdown) return fail(`abnormal app-server shutdown: ${shutdown}`);
   if (!turnId) return fail("no turn id: turn/start did not return a turn");
   const completion = completions.find((entry) => entry.id === turnId);
   if (!completion) return fail("missing turn/completed for this turn");

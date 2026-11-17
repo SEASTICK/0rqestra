@@ -292,6 +292,29 @@ The two signed-in runners (`claude-auth.mjs`, `codex-appserver.mjs turns`) now:
   this, a run in which the write happened could have been recorded as `succeeded`. The
   existing evidence already meets these conditions (Claude: one `Write` denial, no file; Codex:
   one approval answered, no file), and it was not changed.
+- (added 2026-11-17, after review of `6aa633c`) count, for the Codex declined approval and the
+  unanswered approval, only **supported** approval requests (`item/commandExecution/requestApproval`
+  or `item/fileChange/requestApproval`) whose `threadId` and `turnId` match the active thread
+  and turn. Every server request now gets an answer that grants nothing, and each answer is
+  recorded (`serverRequestResponses`): the first correlated approval is declined; any other
+  approval is cancelled; any other request (for example `item/tool/requestUserInput`) gets a
+  JSON-RPC error. An approval that arrives before `turn/start` has returned the turn ID cannot
+  be correlated and does not count.
+  - That approval requests carry `threadId` and `turnId` comes from the app-server
+    documentation (O1, re-checked 2026-11-17), **not from the evidence**: the 2026-11-16 runs
+    recorded the method, command, working directory, and item ID of each approval, not its
+    thread or turn ID. Whether the observed approvals would pass the new correlation check is
+    therefore not demonstrated.
+- (added 2026-11-17, after review of `6aa633c`) validate the final process exit for every
+  outcome:
+  - Claude Code: `succeeded` requires exit code 0 and no signal; `cancelled` (with the
+    correlation in C12) requires exit code 1 and no signal, the exit observed for the
+    interrupted run. Any other exit makes the scenario fail and stops the sequence, while the
+    report keeps the correlated acknowledgement and result.
+  - Codex: after each scenario, and after the handshake, the app-server must exit by itself
+    once stdin is closed, with code 0 and no signal (all four observed shutdowns did). A
+    non-zero code, a signal, a spawn error, or a forced kill after 5 s makes the scenario (or
+    the handshake) fail. Before this, the handshake exited 0 whatever the shutdown.
 
 These changes are verified only by offline tests against fake processes
 (`tools/provider-probes/runner.test.mjs`): no provider binary runs and no model request is

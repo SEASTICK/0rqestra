@@ -72,6 +72,7 @@ switch (mode) {
     setInterval(() => {}, 1000);
     break;
   case "interrupt-ack":
+  case "interrupt-ack-exit-7":
   case "interrupt-no-ack":
   case "interrupt-wrong-id":
   case "fail-before-interrupt": {
@@ -86,12 +87,13 @@ switch (mode) {
           emit({ type: "stream_event", event: { delta: { type: "text_delta", text: "1" } } });
         }
       } else if (message.type === "control_request") {
-        if (mode === "interrupt-ack") emit({ type: "control_response", response: { subtype: "success", request_id: message.request_id } });
+        if (mode === "interrupt-ack" || mode === "interrupt-ack-exit-7") emit({ type: "control_response", response: { subtype: "success", request_id: message.request_id } });
         if (mode === "interrupt-wrong-id") emit({ type: "control_response", response: { subtype: "success", request_id: "someone-else" } });
         emit(interrupted);
       }
     });
-    lines.on("close", () => { process.exitCode = 1; });
+    // An interrupted run exits 1 (C12); interrupt-ack-exit-7 exits 7 after a valid ack and result.
+    lines.on("close", () => { process.exitCode = mode === "interrupt-ack-exit-7" ? 7 : 1; });
     break;
   }
   default:
