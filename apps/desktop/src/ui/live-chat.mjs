@@ -46,9 +46,11 @@ export function effectiveTarget(target, statuses) {
 // Demo replies are left out, since no model wrote them.
 export function historyFor(messages, max = 40) {
   return (messages || [])
-    .filter((m) => m.kind === 'user' || (m.kind === 'assistant' && m.status === 'done' && m.text))
+    .filter((m) => m.kind === 'user' || (m.kind === 'assistant' && m.status === 'done' && m.text) || (m.kind === 'team' && m.run && m.run.status !== 'running'))
     .slice(-max)
-    .map((m) => ({ role: m.kind === 'user' ? 'user' : 'assistant', text: String(m.text).slice(0, 20000) }));
+    .map((m) => (m.kind === 'team'
+      ? { role: 'assistant', text: `Team run (${m.run.status}): ${m.run.summary || ''} Files: ${(m.run.files || []).map((f) => f.path).join(', ') || 'none'}.` }
+      : { role: m.kind === 'user' ? 'user' : 'assistant', text: String(m.text).slice(0, 20000) }));
 }
 
 export function newAssistant(id, target) {
@@ -71,7 +73,8 @@ export function applyChatEvent(message, event) {
 
 // A reply that was still being written when the app closed cannot continue.
 export function settleInterrupted(messages) {
-  return (messages || []).map((m) => (m.kind === 'assistant' && m.status === 'streaming' ? { ...m, status: 'stopped' } : m));
+  return (messages || []).map((m) => (m.kind === 'assistant' && m.status === 'streaming' ? { ...m, status: 'stopped' }
+    : m.kind === 'team' && m.run ? { ...m, run: settleTeamRun(m.run) } : m));
 }
 
 export function usageLine(message) {
@@ -159,13 +162,16 @@ export function parseQuestion(raw) {
   }
 }
 
-// While a reply is still being written, the question markup is hidden until it is complete.
+// While a reply is still being written, question and plan markup is hidden until it is complete.
+const OPEN_TAGS = [OPEN_TAG, '<orqestra-plan>'];
 export function visibleText(raw) {
   const source = String(raw ?? '');
-  const start = source.indexOf(OPEN_TAG);
-  if (start >= 0) return source.slice(0, start).trimEnd();
-  for (let n = OPEN_TAG.length - 1; n > 0; n -= 1) {
-    if (source.endsWith(OPEN_TAG.slice(0, n))) return source.slice(0, source.length - n);
+  const starts = OPEN_TAGS.map((tag) => source.indexOf(tag)).filter((i) => i >= 0);
+  if (starts.length) return source.slice(0, Math.min(...starts)).trimEnd();
+  for (const tag of OPEN_TAGS) {
+    for (let n = tag.length - 1; n > 0; n -= 1) {
+      if (source.endsWith(tag.slice(0, n))) return source.slice(0, source.length - n);
+    }
   }
   return source;
 }
@@ -175,4 +181,92 @@ export function answerFor(question, choice) {
   if (choice.kind === 'own') return choice.text.trim();
   const option = question.options[choice.index];
   return option.description ? `${option.label} (${option.description})` : option.label;
+}
+
+// ---- Plans and team runs (phase 3) ------------------------------------------------------------
+// The Manager ends a reply with <orqestra-plan>{json}</orqestra-plan> when work should be done. The
+// window shows the plan; nothing runs until the user starts it. The main process validates the plan
+// again (main/team/plan.ts) before anything happens.
+
+const PLAN = /<orqestra-plan>\s*([\s\S]*?)\s*<\/orqestra-plan>\s*$/;
+
+export function parsePlan(raw) {
+  const source = String(raw ?? '');
+  const match = PLAN.exec(source);
+  if (!match) return { body: source, plan: null };
+  const body = source.slice(0, match.index).trimEnd();
+  try {
+    const value = JSON.parse(match[1]);
+    const goal = text(value?.goal, 1000);
+    const tasks = Array.isArray(value?.tasks) ? value.tasks : [];
+    if (!goal || tasks.length < 1 || tasks.length > 8) return { body: source, plan: null };
+    const parsed = tasks.map((t) => ({
+      id: typeof t?.id === 'string' ? t.id : '', title: text(t?.title, 160), role: text(t?.role, 40), goal: text(t?.goal, 3000),
+      dependsOn: Array.isArray(t?.dependsOn) ? t.dependsOn.filter((d) => typeof d === 'string') : [],
+      deliverables: Array.isArray(t?.deliverables) ? t.deliverables.filter((d) => typeof d === 'string') : [],
+    }));
+    if (parsed.some((t) => !t.id || !t.title || !t.role || !t.goal || !t.deliverables.length)) return { body: source, plan: null };
+    return { body, plan: { goal, tasks: parsed } };
+  } catch {
+    return { body: source, plan: null };
+  }
+}
+
+const byPriority = (a, b) => (Number(a.priority) || 0) - (Number(b.priority) || 0) || String(a.name).localeCompare(String(b.name));
+
+// Who is in the team, as the Manager sees it.
+export function teamMembers(graph) {
+  return (graph?.nodes || []).filter((n) => n.role !== 'Manager').map((n) => ({ name: String(n.name).slice(0, 48), role: n.role, ready: isRealAgent(n) }));
+}
+
+// The agents that can work, as the main process needs them.
+export function teamAgents(graph) {
+  return (graph?.nodes || []).filter((n) => n.role !== 'Manager' && isRealAgent(n)).map((n) => ({
+    id: n.id, name: String(n.name).slice(0, 48), role: n.role, priority: Number(n.priority) || 0,
+    tool: n.agent.tool, model: n.agent.model ?? null, effort: n.agent.effort ?? null,
+  }));
+}
+
+// Which agent each task will start with (the highest priority real agent with that role).
+export function planAssignments(plan, graph) {
+  const agents = teamAgents(graph);
+  return plan.tasks.map((t) => ({ ...t, agent: agents.filter((a) => a.role === t.role).sort(byPriority)[0] || null }));
+}
+
+export function newTeamRun(id, plan) {
+  return { id, status: 'running', goal: plan.goal, tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, role: t.role, deliverables: t.deliverables, status: 'waiting', agentId: null, attempt: 0, note: null, review: null, files: [] })), summary: null, files: [], calls: 0, usage: null };
+}
+
+export function applyTeamEvent(run, event) {
+  const patch = (taskId, fn) => ({ ...run, tasks: run.tasks.map((t) => (t.id === taskId ? fn(t) : t)) });
+  switch (event && event.type) {
+    case 'run-started': return { ...run, tasks: run.tasks.map((t) => { const a = event.tasks.find((x) => x.id === t.id); return a ? { ...t, plannedAgentId: a.agentId, plannedAgentName: a.agentName } : t; }) };
+    case 'task': return patch(event.taskId, (t) => ({ ...t, status: event.status, agentId: event.agentId ?? t.agentId, attempt: event.attempt || t.attempt, note: event.note ?? null }));
+    case 'review': return patch(event.taskId, (t) => ({ ...t, review: { reviewerId: event.reviewerId, approved: event.approved, problems: event.problems } }));
+    case 'files': return patch(event.taskId, (t) => ({ ...t, files: event.files }));
+    case 'run-finished': return { ...run, status: event.status, summary: event.summary, files: event.files, calls: event.calls, usage: event.usage };
+    default: return run;
+  }
+}
+
+// What each agent in the tree is doing in a run, using the tree's own status names.
+const TREE_STATE = { working: 'working', reviewing: 'reviewing', waiting: 'queued', done: 'completed', unverified: 'completed', failed: 'blocked', blocked: 'blocked', stopped: 'interrupted' };
+const RANK = ['working', 'reviewing', 'queued', 'blocked', 'interrupted', 'completed'];
+export function nodeStates(run) {
+  const states = {};
+  if (!run) return states;
+  for (const t of run.tasks) {
+    const node = t.agentId || t.plannedAgentId;
+    if (!node) continue;
+    const next = TREE_STATE[t.status];
+    if (!next) continue;
+    if (!states[node] || RANK.indexOf(next) < RANK.indexOf(states[node])) states[node] = next;
+  }
+  return states;
+}
+
+// A run that was going on when the app closed cannot continue.
+export function settleTeamRun(run) {
+  if (!run || run.status !== 'running') return run;
+  return { ...run, status: 'stopped', summary: 'The app closed while the team was working. Files already written stay in the project folder.', tasks: run.tasks.map((t) => (['waiting', 'working', 'reviewing'].includes(t.status) ? { ...t, status: 'stopped' } : t)) };
 }

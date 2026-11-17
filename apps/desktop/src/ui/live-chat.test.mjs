@@ -148,3 +148,50 @@ describe('questions from the Manager', () => {
     expect(answerFor(question, { kind: 'skip' })).toMatch(/Decide yourself/);
   });
 });
+
+import { applyTeamEvent, newTeamRun, nodeStates, parsePlan, planAssignments, settleTeamRun, teamAgents, teamMembers } from './live-chat.mjs';
+
+describe('plans and team runs', () => {
+  const planJson = { goal: 'A workout log', tasks: [
+    { id: 't1', title: 'Page', role: 'Builder', goal: 'Write it', dependsOn: [], deliverables: ['index.html'] },
+    { id: 't2', title: 'Style', role: 'Builder', goal: 'Style it', dependsOn: ['t1'], deliverables: ['style.css'] },
+  ] };
+  const reply = `Here is the plan.\n<orqestra-plan>\n${JSON.stringify(planJson)}\n</orqestra-plan>`;
+  const graph = { nodes: [
+    { id: 'm', name: 'Manager', role: 'Manager', agent: { tool: 'claude', model: 'opus' } },
+    { id: 'b2', name: 'Backup builder', role: 'Builder', priority: 2, provider: 'Claude Code', model: 'Opus', agent: { tool: 'claude', model: 'opus', effort: null } },
+    { id: 'b1', name: 'Code builder', role: 'Builder', priority: 1, provider: 'Codex', model: 'Sol', agent: { tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' } },
+    { id: 'r1', name: 'Reviewer', role: 'Code Reviewer', priority: 1, provider: 'Google', model: 'Gemini (demo)' },
+  ] };
+
+  it('reads a plan and hides its markup while it is written', () => {
+    const { body, plan } = parsePlan(reply);
+    expect(body).toBe('Here is the plan.');
+    expect(plan.tasks.map((t) => t.id)).toEqual(['t1', 't2']);
+    expect(parsePlan('<orqestra-plan>{"goal":"x","tasks":[]}</orqestra-plan>').plan).toBeNull();
+    expect(parsePlan('<orqestra-plan>nope</orqestra-plan>').plan).toBeNull();
+    expect(visibleText('Plan coming <orqestra-plan>{"goal"')).toBe('Plan coming');
+  });
+
+  it('lists the team for the Manager and the working agents for a run', () => {
+    expect(teamMembers(graph)).toEqual([{ name: 'Backup builder', role: 'Builder', ready: true }, { name: 'Code builder', role: 'Builder', ready: true }, { name: 'Reviewer', role: 'Code Reviewer', ready: false }]);
+    expect(teamAgents(graph).map((a) => [a.id, a.tool, a.model])).toEqual([['b2', 'claude', 'opus'], ['b1', 'codex', 'gpt-6.1-sol']]);
+    expect(planAssignments(parsePlan(reply).plan, graph).map((t) => t.agent?.id)).toEqual(['b1', 'b1']);
+  });
+
+  it('follows a run and shows it in the tree', () => {
+    let run = newTeamRun('run-1', parsePlan(reply).plan);
+    run = applyTeamEvent(run, { type: 'run-started', tasks: [{ id: 't1', agentId: 'b1', agentName: 'Code builder' }, { id: 't2', agentId: 'b1', agentName: 'Code builder' }] });
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'working', agentId: 'b1', attempt: 1 });
+    expect(nodeStates(run)).toEqual({ b1: 'working' });
+    run = applyTeamEvent(run, { type: 'files', taskId: 't1', files: [{ path: 'index.html', bytes: 10 }] });
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'reviewing', agentId: 'r9', attempt: 1 });
+    run = applyTeamEvent(run, { type: 'review', taskId: 't1', reviewerId: 'r9', approved: true, problems: [] });
+    expect(nodeStates(run)).toEqual({ r9: 'reviewing', b1: 'queued' });
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'done', agentId: 'b1', attempt: 1, note: 'Approved' });
+    run = applyTeamEvent(run, { type: 'run-finished', status: 'done', summary: '2 of 2', files: [{ path: 'index.html', bytes: 10 }], calls: 4, usage: { inputTokens: 1, outputTokens: 2 } });
+    expect(run).toMatchObject({ status: 'done', calls: 4, tasks: [{ status: 'done', review: { approved: true }, files: [{ path: 'index.html' }] }, { status: 'waiting' }] });
+    expect(settleTeamRun(run)).toBe(run);
+    expect(settleTeamRun({ ...run, status: 'running' })).toMatchObject({ status: 'stopped', tasks: [{ status: 'done' }, { status: 'stopped' }] });
+  });
+});

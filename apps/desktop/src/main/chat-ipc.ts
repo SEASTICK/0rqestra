@@ -10,7 +10,11 @@ import { CodexAdapter } from "./providers/codex";
 
 let service: ChatService | null = null;
 
-export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolean, getWindow: () => BrowserWindow | null): void {
+export function createAdapters(): { claude: ClaudeCodeAdapter; codex: CodexAdapter } {
+  return { claude: new ClaudeCodeAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), codex: new CodexAdapter() };
+}
+
+export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolean, getWindow: () => BrowserWindow | null, adapters = createAdapters()): void {
   // An empty folder that is the working directory of every chat. The tools get no tools in a
   // chat, but if one ever looked around, there is nothing here to find.
   const cwd = () => {
@@ -18,8 +22,7 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   };
-  const settingsDir = path.join(app.getPath("userData"), "provider-settings");
-  service = new ChatService({ claude: new ClaudeCodeAdapter({ settingsDir }), codex: new CodexAdapter() }, cwd);
+  service = new ChatService(adapters, cwd);
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
   };

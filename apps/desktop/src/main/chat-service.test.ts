@@ -6,7 +6,8 @@ const valid = { requestId: "req-00001", projectId: "p1", provider: "claude", mod
 
 describe("parseSend", () => {
   it("accepts a valid request and normalises empty model and effort", () => {
-    expect(parseSend(valid)).toEqual({ ...valid, history: [{ role: "user", text: "hi" }] });
+    expect(parseSend(valid)).toEqual({ ...valid, history: [{ role: "user", text: "hi" }], team: [] });
+    expect(parseSend({ ...valid, team: [{ name: " Code builder ", role: "Builder", ready: true }] }).team).toEqual([{ name: "Code builder", role: "Builder", ready: true }]);
     expect(parseSend({ ...valid, model: "", effort: undefined })).toMatchObject({ model: null, effort: null });
   });
 
@@ -15,7 +16,7 @@ describe("parseSend", () => {
       null, "x", { ...valid, requestId: "short" }, { ...valid, requestId: "../../etc/x" }, { ...valid, projectId: "a b" },
       { ...valid, provider: "bash" }, { ...valid, model: "opus; rm -rf" }, { ...valid, model: "--dangerously-skip-permissions" },
       { ...valid, effort: "HIGH!" }, { ...valid, text: "   " }, { ...valid, text: "x".repeat(20_001) },
-      { ...valid, history: "nope" }, { ...valid, history: [{ role: "system", text: "x" }] }, { ...valid, history: Array(201).fill({ role: "user", text: "x" }) },
+      { ...valid, history: "nope" }, { ...valid, team: [{ name: "x", role: "Builder; rm" }] }, { ...valid, team: "x" }, { ...valid, history: [{ role: "system", text: "x" }] }, { ...valid, history: Array(201).fill({ role: "user", text: "x" }) },
     ]) {
       expect(() => parseSend(bad), JSON.stringify(bad)?.slice(0, 60)).toThrow();
     }

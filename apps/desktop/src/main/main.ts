@@ -4,7 +4,8 @@ import { app, BrowserWindow, ipcMain, Menu, session, type IpcMainEvent, type Ipc
 import { isDevToolsShortcut, isSameFileUrl, isTrustedSender, mainWindowOptions, type SenderInfo } from "./security";
 import { runSmoke } from "./smoke";
 import { registerUpdateIpc, startUpdater } from "./update";
-import { registerChatIpc } from "./chat-ipc";
+import { createAdapters, registerChatIpc } from "./chat-ipc";
+import { registerTeamIpc } from "./team/team-ipc";
 import {
   createSmokeOutcome,
   errorMessage,
@@ -84,7 +85,9 @@ ipcMain.handle("app:get-info", (event) => {
 });
 
 registerUpdateIpc(isFromMainWindow);
-registerChatIpc(isFromMainWindow, () => mainWindow);
+const providerAdapters = createAdapters();
+registerChatIpc(isFromMainWindow, () => mainWindow, providerAdapters);
+registerTeamIpc(isFromMainWindow, () => mainWindow, providerAdapters);
 
 if (!smoke) {
   app.on("window-all-closed", () => app.quit());

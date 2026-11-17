@@ -169,6 +169,28 @@ change what it does, the Manager ends its reply with one multiple-choice questio
 its own recommendation). The chat shows it as a card, as Lovable does: the Manager's pick is
 preselected, the user can write their own answer or skip, and the answer becomes the next message.
 Phase 3 uses the same question card when the plan needs a decision.
+
+**Status 2026-11-17: first release built, not yet run against the real tools.** What exists:
+- The Manager knows the agents in the tree (and which can work) and, for a request that needs files,
+  ends its reply with a plan: tasks, roles, order, and the files each task delivers.
+- The plan shows as a card with the agent each task starts with. **Nothing runs until the user
+  presses Start.** A role without a working agent blocks Start and links to the tree.
+- `apps/desktop/src/main/team/`: the plan is validated again in the main process (roles, order,
+  no circles, each file owned by one task, plain relative file names). Tasks run in dependency
+  order, two at a time. Agents keep their tools switched off and hand over files as text; the main
+  process writes them into the project's folder (`<user data>/projects/<id>/workspace`), never
+  outside it and never through a link. Earlier tasks' files are given to the tasks that depend on them.
+- A Code Reviewer (preferably on the other tool) reviews each task. Work that is not approved goes
+  back with the problems listed; a retry goes to the next agent of the same role by priority. Limits
+  from decision A5: at most 3 attempts per task and 25 agent requests per run. Without a reviewer the
+  work is marked "not reviewed".
+- The tree shows who is working, reviewing or waiting; the chat shows each task, its agent, review
+  notes, files, and the totals; Stop works; Open project folder opens the files.
+- Verified: unit tests for every part with scripted agents, and the whole flow in a browser with a
+  stubbed bridge. **Not verified:** a run with the real Claude Code and Codex, and whether the
+  models follow the plan and file formats reliably.
+- Not yet: the Planner role making the plan (decision A6; the Manager plans for now), the Manager
+  re-planning after a failure, and running or previewing what the agents built (phase 5b).
 The port of the Python engine's core, in TypeScript.
 - **Manager** asks clarifying questions or makes a **plan**: tasks, order, difficulty, and a
   cost cap. It never does specialist work itself.

@@ -227,7 +227,7 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
       }
     });
 
-    const prompt = buildPrompt(request.history, request.text);
+    const prompt = request.raw ? request.text : buildPrompt(request.history, request.text, request.team);
     child.stdin?.on("error", () => {});
     child.stdin?.write(`${JSON.stringify({ type: "user", message: { role: "user", content: prompt } })}\n`);
   }

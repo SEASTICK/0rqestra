@@ -25,6 +25,16 @@ contextBridge.exposeInMainWorld("orqestra", {
       ipcRenderer.on("chat:event", (_event, message: unknown) => listener(message));
     },
   },
+  // Team runs (main/team/team-ipc.ts): start an approved plan, stop it, open the project's folder.
+  team: {
+    start: (payload: unknown) => ipcRenderer.invoke("team:start", payload),
+    stop: (runId: string) => ipcRenderer.invoke("team:stop", String(runId)),
+    openFolder: (projectId: string) => ipcRenderer.invoke("team:open-folder", String(projectId)),
+    subscribe: (listener: (message: unknown) => void) => {
+      ipcRenderer.removeAllListeners("team:event");
+      ipcRenderer.on("team:event", (_event, message: unknown) => listener(message));
+    },
+  },
 });
 
 // Smoke-only diagnostic sent to the main process; nothing is exposed to the page.

@@ -1,6 +1,6 @@
 import { MAX_MESSAGE_CHARS } from "./providers/history";
 import { EFFORT_NAME, MODEL_NAME } from "./providers/process";
-import { PROVIDER_IDS, type ChatEvent, type ChatHandle, type ChatTurn, type ProviderAdapter, type ProviderId, type ProviderStatus } from "./providers/types";
+import { PROVIDER_IDS, type ChatEvent, type ChatHandle, type ChatTurn, type ProviderAdapter, type ProviderId, type ProviderStatus, type TeamMember } from "./providers/types";
 
 // The chat between the window and the provider tools, free of Electron so it is unit-tested.
 // Everything that arrives from the window is validated here before any tool is started.
@@ -18,6 +18,7 @@ export interface SendPayload {
   effort: string | null;
   history: ChatTurn[];
   text: string;
+  team: TeamMember[];
 }
 
 export function parseSend(value: unknown): SendPayload {
@@ -40,7 +41,16 @@ export function parseSend(value: unknown): SendPayload {
     }
     return { role: t.role, text: t.text };
   });
-  return { requestId: v.requestId, projectId: v.projectId, provider: v.provider as ProviderId, model, effort, history: turns, text: v.text };
+  const rawTeam = v.team ?? [];
+  if (!Array.isArray(rawTeam) || rawTeam.length > 40) throw new Error("Invalid team.");
+  const team: TeamMember[] = rawTeam.map((member: unknown) => {
+    const m = member as Record<string, unknown> | null;
+    if (!m || typeof m.name !== "string" || !m.name.trim() || m.name.length > 48 || typeof m.role !== "string" || !/^[A-Za-z][A-Za-z ]{0,39}$/.test(m.role)) {
+      throw new Error("Invalid team.");
+    }
+    return { name: m.name.trim(), role: m.role, ready: m.ready === true };
+  });
+  return { requestId: v.requestId, projectId: v.projectId, provider: v.provider as ProviderId, model, effort, history: turns, text: v.text, team };
 }
 
 export type Emit = (requestId: string, event: ChatEvent) => void;
@@ -73,7 +83,7 @@ export class ChatService {
     if ([...this.running.values()].some((r) => r.projectId === payload.projectId)) throw new Error("A reply is already being written in this project. Stop it or wait.");
     if (this.running.size >= MAX_RUNNING) throw new Error("Too many replies are running. Wait for one to finish.");
     const handle = this.adapters[payload.provider].chat({
-      provider: payload.provider, model: payload.model, effort: payload.effort, history: payload.history, text: payload.text, cwd: this.cwd(),
+      provider: payload.provider, model: payload.model, effort: payload.effort, history: payload.history, text: payload.text, cwd: this.cwd(), team: payload.team,
     });
     this.running.set(payload.requestId, { projectId: payload.projectId, handle });
     void (async () => {

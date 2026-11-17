@@ -17,6 +17,17 @@ export interface ChatRequest {
   history: ChatTurn[];
   text: string;
   cwd: string;
+  // Team runs send their own full prompt; the chat's Manager preamble and history are not added.
+  raw?: boolean;
+  // The agents in the tree, so the Manager can plan work for them.
+  team?: TeamMember[];
+}
+
+export interface TeamMember {
+  name: string;
+  role: string;
+  // True when the agent runs on Claude Code or Codex; demo agents cannot work yet.
+  ready: boolean;
 }
 
 export interface Usage {

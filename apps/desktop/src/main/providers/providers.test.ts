@@ -83,6 +83,14 @@ describe("prompt", () => {
     expect(prompt.trim().endsWith("User: Q2")).toBe(true);
   });
 
+  it("adds the team and the plan format only when the window sends a team", () => {
+    expect(buildPrompt([], "hi")).not.toContain("<orqestra-plan>");
+    const prompt = buildPrompt([], "build me an app", [{ name: "Code builder", role: "Builder", ready: true }, { name: "The architect", role: "Planner", ready: false }]);
+    expect(prompt).toContain("<orqestra-plan>");
+    expect(prompt).toContain("- Builder: Code builder (can work)");
+    expect(prompt).toContain("Demo agents that cannot work yet: The architect (Planner).");
+  });
+
   it("drops the oldest turns when the history is too long", () => {
     const long = "x".repeat(MAX_HISTORY_CHARS / 2);
     const prompt = buildPrompt([{ role: "user", text: `OLD ${long}` }, { role: "assistant", text: `MID ${long}` }, { role: "user", text: "NEW" }], "now");
