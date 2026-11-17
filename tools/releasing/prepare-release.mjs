@@ -26,6 +26,10 @@ pkg.version = version;
 config.channel = channel;
 config.feedUrl = (process.env.RELEASES_PAGES_URL ?? config.feedUrl).replace(/\/+$/, "").replace(/\/test$/, "");
 if (channel === "test") {
+  // The package name decides both the install folder (%LOCALAPPDATA%Programs<name>) and the
+  // user-data folder (%APPDATA%<name>). Without its own name a test build installs over the
+  // stable app and shares its projects and settings.
+  pkg.name = `${pkg.name}-updatertest`;
   pkg.build.appId = `${pkg.build.appId}.updatertest`;
   pkg.build.productName = `${pkg.build.productName} Updater Test`;
   config.feedUrl = `${config.feedUrl}/test`;

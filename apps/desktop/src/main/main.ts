@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, ipcMain, session, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
 import { isSameFileUrl, isTrustedSender, mainWindowOptions, type SenderInfo } from "./security";
 import { runSmoke } from "./smoke";
-import { startUpdater } from "./update";
+import { registerUpdateIpc, startUpdater } from "./update";
 import {
   createSmokeOutcome,
   errorMessage,
@@ -81,6 +81,8 @@ ipcMain.handle("app:get-info", (event) => {
     platform: process.platform,
   };
 });
+
+registerUpdateIpc(isFromMainWindow);
 
 if (!smoke) {
   app.on("window-all-closed", () => app.quit());

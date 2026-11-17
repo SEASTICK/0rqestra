@@ -153,6 +153,9 @@ describe("release scripts", () => {
     expect(prepare("test", "0.4.1").status).toBe(0);
     const after = repo.read("package.json");
     expect(after.version).toBe("0.4.1");
+    // Its own package name gives it its own install folder and user-data folder.
+    expect(after.name).toBe(`${before.name}-updatertest`);
+    expect(after.name).not.toBe(before.name);
     expect(after.build.appId).toBe(`${before.build.appId}.updatertest`);
     expect(after.build.productName).toBe(`${before.build.productName} Updater Test`);
     expect(repo.read("update-config.json")).toEqual({ channel: "test", feedUrl: `${FEED}/test`, downloadBase: DOWNLOADS, publicKey: "key" });

@@ -8,9 +8,17 @@ The model is the one used for Trader_go and Vinstly Desktop. 0rqestra is built f
 **Actions → Publish 0rqestra release → Run workflow**. The workflow must be on `main` to be
 started.
 
-Status: the release scripts and the app's update logic are covered by unit tests. The workflow
-itself, the Windows installer step, and the macOS bundle swap have **not** been run yet. The first
-`test` release is that test.
+Status (2026-11-17):
+- The release scripts and the app's update logic are covered by unit tests.
+- The `stable` workflow has run: v0.1.0 and v0.1.1 are published, and the stable
+  `latest.json` is live.
+- The `test` channel has **not** been published yet (`/test/latest.json` does not exist).
+- A Windows upgrade from version A to a newer version B was observed locally, using the
+  same installer and update code with a local HTTPS feed and a throwaway signing key (not GitHub):
+  background download with progress, signature check, refusal while a run was active, "Restart
+  now", silent install, automatic restart, and saved projects and settings kept. A mis-signed
+  file was refused and deleted. The same upgrade through GitHub's `test` channel has not been run.
+- macOS: not verified (deferred).
 
 ## Where things are published
 
@@ -26,7 +34,7 @@ itself, the Windows installer step, and the macOS bundle swap have **not** been 
 
 | Channel | What it does |
 |---|---|
-| `test` | Builds and publishes `/test/latest.json` on the update site. Creates a pre-release `test-vX.Y.Z` under Releases (not "Latest") and no `v` tag. Skips the approval. The test app is called **0rqestra Updater Test** and has its own app id, so it only follows the test channel. |
+| `test` | Builds and publishes `/test/latest.json` on the update site. Creates a pre-release `test-vX.Y.Z` under Releases (not "Latest") and no `v` tag. Skips the approval. The test app is called **0rqestra Updater Test** and has its own package name and app id, so it installs to its own folder, keeps its own projects and settings, and only follows the test channel. |
 | `stable` | Builds, **pauses for approval**, publishes at the root of the update site, and creates a regular release tagged `vX.Y.Z`, shown as "Latest" on the repository page. Everyone who has the app receives the update. |
 
 ## How to release
@@ -95,15 +103,25 @@ If the releases repository gets another name, change `RELEASES_REPO` and `RELEAS
   minutes). Only a packaged app checks; a development run and the smoke check never do.
 - A strictly newer version is downloaded in the background right away and verified against the
   public key built into the app. Only then does the app ask: **Restart now** or **Later**.
-  "Later" stays quiet about that version for a day; **Check for Updates…** always shows it.
+  "Later" stays quiet about that version for a day, and asks again after that day; **Check for
+  updates** (Help menu, or the version label at the bottom of the side panel) always shows it.
+- The window shows the version, the release notes ("What's new?"), the download progress, and
+  errors with what to do next. The taskbar button shows the download progress too.
+- If an even newer version is published while one is waiting to be installed, the newer one
+  replaces it.
 - A file that cannot be verified is deleted and never installed. Without a network nothing is
-  shown unless you asked by hand.
+  shown unless you asked by hand; a background error never hides an update that is already
+  downloaded.
+- Before installing, the window saves the projects. Installing is refused while a run is active,
+  and the message says which project and what has to finish or stop first. If saving cannot be
+  confirmed, nothing is installed.
 - `latest.json` is read only from the app's own update address, and update files are fetched only
   over HTTPS from this repository's release downloads (`downloadBase` in
   `apps/desktop/update-config.json`). Anything else in a manifest is refused.
 - The signature covers the version number and the file's SHA-512 (Ed25519). An older signed file
   cannot be republished as a newer version.
-- Windows: the NSIS installer runs silently and starts the app again. macOS: the new app bundle
+- Windows: the NSIS installer runs silently; a detached helper waits for it and then starts the
+  app again (the installer's own restart did not start the app in local testing). macOS: the new app bundle
   replaces the installed one and the app restarts; if the swap fails the previous bundle is put
   back.
 - The update downloads the whole installer. There is no delta update.

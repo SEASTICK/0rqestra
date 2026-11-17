@@ -43,15 +43,17 @@ for (const name of ['react', 'react-dom', 'react-dom-client', 'scheduler']) {
 modules.app = compile('App.jsx', jsx);
 modules.taskUI = compile('TaskPanels.jsx', jsx);
 modules.simulatedProviders = compile('SimulatedProviders.jsx', jsx);
+modules.updateUI = compile('UpdateDialog.jsx', jsx);
 modules.allowance = compile('allowance.mjs', plain);
 modules.demo = compile('demo-run.mjs', plain);
 modules.camera = compile('camera.mjs', plain);
 modules.treeRules = compile('tree-rules.mjs', plain);
+modules.updateGate = compile('update-gate.mjs', plain);
 modules.workflow = compile('task-workflow.mjs', plain);
 
 const aliases = {
-  './SimulatedProviders.jsx': 'simulatedProviders', './TaskPanels.jsx': 'taskUI', './task-workflow.mjs': 'workflow',
-  './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './demo-run.mjs': 'demo', './allowance.mjs': 'allowance', 'react-dom/client': 'react-dom-client',
+  './SimulatedProviders.jsx': 'simulatedProviders', './UpdateDialog.jsx': 'updateUI', './TaskPanels.jsx': 'taskUI', './task-workflow.mjs': 'workflow',
+  './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './demo-run.mjs': 'demo', './allowance.mjs': 'allowance', 'react-dom/client': 'react-dom-client',
   'next/dist/compiled/react': 'react', 'next/dist/compiled/react-dom': 'react-dom', 'next/dist/compiled/scheduler': 'scheduler',
 };
 const body = Object.entries(modules)

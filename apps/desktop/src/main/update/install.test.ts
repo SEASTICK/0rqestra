@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { macBundlePath, swapMacBundle, type Extract } from "./install.js";
+import { macBundlePath, swapMacBundle, type Extract, windowsInstallCommand } from "./install.js";
 
 describe("macBundlePath", () => {
   it("finds the bundle from the executable path", () => {
@@ -59,5 +59,24 @@ describe("swapMacBundle", () => {
     await expect(swapMacBundle(bundle, "update.zip", extractBundles("A.app", "B.app"))).rejects.toThrow(/found 2/);
     expect(marker()).toBe("old");
     expect(fs.readdirSync(dir)).toEqual(["0rqestra.app"]);
+  });
+});
+
+describe("windowsInstallCommand", () => {
+  it("runs the installer silently, waits for it, then starts the app, keeping paths with spaces whole", () => {
+    const command = windowsInstallCommand(
+      "C:\\Users\\Min Dator\\AppData\\Roaming\\0rqestra\\updates\\0rqestra_0.2.1_x64-setup.exe",
+      "C:\\Users\\Min Dator\\AppData\\Local\\Programs\\0rqestra\\0rqestra.exe",
+    );
+    expect(command).toBe(
+      '"start "" /wait "C:\\Users\\Min Dator\\AppData\\Roaming\\0rqestra\\updates\\0rqestra_0.2.1_x64-setup.exe" --updated /S & start "" "C:\\Users\\Min Dator\\AppData\\Local\\Programs\\0rqestra\\0rqestra.exe""',
+    );
+    expect(command).not.toContain("--force-run");
+  });
+
+  it("refuses paths that are not absolute Windows paths or contain a quote", () => {
+    expect(() => windowsInstallCommand('C:\\a"b.exe', "C:\\app.exe")).toThrow(/Unexpected path/);
+    expect(() => windowsInstallCommand("relative\\setup.exe", "C:\\app.exe")).toThrow(/Unexpected path/);
+    expect(() => windowsInstallCommand("C:\\setup.exe", "C:\\app.exe & calc")).not.toThrow(); // stays inside the quotes
   });
 });

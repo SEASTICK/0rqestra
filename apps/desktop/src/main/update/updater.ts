@@ -18,9 +18,20 @@ export const text = {
   networkDownload: "The download was interrupted. Check your internet connection and try again.",
   platform: "The latest version is not available for this computer yet.",
   install: "The update could not be installed.",
+  prepare: "Your projects could not be saved, so the update was not installed. Try again.",
 } as const;
 
 export type UpdateStatus = "idle" | "checking" | "current" | "downloading" | "ready" | "installing" | "error";
+
+// What the window shows. Sent to the renderer on every change (index.ts).
+export interface UpdateSnapshot {
+  status: UpdateStatus;
+  currentVersion: string;
+  version?: string;
+  notes?: string;
+  // 0..1 while downloading when the size is known, otherwise null.
+  progress: number | null;
+}
 
 export interface ReadyUpdate {
   version: string;
@@ -47,7 +58,7 @@ export interface UpdaterDeps {
   config: UpdateConfig;
   platform: PlatformKey | null;
   fetchText(url: string): Promise<string>;
-  download(url: string): Promise<{ filePath: string; sha512Hex: string }>;
+  download(url: string, onProgress?: (fraction: number | null) => void): Promise<{ filePath: string; sha512Hex: string }>;
   discard(filePath: string): Promise<void>;
   // Installs the verified file and restarts the app.
   install(filePath: string): Promise<void>;
@@ -57,6 +68,8 @@ export interface UpdaterDeps {
   writeSnooze(raw: string): void;
   now(): number;
   ui: UpdaterUi;
+  // Called whenever the snapshot changes.
+  onState?(snapshot: UpdateSnapshot): void;
 }
 
 const detailOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -68,13 +81,32 @@ export class Updater {
   private busy = false;
   private prompting = false;
   private lastCheck: number | null = null;
+  private pending: { version: string; notes: string } | null = null;
+  private progress: number | null = null;
 
   constructor(private readonly deps: UpdaterDeps) {}
 
+  snapshot(): UpdateSnapshot {
+    const shown = this.ready ?? this.pending;
+    return {
+      status: this.status,
+      currentVersion: this.deps.currentVersion,
+      progress: this.status === "downloading" ? this.progress : null,
+      ...(shown ? { version: shown.version, notes: shown.notes } : {}),
+    };
+  }
+
+  private setStatus(status: UpdateStatus): void {
+    this.status = status;
+    this.deps.onState?.(this.snapshot());
+  }
+
   // silent: started by the app itself (startup, timer, focus). Errors are then recorded, not shown.
+  // A silent check also runs while an update is already downloaded: it picks up an even newer
+  // release, and it asks again once a "Later" for the downloaded version has expired.
   async check(silent: boolean): Promise<void> {
-    if (this.ready) {
-      if (!silent) await this.prompt();
+    if (this.ready && !silent) {
+      await this.prompt();
       return;
     }
     if (this.busy) return;
@@ -102,7 +134,8 @@ export class Updater {
   }
 
   private fail(silent: boolean, message: string, detail: string, version?: string): void {
-    this.status = "error";
+    // A failed background check never hides an update that is already downloaded and verified.
+    this.setStatus(this.ready ? "ready" : "error");
     this.diagnostics = {
       checkedAt: this.deps.now(),
       result: "error",
@@ -115,8 +148,10 @@ export class Updater {
 
   private async checkAndDownload(silent: boolean): Promise<void> {
     const { config, currentVersion } = this.deps;
-    this.status = "checking";
+    if (!this.ready) this.setStatus("checking");
     this.lastCheck = this.deps.now();
+    // A version already downloaded is the baseline: only something newer than it is fetched.
+    const baseline = this.ready?.version ?? currentVersion;
 
     let manifest;
     try {
@@ -125,8 +160,9 @@ export class Updater {
       this.fail(silent, text.networkCheck, detailOf(error));
       return;
     }
-    if (!isNewerVersion(manifest.version, currentVersion)) {
-      this.status = "current";
+    if (!isNewerVersion(manifest.version, baseline)) {
+      if (this.ready) return;
+      this.setStatus("current");
       this.diagnostics = { checkedAt: this.deps.now(), result: "current" };
       if (!silent) this.deps.ui.info(text.upToDate);
       return;
@@ -137,22 +173,35 @@ export class Updater {
       return;
     }
 
-    this.status = "downloading";
+    // A newer release replaces an update that was downloaded earlier but not installed.
+    if (this.ready) {
+      await this.deps.discard(this.ready.filePath).catch(() => undefined);
+      this.ready = null;
+    }
+    this.pending = { version: manifest.version, notes: manifest.notes };
+    this.progress = null;
+    this.setStatus("downloading");
     let file;
     try {
-      file = await this.deps.download(entry.url);
+      file = await this.deps.download(entry.url, (fraction) => {
+        this.progress = fraction === null ? null : Math.max(0, Math.min(1, fraction));
+        this.deps.onState?.(this.snapshot());
+      });
     } catch (error) {
+      this.pending = null;
       this.fail(silent, text.networkDownload, detailOf(error), manifest.version);
       return;
     }
     if (!verifyUpdateSignature(config.publicKey, manifest.version, file.sha512Hex, entry.signature)) {
       await this.deps.discard(file.filePath).catch(() => undefined);
+      this.pending = null;
       this.fail(silent, text.signature, "signature does not match the downloaded file", manifest.version);
       return;
     }
     this.ready = { version: manifest.version, notes: manifest.notes, filePath: file.filePath };
-    this.status = "ready";
+    this.pending = null;
     this.diagnostics = { checkedAt: this.deps.now(), result: "ready", version: manifest.version };
+    this.setStatus("ready");
   }
 
   private async prompt(): Promise<void> {
@@ -169,17 +218,24 @@ export class Updater {
         this.deps.writeSnooze(JSON.stringify({ version: ready.version, untilUnixMs: this.deps.now() + SNOOZE_MS }));
         return;
       }
-      const blocked = await this.deps.beforeInstall?.();
+      // Saves project state and refuses while work is active. Anything unexpected also blocks:
+      // the update is never installed without a confirmed save.
+      let blocked: string | null;
+      try {
+        blocked = (await this.deps.beforeInstall?.()) ?? null;
+      } catch (error) {
+        blocked = `${text.prepare} (${detailOf(error)})`;
+      }
       if (blocked) {
         this.deps.ui.error(blocked, "");
         return;
       }
-      this.status = "installing";
+      this.setStatus("installing");
       try {
         await this.deps.install(ready.filePath);
       } catch (error) {
         // The downloaded file is kept, so "Restart now" can be tried again.
-        this.status = "ready";
+        this.setStatus("ready");
         this.deps.ui.error(text.install, detailOf(error));
       }
     } finally {

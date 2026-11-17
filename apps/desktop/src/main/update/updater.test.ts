@@ -101,8 +101,11 @@ describe("Updater", () => {
 
     log.length = 0;
     await updater.check(true);
-    expect(log).toEqual([]); // already downloaded: no network, no prompt while snoozed
+    // Already downloaded: the feed is read again (to find an even newer release), but nothing is
+    // downloaded and there is no prompt while snoozed.
+    expect(log).toEqual([`fetch ${FEED}/latest.json`]);
 
+    log.length = 0;
     await updater.check(false);
     expect(log).toEqual(["prompt 0.2.0 from 0.1.0"]); // asking by hand always shows it
   });
@@ -200,6 +203,90 @@ describe("Updater", () => {
     const { updater, log } = setup({ published: "0.1.0" });
     await Promise.all([updater.check(true), updater.check(true)]);
     expect(log.length).toBe(1);
+  });
+});
+
+describe("Updater: snooze expiry, newer releases, progress, and the install gate", () => {
+  it("asks again on a silent check once the day of Later has passed", async () => {
+    const { updater, log, state } = setup();
+    await updater.check(true); // downloads, prompts, user picks Later
+    log.length = 0;
+    state.now += SNOOZE_MS - 1;
+    await updater.check(true);
+    expect(log.some((line) => line.startsWith("prompt"))).toBe(false);
+    state.now += 1;
+    await updater.check(true);
+    expect(log.filter((line) => line.startsWith("prompt"))).toEqual(["prompt 0.2.0 from 0.1.0"]);
+  });
+
+  it("replaces a downloaded update with a newer release, and prompts for the new one despite Later", async () => {
+    const { updater, log, state } = setup();
+    await updater.check(true); // 0.2.0 downloaded, Later
+    state.published = "0.3.0";
+    log.length = 0;
+    await updater.check(true);
+    expect(log).toEqual([
+      `fetch ${FEED}/latest.json`,
+      "discard /tmp/update.exe",
+      `download ${DOWNLOADS}/v0.3.0/App.exe`,
+      "prompt 0.3.0 from 0.1.0",
+    ]);
+    expect(updater.snapshot()).toMatchObject({ status: "ready", version: "0.3.0" });
+  });
+
+  it("keeps a downloaded update when a later background check fails", async () => {
+    const { updater, log } = setup();
+    await updater.check(true);
+    const deps = (updater as unknown as { deps: UpdaterDeps }).deps;
+    deps.fetchText = async () => {
+      throw new Error("offline");
+    };
+    log.length = 0;
+    await updater.check(true);
+    expect(updater.status).toBe("ready");
+    expect(log.some((line) => line.startsWith("error"))).toBe(false); // background errors stay quiet
+  });
+
+  it("reports download progress and the version being fetched", async () => {
+    const { updater } = setup();
+    const deps = (updater as unknown as { deps: UpdaterDeps }).deps;
+    const seen: Array<{ status: string; version: string | undefined; progress: number | null }> = [];
+    deps.onState = (snapshot) => seen.push({ status: snapshot.status, version: snapshot.version, progress: snapshot.progress });
+    const original = deps.download;
+    deps.download = async (url, onProgress) => {
+      onProgress?.(0.25);
+      onProgress?.(1.5); // clamped
+      return original(url);
+    };
+    await updater.check(true);
+    expect(seen).toContainEqual({ status: "downloading", version: "0.2.0", progress: 0.25 });
+    expect(seen).toContainEqual({ status: "downloading", version: "0.2.0", progress: 1 });
+    expect(seen.at(-1)).toEqual({ status: "ready", version: "0.2.0", progress: null });
+  });
+
+  it("never installs when saving fails or the gate throws", async () => {
+    const { updater, log } = setup({ choice: "restart" });
+    const deps = (updater as unknown as { deps: UpdaterDeps }).deps;
+    deps.beforeInstall = async () => {
+      throw new Error("renderer did not answer");
+    };
+    await updater.check(true);
+    expect(log.some((line) => line.startsWith("install"))).toBe(false);
+    expect(log.at(-1)).toMatch(/^error Your projects could not be saved.*renderer did not answer/);
+    expect(updater.status).toBe("ready");
+  });
+
+  it("reads only its own channel's feed", async () => {
+    const test = setup();
+    const deps = (test.updater as unknown as { deps: UpdaterDeps }).deps;
+    deps.config = { ...deps.config, channel: "test", feedUrl: `${FEED}/test` };
+    await test.updater.check(true);
+    expect(test.log[0]).toBe(`fetch ${FEED}/test/latest.json`);
+
+    const stable = setup();
+    await stable.updater.check(true);
+    expect(stable.log[0]).toBe(`fetch ${FEED}/latest.json`);
+    expect(stable.log.some((line) => line.includes("/test/"))).toBe(false);
   });
 });
 

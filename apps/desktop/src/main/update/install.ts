@@ -5,9 +5,27 @@ import { promisify } from "node:util";
 
 // Platform installers. The file passed in has already been verified against the update key.
 
-// Windows: the NSIS installer replaces the app silently and starts it again (--force-run).
-export function startWindowsInstaller(installerPath: string): void {
-  const child = spawn(installerPath, ["--updated", "/S", "--force-run"], { detached: true, stdio: "ignore" });
+// Windows: the NSIS installer replaces the app silently; then the app is started again.
+//
+// The installer's own relaunch (--force-run) goes through Explorer and did not start the app in
+// local testing, so a detached cmd waits for the installer and then starts the app itself:
+//   cmd /d /s /c ""start "" /wait "<installer>" --updated /S & start "" "<app>""
+// With /s, cmd removes only the outer quotes, so paths with spaces stay intact. Windows paths
+// cannot contain a double quote; anything that does is refused rather than quoted.
+export function windowsInstallCommand(installerPath: string, appPath: string): string {
+  for (const value of [installerPath, appPath]) {
+    if (value.includes('"') || !/^[A-Za-z]:\\|^\\\\/.test(value)) throw new Error(`Unexpected path for the update: ${value}`);
+  }
+  return `"start "" /wait "${installerPath}" --updated /S & start "" "${appPath}""`;
+}
+
+export function startWindowsInstaller(installerPath: string, appPath: string): void {
+  const child = spawn(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", windowsInstallCommand(installerPath, appPath)], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+    windowsVerbatimArguments: true,
+  });
   child.unref();
 }
 
