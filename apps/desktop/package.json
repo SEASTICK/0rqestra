@@ -8,7 +8,7 @@
   "main": "dist/main/main.js",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/renderer','dist/renderer',{recursive:true})\"",
+    "build": "tsc -p tsconfig.build.json && node scripts/build-ui.mjs",
     "start": "npm run build && electron .",
     "smoke": "npm run build && electron . --smoke",
     "smoke:failures": "npm run build && node scripts/verify-smoke-failures.mjs",
