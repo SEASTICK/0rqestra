@@ -160,7 +160,7 @@ Verification types used below:
     Evidence: docs/provider-integrations.md (revision 4, 2026-11-17).
     Done (documentation verification):
           - primary sources A1-A9 and O1-O7, with A1, A4, and O1 re-fetched for revision 3;
-          - revision 4 (2026-11-17, awaiting independent review): read the Anthropic Usage
+          - revision 4 (2026-11-17, accepted after corrections; see REVIEW LOG): read the Anthropic Usage
             Policy (A10), the OpenAI Terms of Use, Usage Policies, Service Terms, and Sign in
             with ChatGPT Terms (O8-O11, with the current and announced Usage Policies O9 and
             O9b), and the open-source Sign in with ChatGPT guide (O12-O15); re-fetched A1, A6, and O1; documented Codex configuration loading and
@@ -316,9 +316,11 @@ REVIEW LOG
   - Result: G10.3 DONE; item 10 [x] for specification delivery and independent review only.
     No acceptance test is implemented or passes. Adapter, runtime, and release gates stay open;
     macOS verification stays deferred. Stage 1 is not declared complete.
-  - Review limits: the limits of this follow-up review were not included in the message
-    relayed to the implementer, so they are not restated here. (The limits recorded for the
-    previous review, below, belong to that review.)
+  - Review limits: Normal Git diff failed; the reviewer compared current documents against
+    committed 93b289d versions. No saved pre-correction working-tree snapshot was available
+    for an exact incremental comparison. The original questionnaire was not independently
+    verified. The reviewer changed no files, ran no tests or providers, and did not re-review
+    item 6.
 
 2026-11-17 — Independent review of the item 10 reconciliation (decisions D1-D12; routing
 revision 4, acceptance criteria revision 6): CHANGES REQUESTED.
