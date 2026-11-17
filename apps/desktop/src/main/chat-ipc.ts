@@ -1,0 +1,46 @@
+import fs from "node:fs";
+import path from "node:path";
+import { app, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import { ChatService } from "./chat-service";
+import { ClaudeCodeAdapter } from "./providers/claude-code";
+import { CodexAdapter } from "./providers/codex";
+
+// Electron wiring for the chat: three request channels from the window and one event channel
+// back to it. Each request is accepted only from the app's own window (isTrusted).
+
+let service: ChatService | null = null;
+
+export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolean, getWindow: () => BrowserWindow | null): void {
+  // An empty folder that is the working directory of every chat. The tools get no tools in a
+  // chat, but if one ever looked around, there is nothing here to find.
+  const cwd = () => {
+    const dir = path.join(app.getPath("userData"), "chat-workspace");
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  };
+  const settingsDir = path.join(app.getPath("userData"), "provider-settings");
+  service = new ChatService({ claude: new ClaudeCodeAdapter({ settingsDir }), codex: new CodexAdapter() }, cwd);
+  const guard = (event: IpcMainInvokeEvent) => {
+    if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
+  };
+  ipcMain.handle("chat:providers", (event, refresh: unknown) => {
+    guard(event);
+    return service!.providers(refresh === true);
+  });
+  ipcMain.handle("chat:send", (event, payload: unknown) => {
+    guard(event);
+    const sender = event.sender;
+    return service!.start(payload, (requestId, chatEvent) => {
+      const window = getWindow();
+      if (window && !window.isDestroyed() && window.webContents === sender && !sender.isDestroyed()) {
+        sender.send("chat:event", { requestId, event: chatEvent });
+      }
+    });
+  });
+  ipcMain.handle("chat:stop", (event, requestId: unknown) => {
+    guard(event);
+    return service!.stop(requestId);
+  });
+  // Nothing keeps running in the background after the app quits.
+  app.on("before-quit", () => service?.stopAll());
+}

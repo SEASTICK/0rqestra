@@ -26,8 +26,11 @@ runs with the providers. Cloud execution is out of scope for the initial release
   on 2026-11-17. macOS CI currently fails intermittently in one smoke failure case; macOS
   verification is deferred.
 - A release pipeline and in-app updates exist (see `docs/release.md`).
-- No product features exist yet. The agreed Stage 2 is the interface. Orchestration and real
-  provider adapters come in later stages.
+- The interface (Stage 2) is in place, with simulated agents.
+- **Phase 1 of [`docs/backend-plan.md`](docs/backend-plan.md) is built:** a real chat with your own
+  Claude Code or Codex subscription (no API keys), with model and effort choice, streamed replies,
+  and Stop. It is tested with fake tools only; the first run against the real tools is still to do.
+  Team runs, the Manager's own choices, Supabase and DigitalOcean come in later phases.
 - Provider CLIs have been run only in limited Stage 1 probes on Windows (Claude Code and Codex,
   3 model requests each). Results and limits: `docs/provider-runtime-results.md`. Other
   statements about providers in `docs/` are documentation research and proposals.

@@ -78,12 +78,33 @@ Sizes: S = a few hours, M = about a day, L = several days. They are rough and on
 effort. Every phase is a pull request that Codex reviews.
 
 ### Phase 0 — Decide and prepare (Philip, S)
+**Decided 2026-11-17:** Philip and Edwin start with the subscription route; API keys come later.
+D1 (TypeScript in this repo) followed from that. D2–D6 keep their defaults until they matter.
 - Answer D1–D6. Edwin confirms the changed decisions above.
 - Fix the unstable CI step `smoke:failures` (it fails on macOS and Windows without code changes),
   so a red check means something again. (Claude, S)
 - **Done when:** the decisions are written into `product-brief.md`, and CI is reliably green.
 
 ### Phase 1 — A real chat through your own subscriptions (Claude, L)
+**Status 2026-11-17: built, not yet run against the real tools.** What exists:
+- Adapters in `apps/desktop/src/main/providers/` (in the app's main process rather than a
+  separate package, because workspace packages are not part of the packaged app). Claude Code runs
+  in print mode with streamed JSON and profile A; Codex runs through `codex app-server` with an
+  ephemeral, read-only thread. Both refuse to send anything unless the tool is signed in with a
+  subscription, and every API-key variable is removed from their environment.
+- The conversation is kept in 0rqestra and recent turns are sent with each message, so it works
+  the same for both tools and survives a restart.
+- Chat channels in the main process (`chat-service.ts`, `chat-ipc.ts`) that validate everything
+  from the window; at most one reply per project and three at once.
+- In the window: tool, model and effort under the message box (Codex lists its models and effort
+  levels; Claude Code takes the aliases Default, Opus, Sonnet and Haiku, and no effort setting
+  yet), streamed replies, Stop, token use and plan limits after each reply, and a real
+  AI accounts page with sign-in steps.
+- Verified: 213 tests, including the adapters against fake tools that behave like the recorded
+  runs, and the whole chat in a browser with a stubbed bridge.
+- **Not verified:** a run with the real Claude Code and Codex. That is the first thing to do
+  with the installed app.
+
 This is the first thing that makes 0rqestra a real chat bot, and it costs nothing per use.
 - **Provider interface** in a new package (`packages/providers`): one way to start a chat turn,
   stream text, stop, and report usage. Adapters are plugged in behind it.

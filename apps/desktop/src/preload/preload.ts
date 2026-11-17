@@ -14,6 +14,17 @@ contextBridge.exposeInMainWorld("orqestra", {
     check: () => ipcRenderer.invoke("update:check"),
     respond: (choice: string) => ipcRenderer.invoke("update:respond", choice === "restart" ? "restart" : "later"),
   },
+  // The chat (main/chat-ipc.ts). The page can ask which tools are ready, send one message with its
+  // history, and stop a reply. It never chooses a program, a path, or an argument.
+  chat: {
+    providers: (refresh?: boolean) => ipcRenderer.invoke("chat:providers", refresh === true),
+    send: (payload: unknown) => ipcRenderer.invoke("chat:send", payload),
+    stop: (requestId: string) => ipcRenderer.invoke("chat:stop", String(requestId)),
+    subscribe: (listener: (message: unknown) => void) => {
+      ipcRenderer.removeAllListeners("chat:event");
+      ipcRenderer.on("chat:event", (_event, message: unknown) => listener(message));
+    },
+  },
 });
 
 // Smoke-only diagnostic sent to the main process; nothing is exposed to the page.

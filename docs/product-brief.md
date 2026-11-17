@@ -155,6 +155,11 @@ file exists until the user chooses.
 **Agreed 2026-11-16:** the desktop technology stack is **Electron + TypeScript + React**. The
 iOS companion will be a separate client of the engine's API.
 
+**Agreed 2026-11-17 (Philip, with Edwin):** the chat and the agents first use each user's own
+subscription through the official tools (Claude Code, Codex), signed in by the user. No API
+keys at first; API keys, Supabase and DigitalOcean follow later, as set out in
+[`backend-plan.md`](backend-plan.md).
+
 **Proposed, not yet agreed** (see `docs/architecture.md`):
 
 - Storage format, event contract details, and the companion's transport.
