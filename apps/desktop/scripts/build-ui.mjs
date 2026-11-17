@@ -32,7 +32,7 @@ function compile(file, compilerOptions) {
 
 fs.rmSync(outdir, { recursive: true, force: true });
 fs.mkdirSync(outdir, { recursive: true });
-for (const file of ['index.html', 'app.css', 'recovery.css', 'connections.css', 'tasks.css', 'live.css']) {
+for (const file of ['index.html', 'app.css', 'recovery.css', 'connections.css', 'tasks.css', 'live.css', 'theme.css', 'boot.css', 'boot.js', 'shell.css']) {
   fs.copyFileSync(path.join(src, file), path.join(outdir, file));
 }
 
@@ -44,6 +44,9 @@ modules.app = compile('App.jsx', jsx);
 modules.taskUI = compile('TaskPanels.jsx', jsx);
 modules.simulatedProviders = compile('SimulatedProviders.jsx', jsx);
 modules.updateUI = compile('UpdateDialog.jsx', jsx);
+modules.shell = compile('Shell.jsx', jsx);
+modules.theme = compile('theme.mjs', plain);
+modules.launch = compile('launch.mjs', plain);
 modules.allowance = compile('allowance.mjs', plain);
 modules.demo = compile('demo-run.mjs', plain);
 modules.camera = compile('camera.mjs', plain);
@@ -54,7 +57,7 @@ modules.workflow = compile('task-workflow.mjs', plain);
 
 const aliases = {
   './SimulatedProviders.jsx': 'simulatedProviders', './UpdateDialog.jsx': 'updateUI', './TaskPanels.jsx': 'taskUI', './task-workflow.mjs': 'workflow',
-  './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './storage-keys.mjs': 'storageKeys', './demo-run.mjs': 'demo', './allowance.mjs': 'allowance', 'react-dom/client': 'react-dom-client',
+  './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './storage-keys.mjs': 'storageKeys', './Shell.jsx': 'shell', './theme.mjs': 'theme', './launch.mjs': 'launch', './demo-run.mjs': 'demo', './allowance.mjs': 'allowance', 'react-dom/client': 'react-dom-client',
   'next/dist/compiled/react': 'react', 'next/dist/compiled/react-dom': 'react-dom', 'next/dist/compiled/scheduler': 'scheduler',
 };
 // Every local import must resolve inside the bundle. A missing entry above compiles fine but throws
@@ -76,4 +79,6 @@ fs.copyFileSync(path.join(vendor, 'THIRD-PARTY-LICENSE.txt'), path.join(outdir, 
 const iconDir = path.join(root, 'assets', 'icon');
 for (const file of ['icon.ico', 'icon.png']) fs.copyFileSync(path.join(iconDir, file), path.join(root, 'dist', file));
 fs.copyFileSync(path.join(iconDir, 'png', 'icon-32.png'), path.join(outdir, 'favicon.png'));
+// The start screen and the About section show the icon at 76 px (and sharp on high-density screens).
+fs.copyFileSync(path.join(iconDir, 'png', 'icon-256.png'), path.join(outdir, 'logo.png'));
 console.log('Built the 0rqestra interface offline (no provider code; simulated activity only).');

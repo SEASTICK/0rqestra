@@ -1,0 +1,5 @@
+/* Loaded first. The palette in the other style sheets uses light-dark(), which follows this. */
+:root{color-scheme:light}
+:root[data-theme=dark]{color-scheme:dark}
+:root[data-theme=system]{color-scheme:light dark}
+html,body{background:light-dark(#fafafa,#2b2b2b)}

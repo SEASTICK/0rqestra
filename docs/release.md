@@ -99,6 +99,11 @@ If the releases repository gets another name, change `RELEASES_REPO` and `RELEAS
 
 ## How the app updates itself
 
+- After an update, the first start shows "Updated to vX" (from the previous version) instead of the
+  normal start screen. It is shown once and can be skipped with a click, Esc or Enter. The first
+  update from a version older than 0.1.4 cannot show it, since those versions did not record which
+  version was started last.
+- "Check for updates" is in the profile menu at the bottom left and under Settings → Updates.
 - It checks at startup, every 30 minutes, and when the window gets focus (at most every 10
   minutes). Only a packaged app checks; a development run and the smoke check never do.
 - A strictly newer version is downloaded in the background right away and verified against the
