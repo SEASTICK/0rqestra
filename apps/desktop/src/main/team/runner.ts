@@ -178,7 +178,6 @@ export class TeamRun {
     let failure: string | null = null;
     while (true) {
       const finished = (id: string) => ["done", "unverified"].includes(this.status.get(id) ?? "");
-      const ended = (id: string) => ["done", "unverified", "failed", "blocked", "stopped"].includes(this.status.get(id) ?? "");
       for (const t of plan.tasks) {
         if (!this.stopped && this.status.get(t.id) === "waiting" && t.dependsOn.some((d) => ["failed", "blocked", "stopped"].includes(this.status.get(d) ?? ""))) {
           this.set(t, "blocked", null, 0, "An earlier task it needs did not finish.");
