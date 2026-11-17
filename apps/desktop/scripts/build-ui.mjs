@@ -1,6 +1,6 @@
 // Offline builder for the Stage 2 interface (src/ui -> dist/renderer).
 //
-// Adapted from the WorkTreeAI preview template's builder. It uses only the repository's own
+// Adapted from the 0rqestra preview template's builder. It uses only the repository's own
 // TypeScript compiler and the vendored React runtime in vendor/react: no network, no CDN, no eval.
 // The template's provider modules (sign-in, key vault, live workflows) are intentionally absent.
 // PROVENANCE.md in vendor/react says the real app should later move to pinned npm React and a

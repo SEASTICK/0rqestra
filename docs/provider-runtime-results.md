@@ -1,5 +1,7 @@
 # Provider Runtime Results (Stage 1, item 6, gate G6.5)
 
+> Note on names: the raw recordings in `docs/evidence/` were made under the project's earlier name, WorkTreeAI, and are intentionally left exactly as recorded. Names inside them (for example temporary folder names) therefore differ from the 0rqestra names used elsewhere.
+
 Run on 2026-11-16, Windows 11, by Claude under the user's authorization for minimal
 subscription-based integration tests. For independent review; item 6 stays partial.
 
@@ -40,7 +42,7 @@ binaries bundled with the providers' desktop apps:
 Consequences:
 
 - These are official, unmodified binaries, but they are **not** the standalone installs
-  WorkTreeAI will ask users to make. Results should be re-confirmed on standalone installs.
+  0rqestra will ask users to make. Results should be re-confirmed on standalone installs.
 - The Codex build is an **alpha**, and `codex app-server --help` labels the command
   "[experimental]".
 - Every provider process got a cleaned environment: system variables only, with no provider API
@@ -102,7 +104,7 @@ every run ended with "Not logged in". The fixture contains:
 
 **Sign-in.** The user signed in through Claude Code's own `claude auth login` flow in their
 terminal and browser. The probe script only launched that command; it never saw or stored
-credentials. The login lives in a dedicated config folder (`~/.worktreeai-probe/claude-config`),
+credentials. The login lives in a dedicated config folder (`~/.orqestra-probe/claude-config`),
 so the user's normal Claude Code and desktop app configuration was not touched.
 
 **Billing check (no model request).** Before each scenario, `claude auth status` had to report
@@ -160,7 +162,7 @@ so the user's normal Claude Code and desktop app configuration was not touched.
 **Not covered**
 
 - User-level settings, plugins, and mods: the dedicated config folder holds only the login. In
-  production WorkTreeAI would run against the user's real configuration.
+  production 0rqestra would run against the user's real configuration.
 - Whether `CLAUDE_CODE_MAX_RETRIES=0` actually disables provider-internal retries (none occurred).
 - Interrupt during a running tool or shell command; surviving child processes.
 - Whether `--disallowedTools "Agent"` alone removes the `Task` tool.
@@ -196,7 +198,7 @@ effort `low`.
   was sent to the client for approval before running. Declining stopped the command and let the
   turn continue.
 - **X3. Unanswered approvals wait.** The server waited at least 12 s without ending the turn.
-  The upper bound is unknown. WorkTreeAI needs its own timeout.
+  The upper bound is unknown. 0rqestra needs its own timeout.
 - **X4. Clean interrupt worked on Windows in this case.** `turn/interrupt` during a pending
   approval ended the turn as `interrupted` in about 0.1 s and cleared the pending request.
   Interrupting during generation or during a running command was not tested. The same
@@ -226,7 +228,7 @@ effort `low`.
 - Interrupt during generation or command execution; surviving child processes.
 - Which MCP servers Codex starts, from where, and how to suppress them and project instructions.
 - A standalone, non-alpha Codex CLI; macOS.
-- Whether WorkTreeAI's use of app-server fits OpenAI's conditions
+- Whether 0rqestra's use of app-server fits OpenAI's conditions
   ([provider-integrations.md §2.2](provider-integrations.md#22-authentication-and-deployment-conditions)).
 
 ## 5. Effect on the gates in provider-integrations.md §4 (adapter gates: §4.2 since revision 4)
@@ -249,7 +251,7 @@ Every gate above remains **partial**. None is closed by these runs.
 - **Standalone CLIs.** Installing either CLI is a download and install on the user's machine and
   was not done. Until then, every result here is for the desktop-app-bundled builds.
 - **The probe login.** The Claude.ai login for the probes remains in
-  `~/.worktreeai-probe/claude-config`. Remove it with
+  `~/.orqestra-probe/claude-config`. Remove it with
   `node tools/provider-probes/claude-login.mjs "<path to claude>" logout`, or by deleting that
   folder.
 - **macOS environment.** None available; all results are Windows only.

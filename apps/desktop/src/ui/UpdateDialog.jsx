@@ -5,7 +5,7 @@
 // sends a notice when the user asked (check, restart) or when installing was refused.
 import React, { useEffect, useRef, useState } from 'react';
 
-const api = () => window.worktreeai?.updates;
+const api = () => window.orqestra?.updates;
 
 export function useUpdates() {
   const [state, setState] = useState({ enabled: false, snapshot: null, notice: null, prompt: false });

@@ -13,7 +13,7 @@ export const SECURE_WEB_PREFERENCES = {
   experimentalFeatures: false,
 } as const satisfies WebPreferences;
 
-export const SMOKE_RENDERER_FLAG = "--worktreeai-smoke";
+export const SMOKE_RENDERER_FLAG = "--orqestra-smoke";
 
 export function mainWindowOptions(preloadPath: string, smokeMode = false, iconPath?: string): BrowserWindowConstructorOptions {
   return {

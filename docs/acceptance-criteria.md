@@ -1,4 +1,4 @@
-# WorkTreeAI — Acceptance Criteria (First Complete Workflow)
+# 0rqestra — Acceptance Criteria (First Complete Workflow)
 
 Revision 6, 2026-11-17. **Reconciled with the user's decisions; accepted by independent review
 (2026-11-17) as a specification.** No criterion is implemented or passing yet.
@@ -59,7 +59,7 @@ The fake also plays the Manager, emitting scripted structured decisions.
 | exit code | Exits with a chosen code |
 
 `fake-cli` is used for process-ownership and change-reconciliation tests. Recovery tests also
-use an **injected crash point** that kills WorkTreeAI between named ledger steps (before spawn,
+use an **injected crash point** that kills 0rqestra between named ledger steps (before spawn,
 after spawn but before PID persistence, while running).
 
 **Trees**
@@ -94,7 +94,7 @@ after spawn but before PID persistence, while running).
 | ID | Request | Expected route |
 |---|---|---|
 | R1 | "Add input validation to the signup form" | Implementation |
-| R2 | "What is running right now?" | Answered from WorkTreeAI state |
+| R2 | "What is running right now?" | Answered from 0rqestra state |
 | R3 | "Fix the failing login test" | Debugging |
 
 ---
@@ -111,7 +111,7 @@ after spawn but before PID persistence, while running).
 
 ## AC-02 Saving, restoring, and validating trees (Routing §2.1, Agreed: decision D1) [fixture]
 
-- **Given** an edited tree in P1, **when** WorkTreeAI restarts and P1 is reopened, **then** the
+- **Given** an edited tree in P1, **when** 0rqestra restarts and P1 is reopened, **then** the
   tree is deep-equal to what was saved.
 - **Given** P1 and P2 with different trees, **then** edits to one never change the other.
 - **Given** a corrupted or newer-version tree file, **then** it is refused, left untouched, and
@@ -198,7 +198,7 @@ and the Manager asks are **Agreed** (decision A5). The exact choices the Manager
 | Retry | A same-node re-run after a task failure. At most `1 + maxRetries` attempts |
 | Review round | One correction cycle on a work item. Does not consume retries |
 | Provider-internal retry | Retries the CLI performs itself. Shown in the activity feed; not counted |
-| Outage retry | A WorkTreeAI re-run after an availability error. Separate counter; does not consume retries |
+| Outage retry | A 0rqestra re-run after an availability error. Separate counter; does not consume retries |
 | Request dispatch count | Every launch for the request (attempts, retries, corrections, outage retries) |
 
 **Criteria (all [fixture])**
@@ -231,7 +231,7 @@ and the Manager asks are **Agreed** (decision A5). The exact choices the Manager
 
 - **Given** the Manager's provider is unauthorized, unreachable, or crashes, **when** the user
   prompts, **then** the Manager channel shows an **app-generated** status labelled as coming from
-  WorkTreeAI, with the error category. No text is attributed to the Manager.
+  0rqestra, with the error category. No text is attributed to the Manager.
 - **Given** specialists are running when the Manager fails, **then** they complete and their
   outputs are kept. No new dispatch happens until the Manager is available.
 
@@ -262,7 +262,7 @@ and the Manager asks are **Agreed** (decision A5). The exact choices the Manager
   platform → zero launches, and the Manager offers the three choices.
 - [fixture] Capability "unknown" or "untested" → treated as unsupported.
 - [live] Per adapter and per OS: a prompt asking for an action outside the profile → denied or
-  sent to WorkTreeAI, and not performed. Required before the adapter is enabled.
+  sent to 0rqestra, and not performed. Required before the adapter is enabled.
 
 ## AC-13 Provider-native subagents, hooks, and tools
 
@@ -304,7 +304,7 @@ Timing (Routing §4.2):
   runtime gate passes): forced cleanup begins **immediately**, with no interrupt and no wait.
 - **Deadline, in every case:** forced cleanup is complete within **13 s** after the cancel.
 
-"Stopped" means every process WorkTreeAI tracks for the task. It does not mean every process on
+"Stopped" means every process 0rqestra tracks for the task. It does not mean every process on
 the machine (see the containment limits in Routing §4.2).
 
 The fake adapter declares `cleanInterrupt: "supported"` or `"unavailable"` per test.
@@ -411,7 +411,7 @@ The fake adapter declares `cleanInterrupt: "supported"` or `"unavailable"` per t
     and every untracked non-ignored file are copied into a content-addressed store.
   - **Non-Git projects.** The bytes of every file are copied into the store, except a fixed
     default exclusion list (for example `node_modules/` and `.git/`).
-  - **The store.** It lives in a WorkTreeAI-owned location outside the project. Blobs are keyed
+  - **The store.** It lives in a 0rqestra-owned location outside the project. Blobs are keyed
     by SHA-256 and deduplicated across baselines. The baseline manifest maps each path to its
     SHA-256 and to its source (store blob, or Git commit plus path). When the request is
     archived, its baseline manifests and references are deleted. Blobs still referenced by
@@ -445,7 +445,7 @@ The fake adapter declares `cleanInterrupt: "supported"` or `"unavailable"` per t
   - **changed by task (corroborated)** — the reconciliation diff matches a provider file-edit
     event;
   - **changed during task window** — the reconciliation diff has no matching provider event.
-    This includes shell-generated edits, and cannot exclude edits made outside WorkTreeAI during
+    This includes shell-generated edits, and cannot exclude edits made outside 0rqestra during
     the same window.
 
 **Criteria:**

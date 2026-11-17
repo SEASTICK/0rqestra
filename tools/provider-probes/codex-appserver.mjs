@@ -3,7 +3,7 @@
 //   node tools/provider-probes/codex-appserver.mjs handshake   -> no model request
 //   node tools/provider-probes/codex-appserver.mjs turns       -> up to 3 model requests
 //
-// Requires WORKTREEAI_CODEX_BIN. The child gets a cleaned environment (no API keys), so it can
+// Requires ORQESTRA_CODEX_BIN. The child gets a cleaned environment (no API keys), so it can
 // only use the login already stored by the official Codex tool. Turns refuse to run unless
 // account/read reports ChatGPT (subscription) auth. Nothing is retried. The sequence stops after
 // the first scenario that fails for any reason (spawn error, unexpected exit, timeout, missing
@@ -251,16 +251,16 @@ export async function turns({
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const bin = process.env.WORKTREEAI_CODEX_BIN;
+  const bin = process.env.ORQESTRA_CODEX_BIN;
   const mode = process.argv[2];
   if (!bin || !["handshake", "turns"].includes(mode)) {
-    console.error("Usage: WORKTREEAI_CODEX_BIN=<codex> node codex-appserver.mjs <handshake|turns>");
+    console.error("Usage: ORQESTRA_CODEX_BIN=<codex> node codex-appserver.mjs <handshake|turns>");
     process.exit(2);
   }
   if (mode === "handshake") {
     const report = await handshake({ bin });
     process.exit(report.error ? 1 : 0);
   }
-  const state = await turns({ bin, model: process.env.WORKTREEAI_CODEX_MODEL });
+  const state = await turns({ bin, model: process.env.ORQESTRA_CODEX_MODEL });
   process.exit(state.complete ? 0 : 1);
 }

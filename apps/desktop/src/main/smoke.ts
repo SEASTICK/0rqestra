@@ -64,7 +64,7 @@ async function runChecks(
   );
 
   const globalsSeen = (await contents.executeJavaScript(
-    "({ require: typeof require, process: typeof process, api: Object.keys(window.worktreeai ?? {}) })",
+    "({ require: typeof require, process: typeof process, api: Object.keys(window.orqestra ?? {}) })",
   )) as { require: string; process: string; api: string[] };
   record(
     "page has no Node.js globals and only the narrow preload API",
@@ -74,7 +74,7 @@ async function runChecks(
     globalsSeen,
   );
 
-  const info = (await contents.executeJavaScript("window.worktreeai.getAppInfo()")) as {
+  const info = (await contents.executeJavaScript("window.orqestra.getAppInfo()")) as {
     electronVersion?: string;
   };
   record("sender-validated IPC round trip works", info.electronVersion === process.versions.electron, info);

@@ -2,8 +2,9 @@
 // Before an update is installed, the projects are written to storage, and installing is refused
 // while a run is active, with a message that says what has to finish or stop first.
 
-export const PROJECTS_KEY = 'worktreeai-ui-v1';
-export const ALLOWANCES_KEY = 'worktreeai-demo-allowances';
+import { ALLOWANCES_KEY, PROJECTS_KEY } from './storage-keys.mjs';
+
+export { ALLOWANCES_KEY, PROJECTS_KEY };
 
 export function prepareForUpdate({ projects, allowances, runs, storage }) {
   let saved = true;

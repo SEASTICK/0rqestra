@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { cleanEnv, probeClaudeConfigDir } from "./lib.mjs";
 
-const bin = process.argv[2] ?? process.env.WORKTREEAI_CLAUDE_BIN;
+const bin = process.argv[2] ?? process.env.ORQESTRA_CLAUDE_BIN;
 const action = process.argv[3] ?? "login";
 if (!bin || !["login", "status", "logout"].includes(action)) {
   console.error('Usage: node claude-login.mjs "<path to claude>" [login|status|logout]');
@@ -16,7 +16,7 @@ if (!bin || !["login", "status", "logout"].includes(action)) {
 
 const configDir = probeClaudeConfigDir();
 fs.mkdirSync(configDir, { recursive: true });
-console.log(`Claude Code ${action} for WorkTreeAI probes (separate config folder).`);
+console.log(`Claude Code ${action} for 0rqestra probes (separate config folder).`);
 if (action === "login") {
   console.log("Choose your Claude subscription account, not a Console/API account.");
 }

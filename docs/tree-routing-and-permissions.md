@@ -1,4 +1,4 @@
-# WorkTreeAI — Tree, Routing, Permission, and Process Semantics
+# 0rqestra — Tree, Routing, Permission, and Process Semantics
 
 Revision 3, 2026-11-16. Revised after the third independent review round. §4.2 was updated after
 the review of 4e812f3: when clean interruption is unavailable, forced cleanup starts immediately;
@@ -212,7 +212,7 @@ each tree can change them.
 |---|---|---|---|
 | Retries after task failure | per node, default 2 | Same-node re-run after a task failure | per task chain |
 | Review rounds | 3 | Correction rounds on one work item | per work item |
-| Outage retries (WorkTreeAI level) | 3 (backoff 5 s / 20 s / 60 s, decision D7) | Re-runs after a provider availability error | per task chain |
+| Outage retries (0rqestra level) | 3 (backoff 5 s / 20 s / 60 s, decision D7) | Re-runs after a provider availability error | per task chain |
 | **Request dispatch limit** | **25** | **Every agent launch for the request:** initial attempts, retries, correction rounds, and outage retries. Not counted: provider-internal retries, rejected decisions | per request |
 | Manager turns | 50 | Manager runs for the request | per request |
 
@@ -302,7 +302,7 @@ priority.
 
 - **Plan first:** if a Planner is reachable under rule (a), every request that the Manager would
   route to implementation (Builder or Debugger) goes to a Planner first.
-- **Not planned:** requests answerable from WorkTreeAI's own state, such as "what is running?",
+- **Not planned:** requests answerable from 0rqestra's own state, such as "what is running?",
   "summarize the last result", or "cancel task 3".
 - **No Planner reachable:** the Manager asks once per request whether to add one or to proceed
   without a plan. The choice is recorded on the request.
@@ -329,7 +329,7 @@ Without an explicit bridge, an added agent could never help the paused request.
    edit), the Manager's question offers: *edit the tree, then apply it to this request*.
 2. **Edit.** The user edits the live tree, for example with "+" (§1). Nothing changes for the
    request yet.
-3. **Review and approve.** The user clicks *Apply to this request*. WorkTreeAI shows a diff of
+3. **Review and approve.** The user clicks *Apply to this request*. 0rqestra shows a diff of
    snapshot v*n* against the edited tree: nodes, edges, roles, providers, models, permissions,
    and limits. Loosened permissions and changed models are highlighted. Nothing is applied
    without this explicit approval.
@@ -389,7 +389,7 @@ pending.
 Actions such as shell commands and file edits are generated **inside** provider CLIs.
 Enforcement therefore has three layers, each with different guarantees.
 
-### 3.1 Layer 1 — WorkTreeAI dispatch (fully enforced by WorkTreeAI code)
+### 3.1 Layer 1 — 0rqestra dispatch (fully enforced by 0rqestra code)
 
 | What | How | Guarantee |
 |---|---|---|
@@ -399,23 +399,23 @@ Enforcement therefore has three layers, each with different guarantees.
 | Limits, retries, review rounds | §2.6 counters | Complete |
 | Manager has no technical tools | Manager launched with `--tools ""` and Profile A (Claude), or equivalent | Depends on Layer 2; runtime test required |
 
-### 3.2 Layer 2 — actions inside provider CLIs (configured by WorkTreeAI, enforced by the provider)
+### 3.2 Layer 2 — actions inside provider CLIs (configured by 0rqestra, enforced by the provider)
 
 | Control | Claude Code | Codex app-server |
 |---|---|---|
 | Tool availability | `--tools`, `--disallowedTools` (`"Agent"`, `"mcp__*"`). `--allowedTools` only auto-approves | Sandbox + approval policy; tool-restriction surface not yet researched |
-| Per-action approval | Profile A: deny anything that would prompt. Profile B: WorkTreeAI approval MCP tool ([provider-integrations.md §1.4](provider-integrations.md#14-what-ordinary--p-loads-and-suppression-profiles)) | `requestApproval` requests answered by WorkTreeAI |
+| Per-action approval | Profile A: deny anything that would prompt. Profile B: 0rqestra approval MCP tool ([provider-integrations.md §1.4](provider-integrations.md#14-what-ordinary--p-loads-and-suppression-profiles)) | `requestApproval` requests answered by 0rqestra |
 | Project hooks, MCP, subagents | Suppressed **before launch** by profile flags | Documented controls researched, not yet runtime-tested (provider-integrations §2.4, revision 4). Project `AGENTS.md` has no documented off switch; only detection via `instructionSources` |
 | Startup check | `system/init` **detects** unexpected config and stops the run. It cannot undo hooks that already ran | Runtime test required |
 
 ### 3.3 Layer 3 — filesystem and process isolation
 
-| Platform | Claude Code | Codex | WorkTreeAI |
+| Platform | Claude Code | Codex | 0rqestra |
 |---|---|---|---|
 | Windows (native) | OS sandboxing **not supported** (WSL 2 only) | `mxc` / `elevated` / `unelevated` | `cwd` = project root; cleaned environment; no elevation; process-tree termination (§4) |
 | macOS | Sandboxing documented as available (details not read) | Sandbox available (details not read) | Same, using process groups |
 
-WorkTreeAI provides no OS sandbox of its own in the initial scope.
+0rqestra provides no OS sandbox of its own in the initial scope.
 
 ### 3.4 Fail-closed rule
 
@@ -467,7 +467,7 @@ closed toward a forced stop).
    - If it hasn't exited at 10 s, forced cleanup starts then.
 2. **Clean interruption unavailable.** Send no interrupt and do not wait: **forced cleanup starts
    immediately.** The task ends `cancelled (forced; clean interrupt unavailable)`.
-3. **Forced cleanup.** Stop every process WorkTreeAI tracks for task A (§4.3), and nothing
+3. **Forced cleanup.** Stop every process 0rqestra tracks for task A (§4.3), and nothing
    belonging to task B.
    - Windows: `taskkill /PID <pid> /T /F` on the provider root, then terminate any tracked
      descendant that is still alive.
@@ -502,7 +502,7 @@ terminated", never as "all processes terminated".
 **Ledger writes, in order** (each persisted durably before the next step):
 
 1. **Before spawn:** `{taskId, appInstanceId, launchToken, state: launching, launchedAt}`.
-   - `appInstanceId` identifies this WorkTreeAI process: its PID and start time, recorded at app
+   - `appInstanceId` identifies this 0rqestra process: its PID and start time, recorded at app
      startup.
    - `launchToken` is a fresh UUID. For Claude, the engine-assigned `--session-id` UUID serves as
      the token, because it appears on the provider's command line.
@@ -526,7 +526,7 @@ every tracked descendant of that task (identity checked by PID, start time, and 
 This relies on the 2 s descendant polling. A short-lived intermediate process can spawn and exit
 between polls, so this is best effort. The limits in §4.2 apply.
 
-**Startup recovery after a WorkTreeAI crash.** For every ledger task without an exit record:
+**Startup recovery after a 0rqestra crash.** For every ledger task without an exit record:
 
 - **PID was persisted (step 2 done):** check whether that PID exists with the same start time and
   executable. This guards against PID reuse.
@@ -567,7 +567,7 @@ between polls, so this is best effort. The limits in §4.2 apply.
   its work item is **blocked**. The Manager channel shows the candidate processes (PID,
   executable, start time, command line where readable) and offers:
   - terminate these processes;
-  - they're not WorkTreeAI's — ignore them;
+  - they're not 0rqestra's — ignore them;
   - keep the item stopped.
 
   Only the user's choice changes the state to `clear`.

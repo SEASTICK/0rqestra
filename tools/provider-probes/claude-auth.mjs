@@ -1,6 +1,6 @@
 // Authenticated Claude Code probes: up to 3 model requests on the user's Claude subscription.
 //
-// Usage: WORKTREEAI_CLAUDE_BIN=<path to claude> node tools/provider-probes/claude-auth.mjs
+// Usage: ORQESTRA_CLAUDE_BIN=<path to claude> node tools/provider-probes/claude-auth.mjs
 //
 // Each scenario first confirms subscription auth with `claude auth status`, then reserves one
 // request in the ledger. Nothing is retried. The sequence stops after the first scenario that
@@ -206,11 +206,11 @@ export async function main({
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const bin = process.env.WORKTREEAI_CLAUDE_BIN;
+  const bin = process.env.ORQESTRA_CLAUDE_BIN;
   if (!bin) {
-    console.error("Set WORKTREEAI_CLAUDE_BIN to the claude executable.");
+    console.error("Set ORQESTRA_CLAUDE_BIN to the claude executable.");
     process.exit(2);
   }
-  const state = await main({ bin, model: process.env.WORKTREEAI_CLAUDE_MODEL });
+  const state = await main({ bin, model: process.env.ORQESTRA_CLAUDE_MODEL });
   process.exit(state.complete ? 0 : 1);
 }

@@ -1,4 +1,4 @@
-// Ported from the WorkTreeAI preview template (node:test -> vitest); assertions unchanged.
+// Ported from the 0rqestra preview template (node:test -> vitest); assertions unchanged.
 import { test } from "vitest";
 import assert from "node:assert/strict";
 

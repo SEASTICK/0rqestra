@@ -9,6 +9,7 @@ import {createDemoRun,advanceDemo,cancelDemo,resolveDemoApproval,mergeRunIntoPro
 import {TaskDetails,ManagerInbox} from './TaskPanels.jsx';
 import {useUpdates,UpdateDialog} from './UpdateDialog.jsx';
 import {prepareForUpdate} from './update-gate.mjs';
+import {ALLOWANCES_KEY,PROJECTS_KEY,readStored} from './storage-keys.mjs';
 // Provider screens are simulated stand-ins in 0rqestra Stage 2 (see SimulatedProviders.jsx).
 import {LocalWorkflow,apiGraph,AccountsPage} from './SimulatedProviders.jsx';
 
@@ -72,8 +73,8 @@ function initialGraph() { return {
 }; }
 const makeProject = (name) => ({id:id(),name,graph:initialGraph(),messages:[],tasks:[],approvals:[]});
 function loadWorkspace() {
-  try { const v=JSON.parse(localStorage.getItem('worktreeai-ui-v1')); if(Array.isArray(v) && v.length && v.every(p=>typeof p.id==='string' && typeof p.name==='string' && Array.isArray(p.graph?.nodes) && Array.isArray(p.graph?.edges) && Array.isArray(p.messages))) return v.map(p=>recoverTaskHistory(p)); } catch { /* Safe defaults for unavailable or invalid preview storage. */ }
-  return [makeProject('WorkTreeAI')];
+  try { const v=JSON.parse(readStored(localStorage,PROJECTS_KEY)); if(Array.isArray(v) && v.length && v.every(p=>typeof p.id==='string' && typeof p.name==='string' && Array.isArray(p.graph?.nodes) && Array.isArray(p.graph?.edges) && Array.isArray(p.messages))) return v.map(p=>recoverTaskHistory(p)); } catch { /* Safe defaults for unavailable or invalid preview storage. */ }
+  return [makeProject('0rqestra')];
 }
 // canConnect comes from tree-rules.mjs (D1: cycles between specialists are allowed).
 
@@ -98,12 +99,12 @@ function App() {
   const [liveRun,setLiveRun]=useState(null);
   const [liveDraft,setLiveDraft]=useState('');
   const [subscriptionStatus,setSubscriptionStatus]=useState(null);
-  useEffect(()=>{let alive=true;async function poll(){try{const status=await window.worktreeai?.workflowProviderStatus();if(alive)setSubscriptionStatus(status);}catch{/* Subscription setup will display connection errors. */}}void poll();const timer=setInterval(poll,3000);return()=>{alive=false;clearInterval(timer);};},[]);
+  useEffect(()=>{let alive=true;async function poll(){try{const status=await window.orqestra?.workflowProviderStatus();if(alive)setSubscriptionStatus(status);}catch{/* Subscription setup will display connection errors. */}}void poll();const timer=setInterval(poll,3000);return()=>{alive=false;clearInterval(timer);};},[]);
   const liveModels={...MODELS};for(const p of subscriptionStatus?.providers||[])liveModels[p.provider]=[...(MODELS[p.provider]||[]),...(p.verifiedModels||[])];
   const liveCompletion=useRef(new Set());
   useEffect(()=>{if(liveRun)setProjects(ps=>ps.map(p=>mergeRunIntoProject(p,liveRun)));},[liveRun]);
-  useEffect(()=>{if(!window.worktreeai?.workflowList)return;let disposed=false;window.worktreeai.workflowList().then(runs=>{if(!disposed&&runs[0])setLiveRun(runs[0]);}).catch(e=>setToast(e.message));return()=>{disposed=true;};},[]);
-  useEffect(()=>{if(!liveRun)return;let disposed=false;const timer=setInterval(()=>{window.worktreeai.workflowStatus(liveRun.id).then(next=>{if(!disposed)setLiveRun(old=>JSON.stringify(old)===JSON.stringify(next)?old:next);}).catch(e=>{if(!disposed)setToast(e.message);});},1000);return()=>{disposed=true;clearInterval(timer);};},[liveRun?.id]);
+  useEffect(()=>{if(!window.orqestra?.workflowList)return;let disposed=false;window.orqestra.workflowList().then(runs=>{if(!disposed&&runs[0])setLiveRun(runs[0]);}).catch(e=>setToast(e.message));return()=>{disposed=true;};},[]);
+  useEffect(()=>{if(!liveRun)return;let disposed=false;const timer=setInterval(()=>{window.orqestra.workflowStatus(liveRun.id).then(next=>{if(!disposed)setLiveRun(old=>JSON.stringify(old)===JSON.stringify(next)?old:next);}).catch(e=>{if(!disposed)setToast(e.message);});},1000);return()=>{disposed=true;clearInterval(timer);};},[liveRun?.id]);
   useEffect(()=>{if(!liveRun||['running','waiting'].includes(liveRun.phase)||liveCompletion.current.has(liveRun.id))return;liveCompletion.current.add(liveRun.id);setProjects(ps=>ps.map(p=>p.id===liveRun.projectId?{...p,messages:[...p.messages,{id:id(),kind:'manager',text:liveRun.managerSummary||`Workflow ${liveRun.phase}. ${liveRun.error||'Inspect the saved workflow for details.'}`}]}:p));},[liveRun?.id,liveRun?.phase]);
   function receiveLive(next){setLiveRun(next);setProjects(ps=>ps.map(p=>p.id===next.projectId&&!p.messages.some(m=>m.id===`${next.id}:request`)?{...p,messages:[...p.messages,{id:`${next.id}:request`,kind:'user',text:next.prompt}]}:p));}
   function createApiProject(selection){const next={...makeProject('Subscription workspace'),graph:apiGraph(selection),liveWorkflow:true};setProjects(ps=>[...ps,next]);setActiveId(next.id);setPage('workflow');}
@@ -122,15 +123,15 @@ function App() {
   const workflowProject=workflowProjects.find(p=>p.id===project.id);
   const pendingCount=workflowProjects.reduce((count,p)=>count+(p.approvals||[]).filter(a=>a.status==='pending').length,0);
   function openInbox(approvalId){if(approvalId)setInboxSelected(approvalId);setPage('inbox');setActivity(false);}
-  async function answerApproval(item,choice){try{if(item.mode==='live'){setLiveRun(await window.worktreeai.workflowRespond({runId:item.runId,approvalId:item.id,projectId:item.projectId,taskId:item.taskId,decision:choice.decision}));setToast('Manager recorded your decision.');return {ok:true};}const next=resolveDemoApproval(run,item.id,{...choice,projectId:item.projectId,taskId:item.taskId,runId:item.runId});setRun(next);setToast(next.phase==='cancelled'?'Manager recorded your decision and stopped the demo.':'Manager recorded your response. The demo can continue.');return {ok:true};}catch(error){return {error:error.message};}}
+  async function answerApproval(item,choice){try{if(item.mode==='live'){setLiveRun(await window.orqestra.workflowRespond({runId:item.runId,approvalId:item.id,projectId:item.projectId,taskId:item.taskId,decision:choice.decision}));setToast('Manager recorded your decision.');return {ok:true};}const next=resolveDemoApproval(run,item.id,{...choice,projectId:item.projectId,taskId:item.taskId,runId:item.runId});setRun(next);setToast(next.phase==='cancelled'?'Manager recorded your decision and stopped the demo.':'Manager recorded your response. The demo can continue.');return {ok:true};}catch(error){return {error:error.message};}}
   function inspectTask(item){if(item.projectId!==project.id)switchProject(item.projectId);setPage('project');setView('tree');setTaskNodeId(item.nodeId);setSelected(item.nodeId);}
   useEffect(()=>{if(run?.phase==='waiting')setToast('Your Manager needs a decision. Open the Manager inbox to continue.');},[run?.id,run?.index,run?.phase]);
   const runProgress=projectRun?.mode!=='live'&&projectRun?.phase==='running'?Math.min(100,Math.max(0,(runTick-projectRun.startedAt)/28)):0;
   const [saved,setSaved]=useState(true);
-  const [allowances,setAllowances]=useState(()=>{try {return {...DEMO_ALLOWANCES,...JSON.parse(localStorage.getItem('worktreeai-demo-allowances'))};}catch{return {...DEMO_ALLOWANCES};}});
-  useEffect(()=>{try{localStorage.setItem('worktreeai-demo-allowances',JSON.stringify(allowances));}catch{/* Demo storage may be unavailable. */}},[allowances]);
+  const [allowances,setAllowances]=useState(()=>{try {return {...DEMO_ALLOWANCES,...JSON.parse(readStored(localStorage,ALLOWANCES_KEY))};}catch{return {...DEMO_ALLOWANCES};}});
+  useEffect(()=>{try{localStorage.setItem(ALLOWANCES_KEY,JSON.stringify(allowances));}catch{/* Demo storage may be unavailable. */}},[allowances]);
   const chatEnd=useRef(null);
-  useEffect(()=>{try {localStorage.setItem('worktreeai-ui-v1',JSON.stringify(projects));setSaved(true);}catch {setSaved(false);}},[projects]);
+  useEffect(()=>{try {localStorage.setItem(PROJECTS_KEY,JSON.stringify(projects));setSaved(true);}catch {setSaved(false);}},[projects]);
   useEffect(()=>{if(!toast)return;const timer=setTimeout(()=>setToast(''),4500);return()=>clearTimeout(timer);},[toast]);
   useEffect(()=>{chatEnd.current?.scrollIntoView({behavior:'smooth'});},[project.messages.length]);
   // Called by the main process before installing an update (main/update/index.ts). Saves the
@@ -167,7 +168,7 @@ function App() {
   }
   return <div className="application">
     <header className="titlebar">
-      <div className="brand"><span className="brand-mark brand-mark-app"><AppMark size={32}/></span><span>WorkTree<span className="brand-ai">AI</span></span><span className="title-divider"/><span className="breadcrumb">Personal workspace <Icon name="chevron" size={12}/> <strong>{project.name}</strong></span></div>
+      <div className="brand"><span className="brand-mark brand-mark-app"><AppMark size={32}/></span><span>0rqestra</span><span className="title-divider"/><span className="breadcrumb">Personal workspace <Icon name="chevron" size={12}/> <strong>{project.name}</strong></span></div>
       <div className="title-actions"><span className="preview-badge"><span/> UI preview</span><button className="icon-button" onClick={()=>setNavOpen(!navOpen)} title={navOpen?'Hide navigation':'Show navigation'} aria-label={navOpen?'Hide navigation':'Show navigation'}><Icon name="panel"/></button></div>
     </header>
     <div className="workspace">
@@ -268,7 +269,7 @@ function RecoveryForm({node,allowances,onSave,onExhaust,onReset,onClose}) {
   </form>;
 }
 function ProjectForm({onSave,onClose}){const [name,setName]=useState('');return <form onSubmit={e=>{e.preventDefault();if(name.trim())onSave(name.trim());}}><div className="dialog-heading"><span className="dialog-icon"><Icon name="folder" size={21}/></span><button className="icon-button" type="button" aria-label="Close new project" onClick={onClose}><Icon name="close"/></button></div><h2 id="dialog-title">Room for your next idea.</h2><p className="dialog-description">Every project gets its own conversation and worktree.</p><div className="form-fields"><label>Project name<input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. My next app" maxLength={50} required/></label></div><div className="dialog-footer"><button className="button" type="button" onClick={onClose}>Cancel</button><button className="button primary-button" type="submit" disabled={!name.trim()}>Create project</button></div></form>;}
-function ProviderDialog({onClose}){return <><div className="dialog-heading"><span className="dialog-icon"><Icon name="link" size={21}/></span><button className="icon-button" aria-label="Close providers" onClick={onClose}><Icon name="close"/></button></div><h2 id="dialog-title">Bring your own intelligence.</h2><p className="dialog-description">Choose providers for your agents in the tree. Simulated — no provider is connected in this build, and no models are verified.</p><div className="provider-list">{Object.entries(MODELS).map(([p,models])=><div key={p}><span className={`provider-dot provider-${p.toLowerCase()}`}/><strong>{p}</strong><span>{models[0].replace(' (demo)','')}</span><span className="provider-preview">Preview only</span></div>)}</div><p className="form-note">Nothing here signs you in or sends a request. WorkTreeAI never asks for your provider password.</p><div className="dialog-footer"><button className="button primary-button" onClick={onClose}>Got it</button></div></>;}
+function ProviderDialog({onClose}){return <><div className="dialog-heading"><span className="dialog-icon"><Icon name="link" size={21}/></span><button className="icon-button" aria-label="Close providers" onClick={onClose}><Icon name="close"/></button></div><h2 id="dialog-title">Bring your own intelligence.</h2><p className="dialog-description">Choose providers for your agents in the tree. Simulated — no provider is connected in this build, and no models are verified.</p><div className="provider-list">{Object.entries(MODELS).map(([p,models])=><div key={p}><span className={`provider-dot provider-${p.toLowerCase()}`}/><strong>{p}</strong><span>{models[0].replace(' (demo)','')}</span><span className="provider-preview">Preview only</span></div>)}</div><p className="form-note">Nothing here signs you in or sends a request. 0rqestra never asks for your provider password.</p><div className="dialog-footer"><button className="button primary-button" onClick={onClose}>Got it</button></div></>;}
 
 
 createRoot(document.getElementById('root')).render(<App/>);

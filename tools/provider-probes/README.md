@@ -61,15 +61,15 @@ of `npm test`.
 Set the path to each official binary, then run from the repository root:
 
 ```bash
-WORKTREEAI_CLAUDE_BIN="<path to claude>" node tools/provider-probes/claude-noauth.mjs
+ORQESTRA_CLAUDE_BIN="<path to claude>" node tools/provider-probes/claude-noauth.mjs
 ```
 
 ```bash
-WORKTREEAI_CODEX_BIN="<path to codex>" node tools/provider-probes/codex-appserver.mjs handshake
+ORQESTRA_CODEX_BIN="<path to codex>" node tools/provider-probes/codex-appserver.mjs handshake
 ```
 
 ```bash
-WORKTREEAI_CODEX_BIN="<path to codex>" node tools/provider-probes/codex-appserver.mjs turns
+ORQESTRA_CODEX_BIN="<path to codex>" node tools/provider-probes/codex-appserver.mjs turns
 ```
 
 Results and their limits are written up in

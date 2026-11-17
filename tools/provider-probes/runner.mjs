@@ -197,7 +197,7 @@ export class AppServer {
 
   async initialize() {
     const result = await this.request("initialize", {
-      clientInfo: { name: "worktreeai_probe", title: "WorkTreeAI probe", version: "0.0.0" },
+      clientInfo: { name: "orqestra_probe", title: "0rqestra probe", version: "0.0.0" },
     });
     this.send({ method: "initialized", params: {} });
     return result;

@@ -1,4 +1,4 @@
-WorkTreeAI — Product brief and development stages
+0rqestra — Product brief and development stages
 (Source of truth for Stage 1. Supersedes earlier Mac-only / Windows+Mac-only drafts discussed
 in conversation — this is the corrected, final version: Windows PC and macOS are both full
 desktop targets from the start, with an iOS companion planned later for monitoring/controlling
@@ -12,7 +12,7 @@ remains a product target, but macOS verification is DEFERRED: not passed, and no
 
 PRODUCT
 
-WorkTreeAI is a public, open-source desktop application for Windows PC and macOS, with an iOS
+0rqestra is a public, open-source desktop application for Windows PC and macOS, with an iOS
 companion planned later.
 
 Users open an existing local software project and manage a team of AI agents through an
@@ -28,7 +28,7 @@ Code CLI, through supported authentication methods. Provider documentation and s
 conditions must be verified before implementation, not assumed.
 
 The desktop app runs the provider CLIs and project commands locally. AI inference is handled
-by the connected providers, not by WorkTreeAI itself.
+by the connected providers, not by 0rqestra itself.
 
 AGENT BEHAVIOUR
 
@@ -168,9 +168,9 @@ Verification types used below:
             (O16-O23, §2.4), separated from what needs runtime tests; added Interpretation and
             Runtime observation blocks; split the gates into documentation, adapter, release,
             and macOS (§4);
-          - provider statements, WorkTreeAI decisions, and unresolved interpretation are
+          - provider statements, 0rqestra decisions, and unresolved interpretation are
             separated;
-          - "no bundling" is labelled as WorkTreeAI policy, not an Anthropic prohibition;
+          - "no bundling" is labelled as 0rqestra policy, not an Anthropic prohibition;
           - OpenAI's local/open-source continuation statement is quoted alongside its
             commercial/hosted restriction;
           - it is stated that terminal login does not change deployment conditions;
@@ -361,7 +361,7 @@ revision 4, acceptance criteria revision 6): CHANGES REQUESTED.
   -Review limitation: normal git diff failed because the reviewer's environment did not
     recognize the work tree. The reviewer instead compared current files against committed
     93b289d blobs and checked all 79 tracked files, accounting for CRLF differences. Only
-    docs/provider-integrations.md, docs/acceptance-criteria.md, and WorkTreeAI stages.txt
+    docs/provider-integrations.md, docs/acceptance-criteria.md, and 0rqestra stages.txt
     differed. Code and historical evidence were unchanged. This comparison did not inventory
     untracked files.
   - Result: item 6 is [x] for documentation research and independent verification only. The
@@ -623,7 +623,7 @@ open gates above still apply. Stage 2 builds the interface only: no real provide
 every activity, model, and usage figure shown is simulated and labelled as such.
 
 Template: previews/desktop-ui on branch preview/task-details-inbox of the old repository
-SEASTICK/WorkTreeAI (a local copy is in the user's Codex folder).
+SEASTICK/0rqestra (a local copy is in the user's Codex folder).
 
 Steps
   [x] S2.1 Import the template's interface without provider code — commit 27c375e.
@@ -669,14 +669,14 @@ Known gaps between the imported template and the agreed rules (to fix in later s
     Code only.
   - Simulated usage: per-agent usage rings show demo percentages; they need a clearer
     "simulated" label.
-  - Branding: the interface still says "WorkTreeAI".
+  - Branding: the interface still says "0rqestra".
   - React runtime: the vendored React is a Next.js-compiled pre-release build; replace it with
     pinned official React packages and a proper bundler later.
 
 Tracked before real adapters are introduced
   - T1 Remove the template's inactive live-workflow calls from App.jsx. They do nothing today
     because the preload does not expose them, but they must not remain when real adapters
-    arrive: window.worktreeai.workflowProviderStatus (polled every 3 s), workflowList,
+    arrive: window.orqestra.workflowProviderStatus (polled every 3 s), workflowList,
     workflowStatus, and workflowRespond, plus the liveRun / liveWorkflow state and branches
     that depend on them. Real adapters must come through the reviewed engine and preload API,
     not through these template paths.

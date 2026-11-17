@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 // Sandboxed preloads cannot require local modules, so channel names and the flag are repeated here.
-contextBridge.exposeInMainWorld("worktreeai", {
+contextBridge.exposeInMainWorld("orqestra", {
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
   // App updates (main/update/index.ts). The page receives state messages and can only ask for a
   // check or answer the "Restart now / Later" question; the main process decides everything else.
@@ -17,7 +17,7 @@ contextBridge.exposeInMainWorld("worktreeai", {
 });
 
 // Smoke-only diagnostic sent to the main process; nothing is exposed to the page.
-if (process.argv.includes("--worktreeai-smoke")) {
+if (process.argv.includes("--orqestra-smoke")) {
   ipcRenderer.send("smoke:diagnostics", {
     sandboxed: process.sandboxed,
     contextIsolated: process.contextIsolated,

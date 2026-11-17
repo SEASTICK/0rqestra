@@ -1,8 +1,8 @@
-# WorkTreeAI — Product Brief
+# 0rqestra — Product Brief
 
 Status: Stage 1 product decisions agreed in conversation. This document records those
 decisions; it is not a description of implemented functionality. See
-[`WorkTreeAI stages.txt`](../WorkTreeAI%20stages.txt) for the Stage 1 checklist this brief
+[`0rqestra stages.txt`](../0rqestra%20stages.txt) for the Stage 1 checklist this brief
 supports (items 1–5, 7, 8).
 
 ## 1. Target users
@@ -17,7 +17,7 @@ Developers building software with the help of multiple AI agents, who want to:
 
 ## 2. Core workflow
 
-1. **Open project** — the user points WorkTreeAI at an existing local project folder.
+1. **Open project** — the user points 0rqestra at an existing local project folder.
 2. **Configure tree** — the user edits a visual tree of agents (starting from an editable
    example tree), setting each agent's role, provider, model, instructions, tool permissions,
    and usage limits.
@@ -129,7 +129,7 @@ separate decision (D12).
 
 ## 7. Distribution
 
-**Agreed:** WorkTreeAI is released publicly as open source.
+**Agreed:** 0rqestra is released publicly as open source.
 
 **Pending, separate decision:** which license to use (for example MIT or Apache-2.0). No LICENSE
 file exists until the user chooses.
@@ -138,7 +138,7 @@ file exists until the user chooses.
 
 **Agreed:**
 
-- WorkTreeAI ships as a **Windows PC app and a macOS app** (both full desktop targets from the
+- 0rqestra ships as a **Windows PC app and a macOS app** (both full desktop targets from the
   start), plus a **future iOS companion** for monitoring/controlling a connected desktop
   runner. It is not a Mac-only or Windows-only product.
 - **Agreed 2026-11-17:** Windows is the current development target. macOS verification is
@@ -147,7 +147,7 @@ file exists until the user chooses.
   user's machine, drives the tree, routes work), **provider adapters** (one per supported CLI
   tool, e.g. Codex CLI, Claude Code CLI), and, later, an **iOS companion** that talks to a
   desktop runner rather than running agents itself.
-- AI inference happens with the providers (OpenAI, Anthropic, etc.); WorkTreeAI coordinates
+- AI inference happens with the providers (OpenAI, Anthropic, etc.); 0rqestra coordinates
   tasks, context, permissions, and results — it does not run its own models.
 - Cloud execution of agents is explicitly out of scope for the initial version; the CLIs and
   project operations run on the user's own Windows PC or Mac.
@@ -159,7 +159,7 @@ iOS companion will be a separate client of the engine's API.
 
 - Storage format, event contract details, and the companion's transport.
 - Provider credential posture: subscription sign-in stays inside each provider's own CLI.
-  WorkTreeAI stores only API keys that the user explicitly gives it, in the OS secret store.
+  0rqestra stores only API keys that the user explicitly gives it, in the OS secret store.
 
 ## Related documents
 

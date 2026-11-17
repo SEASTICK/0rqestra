@@ -1,4 +1,4 @@
-# WorkTreeAI — Architecture
+# 0rqestra — Architecture
 
 Revision 2, 2026-11-16 — revised after the independent Stage 1 review.
 
@@ -133,24 +133,24 @@ every IPC channel added later.
 
 ## 5. Proposal — credential ownership
 
-| Credential | Owner | WorkTreeAI's role |
+| Credential | Owner | 0rqestra's role |
 |---|---|---|
 | Claude subscription login (OAuth) | Claude Code binary (its own storage) | **Never reads, copies, stores, proxies, or forwards it.** Opens a terminal running the user's own `claude` so the user signs in through Anthropic's flow. Detects status from CLI output only. Required by Anthropic's terms ([provider-integrations.md §1.1](provider-integrations.md#11-terms-products-that-run-claude-code-and-subscription-credentials)). |
-| ChatGPT sign-in for Codex | Codex (`auth.json` or OS keyring, per its `cli_auth_credentials_store` setting) | Same posture: user runs `codex login`. WorkTreeAI reads only `account/read` status; it never uses external-token mode. |
+| ChatGPT sign-in for Codex | Codex (`auth.json` or OS keyring, per its `cli_auth_credentials_store` setting) | Same posture: user runs `codex login`. 0rqestra reads only `account/read` status; it never uses external-token mode. |
 
 Keeping credentials inside the provider tools is a custody decision. It does **not** by itself
-settle whether WorkTreeAI's use fits each provider's deployment conditions. That remains
+settle whether 0rqestra's use fits each provider's deployment conditions. That remains
 unresolved ([provider-integrations.md §1.1, §2.2](provider-integrations.md#22-authentication-and-deployment-conditions)).
-| Provider API keys the user explicitly gives WorkTreeAI | WorkTreeAI | Stored only in the OS secret store (Windows Credential Manager / macOS Keychain, e.g. via Electron `safeStorage`). Injected only into the environment of the specific child process for an agent configured for API-key auth. Never sent to the renderer, never logged, never written to project or config files. |
+| Provider API keys the user explicitly gives 0rqestra | 0rqestra | Stored only in the OS secret store (Windows Credential Manager / macOS Keychain, e.g. via Electron `safeStorage`). Injected only into the environment of the specific child process for an agent configured for API-key auth. Never sent to the renderer, never logged, never written to project or config files. |
 
-**Environment hygiene.** For agents configured for subscription auth, WorkTreeAI removes
+**Environment hygiene.** For agents configured for subscription auth, 0rqestra removes
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CODEX_API_KEY`, and similar variables from the child
 environment. A key inherited from the user's shell would otherwise take over billing silently.
 
 ## 6. Proposal — supporting subsystems
 
 - **Storage:**
-  - tree configuration per project in a WorkTreeAI-owned location (not inside the project
+  - tree configuration per project in a 0rqestra-owned location (not inside the project
     folder unless the user opts in), as versioned JSON;
   - task state, event log, and session-ID mapping in SQLite.
   - The final choice is open; see §9.
@@ -225,7 +225,7 @@ Vitest 4.1.12, ESLint 10.14.0, typescript-eslint 8.72.1.
 | Sandbox | Configured value `sandbox: true` | Preload reports `process.sandboxed === true` (Electron's own flag inside the renderer). A copy with the sandbox disabled fails |
 | Context isolation | Configured value | Preload reports `process.contextIsolated === true`. A copy with isolation disabled fails |
 | No Node.js in the page | Configured values | Page sees `typeof require/process === "undefined"` |
-| Narrow preload API | — | Page's `window.worktreeai` has exactly `["getAppInfo"]`. A copy exposing an extra method fails |
+| Narrow preload API | — | Page's `window.orqestra` has exactly `["getAppInfo"]`. A copy exposing an extra method fails |
 | Sender-validated IPC | Exact webContents ID, main frame, and canonical file URL; negative cases for a wrong webContents, a subframe, other origins and files, query strings, and a missing frame | IPC round trip from the real page succeeds |
 | `window.open` denied | — | Returns `null`. A copy without the guard fails |
 | Navigation blocked | — | URL unchanged after an attempt. A copy without the guard fails |
@@ -309,9 +309,9 @@ as `%7E`; Chromium does not. URLs are now compared as decoded file paths.
 | Clean install | `npm ci` | exit 0 (406 packages) |
 | Lint, typecheck, unit tests | `npm run check` | exit 0; 22 tests in 3 files |
 | Smoke (dev build) | `npm run smoke` | exit 0; 5/5 PASS; `SMOKE PASSED` |
-| Smoke failure cases | `npm run smoke:failures -w @worktreeai/desktop` | exit 0; 20/20 as expected (1 pass, 19 fail-closed with exit 1); 11/12 handlers exercised |
-| Package | `npm run package -w @worktreeai/desktop` | exit 0; unsigned `win-unpacked`, default icon |
-| Smoke (packaged app) | `release/win-unpacked/WorkTreeAI.exe --smoke` | exit 0; `SMOKE PASSED` |
+| Smoke failure cases | `npm run smoke:failures -w @0rqestra/desktop` | exit 0; 20/20 as expected (1 pass, 19 fail-closed with exit 1); 11/12 handlers exercised |
+| Package | `npm run package -w @0rqestra/desktop` | exit 0; unsigned `win-unpacked`, default icon |
+| Smoke (packaged app) | `release/win-unpacked/0rqestra.exe --smoke` | exit 0; `SMOKE PASSED` |
 | CI on Windows and macOS runners | GitHub Actions run for `fbf8dd3` (old repository) | **Passed on both runners, as reported by the user on 2026-11-16.** Not observed by Claude |
 | macOS install and smoke | Same run, `macos-latest` job | **Passed, as reported by the user.** Not run on a physical Mac |
 
@@ -370,7 +370,7 @@ minimatch 11, or if the user approves testing option (b).
 
 **Other known limitations:**
 
-- `appId` `dev.worktreeai.desktop` is a placeholder; replace it before any signed release.
+- `appId` `dev.orqestra.desktop` is a placeholder; replace it before any signed release.
 - Code signing and notarization are out of scope until a release stage.
 - File-URL comparison is case-insensitive only on Windows.
 

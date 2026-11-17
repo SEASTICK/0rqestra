@@ -165,7 +165,7 @@ const exercised = new Set();
 let allAsExpected = true;
 
 for (const testCase of cases) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "worktreeai-smoke-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "orqestra-smoke-"));
   let line;
   try {
     fs.cpSync(path.join(appDir, "dist"), path.join(dir, "dist"), { recursive: true });

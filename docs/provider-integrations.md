@@ -8,7 +8,7 @@ Sign in with ChatGPT, Codex configuration loading) to revision 3.
 - **Revision 1** conflated `claude -p` with `--bare`, treated npm distribution as a Node.js
   runtime requirement, and relied on secondary news coverage.
 - **Revision 2** fixed those errors, but still:
-  - presented a WorkTreeAI policy (not bundling provider binaries) as if it were a provider rule;
+  - presented a 0rqestra policy (not bundling provider binaries) as if it were a provider rule;
   - omitted OpenAI's statement that local and open-source apps may continue;
   - implied that terminal login avoids deployment restrictions;
   - mixed a deny-all-MCP profile with a permission-MCP profile.
@@ -30,7 +30,7 @@ Sign in with ChatGPT, Codex configuration loading) to revision 3.
     clarification.
 
 This is not legal advice. Statements about terms quote the provider's own text. They are not a
-legal clearance for WorkTreeAI.
+legal clearance for 0rqestra.
 
 ## How to read this document
 
@@ -39,7 +39,7 @@ Every finding is in one of five kinds of block:
 | Block | Meaning |
 |---|---|
 | **Provider statement** | What the official source says, quoted or closely paraphrased, with its source ID. Checked against the source on the verification date. Not tested by running anything. |
-| **WorkTreeAI decision** | An engineering or policy choice WorkTreeAI makes. It may be stricter than the provider requires. Proposals are labelled as such. |
+| **0rqestra decision** | An engineering or policy choice 0rqestra makes. It may be stricter than the provider requires. Proposals are labelled as such. |
 | **Interpretation** | How the project currently reads a provider statement. Not a provider statement and not legal advice; it may be wrong. |
 | **Runtime observation** | What a probe actually saw, with the version and date. Points to [`provider-runtime-results.md`](provider-runtime-results.md). |
 | **Unresolved** | Interpretation the sources don't settle, or behavior only a runtime test can confirm. Must not be relied on. |
@@ -183,33 +183,33 @@ prohibit bundling.
 **Interpretation (project, not legal advice):**
 
 - A10's "services that route requests through consumer subscriptions" is the provider text
-  closest to WorkTreeAI's pattern. WorkTreeAI would launch the user's own signed-in `claude`
+  closest to 0rqestra's pattern. 0rqestra would launch the user's own signed-in `claude`
   binary on the user's own machine for the user's own requests; it would not run a service, hold
   credentials, or serve other people. The project's reading is that this is not "routing
   requests through consumer subscriptions" on someone's behalf, but **A10 does not define
   "services" or "route", so this reading is not confirmed.**
-- "Misrepresent the product or client being used" is relevant to launch flags: WorkTreeAI must
+- "Misrepresent the product or client being used" is relevant to launch flags: 0rqestra must
   not disguise its launches as another client. The proposed launch profile only uses documented
   `claude` flags and does not alter identification.
-- WorkTreeAI's agents are configured by the user for the user's own code, not a chatbot for
+- 0rqestra's agents are configured by the user for the user's own code, not a chatbot for
   third parties. Whether A10's AI-disclosure rule applies is not settled; showing each agent's
   provider and model in the interface (planned in the node settings) would make the AI use
   explicit either way.
 
-**WorkTreeAI decisions:**
+**0rqestra decisions:**
 
-1. **Policy: WorkTreeAI does not bundle, preinstall, or modify the Claude Code binary.** The user
-   installs it. This is WorkTreeAI's own choice, not an Anthropic prohibition. It keeps WorkTreeAI
+1. **Policy: 0rqestra does not bundle, preinstall, or modify the Claude Code binary.** The user
+   installs it. This is 0rqestra's own choice, not an Anthropic prohibition. It keeps 0rqestra
    away from the "preinstalling" case.
-2. WorkTreeAI never offers its own Claude.ai login UI. It never reads, copies, stores, proxies,
+2. 0rqestra never offers its own Claude.ai login UI. It never reads, copies, stores, proxies,
    or forwards Claude credentials or session tokens. Sign-in happens in the user's own `claude`
    binary through Anthropic's flow. (Provider requirement.)
-3. WorkTreeAI never pays for, pools, or resells usage, and never disables the binary's
+3. 0rqestra never pays for, pools, or resells usage, and never disables the binary's
    authentication methods. (Provider requirement.)
-4. WorkTreeAI does not use the Agent SDK with subscription credentials. If the SDK is used at
+4. 0rqestra does not use the Agent SDK with subscription credentials. If the SDK is used at
    all, it is only with the user's own API key. (Follows A1's developer guidance.)
-5. The name and logo contain no "Claude Code" or "Anthropic". Docs may say WorkTreeAI "runs
-   Claude Code". (A1 states this for products that run Claude Code; WorkTreeAI follows it as
+5. The name and logo contain no "Claude Code" or "Anthropic". Docs may say 0rqestra "runs
+   Claude Code". (A1 states this for products that run Claude Code; 0rqestra follows it as
    project policy whether or not A1's product clause applies.)
 
 **Unresolved:**
@@ -221,7 +221,7 @@ prohibit bundling.
   doesn't decide the local case. Not bundling the binary (decision 1) does not settle this,
   because the clause also says "running". **This is a maintainer decision**, possibly to be
   asked of Anthropic via A1's contact link.
-- **Does the exception cover WorkTreeAI's pattern?** The A1 exception covers "an end user ...
+- **Does the exception cover 0rqestra's pattern?** The A1 exception covers "an end user ...
   signing in to the unmodified Claude Code binary". Whether a separate app *launching* that
   signed-in binary for the user stays within "ordinary use" is an interpretation, not a
   provider statement.
@@ -271,7 +271,7 @@ prohibit bundling.
   `ANTHROPIC_API_KEY` or an `apiKeyHelper` passed in `--settings`.
 - **API key:** if `ANTHROPIC_API_KEY` is set and approved, it skips the login prompt (A3).
 
-**WorkTreeAI decisions:**
+**0rqestra decisions:**
 
 - `--bare` is not used for subscription-authenticated agents.
 - For such agents, provider API-key variables are removed from the child environment, so that a
@@ -325,7 +325,7 @@ Further caveats from A2 and A9:
 - managed-settings denies cannot be overridden by flags;
 - file-tool write blocking does not cover shell commands.
 
-**WorkTreeAI proposals — two separate launch profiles.** When this section was written, neither
+**0rqestra proposals — two separate launch profiles.** When this section was written, neither
 had been run. Profile A was later probed on Windows with Claude Code 2.1.325 (see
 [`provider-runtime-results.md`](provider-runtime-results.md)); Profile B has not been run.
 
@@ -347,19 +347,19 @@ claude -p
   --max-turns <node limit>
 ```
 
-**Profile B — WorkTreeAI permission MCP (only if per-action approval is needed).** Same as
+**Profile B — 0rqestra permission MCP (only if per-action approval is needed).** Same as
 Profile A, except:
 
 ```
-  --strict-mcp-config --mcp-config <file with ONLY WorkTreeAI's approval server>
-  --permission-prompt-tool mcp__worktreeai__approve
+  --strict-mcp-config --mcp-config <file with ONLY 0rqestra's approval server>
+  --permission-prompt-tool mcp__orqestra__approve
   --disallowedTools "Agent"                # NOT "mcp__*": see the unresolved item below
   (no --permission-prompts none)
 ```
 
 **What startup metadata can and cannot do.**
 
-- WorkTreeAI can read `system/init` (model, tools, `mcp_servers`, `plugins`) and stop the run if
+- 0rqestra can read `system/init` (model, tools, `mcp_servers`, `plugins`) and stop the run if
   it shows anything outside the profile. That **detects** unexpected configuration.
 - It **cannot undo** anything that already ran. Hooks run before `system/init` (A2).
 - Suppression must therefore come from launch flags, applied **before** launch. The startup check
@@ -391,7 +391,7 @@ Profile A, except:
 - **Detecting the model actually used:** headless callers read it from the result's
   `modelUsage`.
 
-**WorkTreeAI decision (proposal):**
+**0rqestra decision (proposal):**
 
 - pass no fallback chain;
 - set `switchModelsOnFlag: false`;
@@ -423,7 +423,7 @@ A mismatch pauses the item and is reported to the user.
   - also `--fork-session` and `--no-session-persistence`.
 - **Costs** are client-side estimates. **Piped stdin** is capped at 10 MB.
 
-**WorkTreeAI decision:** one engine-assigned session UUID per (project, node, work item).
+**0rqestra decision:** one engine-assigned session UUID per (project, node, work item).
 Resumption uses only that exact ID; `--continue` is never used.
 
 ### 1.7 Cancellation and errors
@@ -455,7 +455,7 @@ partial. See
 - Preinstalling or running Claude Code in a product requires the Commercial Terms plus the
   conditions in §1.1.
 
-**WorkTreeAI decision:** do not bundle the binary (policy, §1.1 decision 1).
+**0rqestra decision:** do not bundle the binary (policy, §1.1 decision 1).
 
 **Unresolved:** see §1.1.
 
@@ -522,10 +522,10 @@ O1 also documents the auth modes:
 - The flow is OAuth/OIDC with PKCE and issues tokens "for eligible Responses API requests".
 - O7 does **not** say whether this covers driving Codex or app-server.
 
-**WorkTreeAI decisions (proposal):**
+**0rqestra decisions (proposal):**
 
-- WorkTreeAI does not use `chatgptAuthTokens` and never handles ChatGPT tokens.
-- WorkTreeAI reads `account/read` to show auth state.
+- 0rqestra does not use `chatgptAuthTokens` and never handles ChatGPT tokens.
+- 0rqestra reads `account/read` to show auth state.
 - The user signs in through Codex's own flow (`codex login`).
 - Provider API-key variables are removed from the child environment unless the agent is
   configured for API-key auth.
@@ -537,7 +537,7 @@ used.
 
 **Unresolved:**
 
-- **Classification.** WorkTreeAI is intended to be a free, local, open-source app. The O1
+- **Classification.** 0rqestra is intended to be a free, local, open-source app. The O1
   continuation sentence appears to cover that case, but its scope (for example "built" before a
   date) is not defined in O1.
 - **Migration.** OpenAI recommends Sign in with ChatGPT. (Answered 2026-11-17: O14 documents
@@ -639,7 +639,7 @@ a developer who integrates Sign in with ChatGPT (SIWC), not to the current desig
 
 - **Current design (user's own `codex login`, managed `chatgpt` mode).** The O1 continuation
   sentence is the only provider text that names "a local or open-source application using Codex
-  app-server authentication", and it says such an app "can continue using it". WorkTreeAI is
+  app-server authentication", and it says such an app "can continue using it". 0rqestra is
   intended to be local and open source and never handles tokens. O1 does not say whether
   "continue" covers an app first released after Sign in with ChatGPT launched.
 - **Current requirements (O9)** contain no rule that specifically addresses a local app
@@ -647,15 +647,15 @@ a developer who integrates Sign in with ChatGPT (SIWC), not to the current desig
   The project intends the proposed design not to circumvent any safeguard, but whether it
   complies is the project's interpretation, not something OpenAI has confirmed.
 - **Future requirement (O9b, from November 20, 2026): the intermediary rule** does not appear to
-  apply: WorkTreeAI does not let third parties access OpenAI models; it runs the user's own Codex
-  for the user. O9b's training restrictions do not concern WorkTreeAI's use, which sends no
+  apply: 0rqestra does not let third parties access OpenAI models; it runs the user's own Codex
+  for the user. O9b's training restrictions do not concern 0rqestra's use, which sends no
   outputs to train models.
-- **O8's "programmatically extracting ... Output"** is aimed at extraction; WorkTreeAI drives
+- **O8's "programmatically extracting ... Output"** is aimed at extraction; 0rqestra drives
   the supported app-server protocol that OpenAI documents for integrations. Not confirmed by
   OpenAI.
 - **Migration to SIWC** is technically documented for local open-source apps (O12–O14) and its
-  terms (O11 §3.1) fit a local, free, single-user design. But it would make WorkTreeAI obtain,
-  store, refresh, and pass ChatGPT tokens, which **reverses the current decision that WorkTreeAI
+  terms (O11 §3.1) fit a local, free, single-user design. But it would make 0rqestra obtain,
+  store, refresh, and pass ChatGPT tokens, which **reverses the current decision that 0rqestra
   never handles ChatGPT tokens**. Choosing it is a user decision.
 
 ### 2.3 `codex exec` vs `codex app-server`
@@ -693,7 +693,7 @@ a developer who integrates Sign in with ChatGPT (SIWC), not to the current desig
 | Interruption | Undocumented (process kill) | `turn/interrupt` |
 | Complexity | Low | Higher; version-specific protocol |
 
-**WorkTreeAI decision (proposal):** use `codex app-server` over stdio, with **one app-server
+**0rqestra decision (proposal):** use `codex app-server` over stdio, with **one app-server
 process per task** (see
 [tree-routing-and-permissions.md §4](tree-routing-and-permissions.md#4-proposal--process-ownership-and-cancellation)).
 
@@ -736,14 +736,14 @@ This depends on the unresolved items in §2.2.
   retained, so which servers were involved, whether they started, and where they were configured
   is not known.
 
-**WorkTreeAI proposal (not run, not agreed) — a Codex launch profile:**
+**0rqestra proposal (not run, not agreed) — a Codex launch profile:**
 
-- Mark the opened project untrusted for WorkTreeAI's launches (for example
+- Mark the opened project untrusted for 0rqestra's launches (for example
   `-c 'projects."<path>".trust_level="untrusted"'`), so project config, hooks, rules, and
   project MCP servers are skipped.
 - `-c features.hooks=false`, `-c agents.enabled=false` (and `features.multi_agent=false`),
   `-c features.apps=false`, `-c plugins._default.enabled=false`, and `enabled = false` for each
-  user MCP server WorkTreeAI did not configure. Because `plugins._default.enabled=false` can be
+  user MCP server 0rqestra did not configure. Because `plugins._default.enabled=false` can be
   overridden by explicit per-plugin settings and does not reach managed plugins, the profile
   also disables each enabled plugin explicitly and, after start, compares the loaded plugins
   and tools with an allow-list (see the fail-closed rule below).
@@ -786,9 +786,9 @@ AC-13's Codex assertions stay deferred until these runtime results exist.
    supported on native Windows. Codex's native sandbox depends on the Windows build and policy.
 3. **Node.js.** Neither CLI needs Node.js at runtime when installed natively. Codex's npm channel
    launches through a Node script; Claude Code's npm channel installs a native binary.
-4. **Credentials.** Credential custody stays with each provider tool (WorkTreeAI decision).
-   Whether WorkTreeAI's use pattern fits each provider's deployment conditions is **unresolved**
-   for both (§1.1, §2.2). Keeping credentials out of WorkTreeAI does not by itself satisfy those
+4. **Credentials.** Credential custody stays with each provider tool (0rqestra decision).
+   Whether 0rqestra's use pattern fits each provider's deployment conditions is **unresolved**
+   for both (§1.1, §2.2). Keeping credentials out of 0rqestra does not by itself satisfy those
    conditions.
 5. **Usage limits** are not published numerically. Rate- and usage-limit errors are expected
    conditions and must be surfaced to the user through the Manager.
@@ -821,7 +821,7 @@ None of these is a Stage 2 (interface) blocker.
 
 | Gate | Type |
 |---|---|
-| User decision: keep the user's own `codex login` (relying on O1's continuation sentence) or move to Sign in with ChatGPT (WorkTreeAI then handles tokens under O11); and whether to ask OpenAI (§2.2) | User / legal |
+| User decision: keep the user's own `codex login` (relying on O1's continuation sentence) or move to Sign in with ChatGPT (0rqestra then handles tokens under O11); and whether to ask OpenAI (§2.2) | User / legal |
 | The §2.4 runtime items: `-c` overrides on app-server, trust default, `AGENTS.md` suppression or detection, delegation tools removed, user MCP/plugins/apps stopped | Runtime |
 | Approval routing for `on-request` + `workspaceWrite`; model-substitution detection (§2.3) | Runtime |
 | Missing or expired credential behavior | Runtime |

@@ -17,11 +17,11 @@ const quiet = () => {};
 
 let outDir;
 beforeEach(() => {
-  outDir = fs.mkdtempSync(path.join(os.tmpdir(), "worktreeai-probe-test-"));
-  process.env.WORKTREEAI_PROBE_OUT = outDir;
+  outDir = fs.mkdtempSync(path.join(os.tmpdir(), "orqestra-probe-test-"));
+  process.env.ORQESTRA_PROBE_OUT = outDir;
 });
 afterEach(() => {
-  delete process.env.WORKTREEAI_PROBE_OUT;
+  delete process.env.ORQESTRA_PROBE_OUT;
   fs.rmSync(outDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 

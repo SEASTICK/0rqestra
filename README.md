@@ -32,7 +32,7 @@ runs with the providers. Cloud execution is out of scope for the initial release
   3 model requests each). Results and limits: `docs/provider-runtime-results.md`. Other
   statements about providers in `docs/` are documentation research and proposals.
 
-See [`WorkTreeAI stages.txt`](WorkTreeAI%20stages.txt) for the checklist, the status of each
+See [`0rqestra stages.txt`](0rqestra%20stages.txt) for the checklist, the status of each
 item, and the decisions needed to close Stage 1.
 
 Claude implements; ChatGPT/Codex reviews independently. Work proceeds one stage at a time, and
@@ -127,16 +127,16 @@ The product name, window/page titles, Electron packaging name, npm root/workspac
 this README now use **0rqestra** (`@0rqestra/*` for npm workspaces). The development
 app ID is `dev.orqestra.desktop`; it remains a placeholder before a signed public release.
 
-The secure preload API `window.worktreeai`, the smoke-only `--worktreeai-smoke` diagnostic flag,
-and the provider probe tools' `WORKTREEAI_*` variables, `.worktreeai-probe` configuration path
+The secure preload API `window.orqestra`, the smoke-only `--orqestra-smoke` diagnostic flag,
+and the provider probe tools' `ORQESTRA_*` variables, `.orqestra-probe` configuration path
 and recorded client IDs remain stable for compatibility and reproducibility. Provider runtime
 evidence files and their hashes are unchanged. No model probe was rerun by this rename.
 
-The recorded package/smoke results in the architecture document refer to the earlier WorkTreeAI
+The recorded package/smoke results in the architecture document refer to the earlier 0rqestra
 build. The rename itself does not upgrade their verification status or complete Stage 1. This
 checkout contains the foundation and provider probes; it does not contain the separately built
 desktop subscription/UI preview from the former repository's review branch.
 
-Historical Stage 1 documents, the existing `WorkTreeAI stages.txt` filename and provider-review
+Historical Stage 1 documents, the existing `0rqestra stages.txt` filename and provider-review
 materials retain their original names and contents. They describe this same project before its
 rename; none of their evidence, decisions or review statuses is changed by the rebranding.

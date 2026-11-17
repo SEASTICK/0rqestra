@@ -1,13 +1,13 @@
 // Claude Code probes that CANNOT reach a model: every run uses an empty, temporary config
 // directory (no credentials) and a cleaned environment (no API keys). Zero model requests.
 //
-// Usage: WORKTREEAI_CLAUDE_BIN=<path to claude> node tools/provider-probes/claude-noauth.mjs
+// Usage: ORQESTRA_CLAUDE_BIN=<path to claude> node tools/provider-probes/claude-noauth.mjs
 import { spawnSync } from "node:child_process";
 import { cleanEnv, markers, removeDir, saveResult, tempDir, writeHostileFixture } from "./lib.mjs";
 
-const bin = process.env.WORKTREEAI_CLAUDE_BIN;
+const bin = process.env.ORQESTRA_CLAUDE_BIN;
 if (!bin) {
-  console.error("Set WORKTREEAI_CLAUDE_BIN to the claude executable.");
+  console.error("Set ORQESTRA_CLAUDE_BIN to the claude executable.");
   process.exit(2);
 }
 
