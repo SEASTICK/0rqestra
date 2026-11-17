@@ -1,20 +1,26 @@
 # WorkTreeAI — Acceptance Criteria (First Complete Workflow)
 
-Revision 5, 2026-11-16. **Drafted, pending review.** Revised after the review of 4e812f3. That
-revision changed three things: AC-18 retains baseline bytes and captures fail-closed; AC-15
-timing depends on clean-interrupt capability; AC-22 separates the agreed parts from proposed
-details.
+Revision 6, 2026-11-17. **Reconciled with the user's decisions; accepted by independent review
+(2026-11-17) as a specification.** No criterion is implemented or passing yet.
+Revision 5 (2026-11-16, after the review of 4e812f3) made AC-18 retain baseline bytes and
+capture fail-closed, made AC-15 timing depend on clean-interrupt capability, and split AC-22
+into agreed and proposed parts. Revision 6 records the user's decisions D1–D12 of 2026-11-17
+(the user accepted every recommendation of the item 10 questionnaire), removes the remaining
+Draft labels, and adds assertions for the outage-retry waits (AC-09), priority uniqueness and
+tie-breaking (AC-21), snapshot retention (AC-18), and Cancel in the "+" picker (AC-22).
 
-Criteria marked **(Agreed)** implement requirements the user confirmed, including decisions
-A1–A8 recorded on 2026-11-16. All others implement Draft rules that are still pending.
+Every criterion now implements an agreed requirement: decisions A1–A8 (2026-11-16), D1–D12
+(2026-11-17; listed in [routing §1](tree-routing-and-permissions.md#1-agreed-requirements-these-rules-must-preserve)),
+or the product requirements in the product brief. Agreeing a criterion does not mean it passes,
+and runtime-dependent criteria ([live]) still need the adapter gates in
+[provider-integrations.md §4.2](provider-integrations.md).
 
 **These are specifications for future tests.** The product features they describe do not exist
 yet, so nothing below is claimed to pass. The only tests that exist today are the foundation
 tests listed in [`architecture.md`](architecture.md) §8.
 
-Criteria that depend on a **Draft** rule from
-[`tree-routing-and-permissions.md`](tree-routing-and-permissions.md) cite that section. If the
-user chooses an alternative, those criteria change with it.
+Criteria that depend on a rule in
+[`tree-routing-and-permissions.md`](tree-routing-and-permissions.md) cite that section.
 
 **Test types**
 
@@ -103,7 +109,7 @@ after spawn but before PID persistence, while running).
 - **Given** P4, **when** opened, **then** an app-generated error names the path and the problem,
   and nothing is launched.
 
-## AC-02 Saving, restoring, and validating trees [fixture]
+## AC-02 Saving, restoring, and validating trees (Routing §2.1, Agreed: decision D1) [fixture]
 
 - **Given** an edited tree in P1, **when** WorkTreeAI restarts and P1 is reopened, **then** the
   tree is deep-equal to what was saved.
@@ -113,7 +119,7 @@ after spawn but before PID persistence, while running).
 - **Given** T7 or T8, **when** saved, **then** the save is rejected with the reason ("exactly one
   Manager", "no edges into the Manager"). (Routing §2.1)
 
-## AC-03 Edge and provenance enforcement (Routing §2.4)
+## AC-03 Edge and provenance enforcement (Routing §2.2–§2.4, Agreed: decision D1)
 
 All [fixture]:
 
@@ -145,7 +151,7 @@ All [fixture]:
   proceed, and nothing launches until the user answers. If the user chooses to proceed, the
   request record shows "proceeded without plan (user choice)".
 
-## AC-05 Problem routing
+## AC-05 Problem routing (Routing §2.9, Agreed: decision D9)
 
 - [fixture] **Given** T6, **when** the Builder's output reports a failing test, **then** the
   Debugger is dispatched with that output (rule b), not the Builder again.
@@ -167,17 +173,22 @@ All [fixture]:
   - **When** the user chooses to finish, **then** the final report says "Completed — unverified
     (user chose to skip verification)", and nowhere says reviewed, tested, or verified.
 
-## AC-07 Missing roles and Manager-only questions
+## AC-07 Missing roles and Manager-only questions (Routing §2.9, Agreed: decision D9)
 
 - [fixture] **Given** a needed role that is not reachable, **then** only that item pauses, the
-  Manager asks, and the node count is unchanged.
+  Manager asks, offering to add or connect an agent or to skip that step, and the node count is
+  unchanged.
+- [fixture] **Given** the user chooses to skip that step, **then** the item continues without it,
+  and no node is created.
 - [fixture] **Given** a specialist's output containing a question, **then** it reaches the user
   in the Manager channel. No UI element replies to the specialist directly.
 - [fixture] **Given** item A paused and item B independent, **then** B completes.
 
 ## AC-08 Retry, review-round, outage, and request-limit semantics (Routing §2.6)
 
-The default values and the at-limit behavior are **Agreed** (decision A5).
+The default values, the counting rules, and that running work finishes while queued work pauses
+and the Manager asks are **Agreed** (decision A5). The exact choices the Manager offers are
+**Agreed** in decision D11 (2026-11-17).
 
 **Definitions**
 
@@ -201,9 +212,14 @@ The default values and the at-limit behavior are **Agreed** (decision A5).
 - When the limit is reached with one task running and two queued:
   - the running task completes, and its output is recorded but not dispatched onward;
   - the queued items show `paused: request limit`;
-  - the Manager asks to raise the limit, stop, or select items.
+  - the Manager offers exactly three choices (decision D11): raise the limit by a chosen amount;
+    stop (queued items are cancelled and a final summary is produced); or continue only selected
+    items.
 
-## AC-09 Provider outages and usage limits [fixture]
+## AC-09 Provider outages and usage limits (Routing §2.6, Agreed: decisions D7, D10) [fixture]
+
+- `overloaded` three times, then success → outage retries start after waits of 5 s, 20 s, and
+  60 s (decision D7; measured with the engine's injectable clock, not real time).
 
 - Outage retries exhausted → the item pauses; the status shows a provider-availability error,
   distinct from a task failure.
@@ -211,7 +227,7 @@ The default values and the at-limit behavior are **Agreed** (decision A5).
   pauses; the Manager names the node and provider.
 - Node usage limit reached → stopped and reported as "stopped: node usage limit".
 
-## AC-10 Manager failure [fixture]
+## AC-10 Manager failure (Agreed: decision D10) [fixture]
 
 - **Given** the Manager's provider is unauthorized, unreachable, or crashes, **when** the user
   prompts, **then** the Manager channel shows an **app-generated** status labelled as coming from
@@ -238,7 +254,7 @@ The default values and the at-limit behavior are **Agreed** (decision A5).
   delegating. Free-form text cannot cause actions (only structured decisions can), so this
   measures quality, not safety.
 
-## AC-12 Permission enforcement and fail-closed (Routing §3.4)
+## AC-12 Permission enforcement and fail-closed (Routing §3.4, Agreed: decision D2)
 
 - [fixture] A node without write permission receives a file-edit approval request → it is denied.
   The activity feed shows "denied by node permissions", distinct from a failure.
@@ -260,13 +276,17 @@ The default values and the at-limit behavior are **Agreed** (decision A5).
   is the primary control.
 - [live] **Given** P3 with Claude Code under Profile A:
   - `HOOK_RAN.txt` is never created;
-  - `system/init` shows no `.mcp.json` server and no plugins;
+  - `system/init` shows no `.mcp.json` server and no plugin outside an explicit allow-list
+    that was verified for the pinned Claude Code build. (The built-in `cc-plugin-*@builtin`
+    entries appeared in every recorded case of 2.1.325, including Profile A — runtime results
+    C4 — so "no plugins" cannot be the requirement.) A plugin outside the allow-list stops the
+    run before the first prompt, as in the criterion above;
   - no subagent messages appear.
 - **Deferred:** Codex-specific assertions. They are defined after the runtime items in
   provider-integrations §2.4 are resolved (its documentation part was completed in revision 4).
   Until then, the Codex adapter cannot be enabled (§4.2 gates).
 
-## AC-14 Session isolation [fixture]
+## AC-14 Session isolation (Agreed: decision D10) [fixture]
 
 - Two same-role nodes in one project use distinct session or thread references recorded by the
   engine.
@@ -274,7 +294,7 @@ The default values and the at-limit behavior are **Agreed** (decision A5).
 - No recorded launch contains `--continue`, `-c`, `resume --last`, or any other "most recent"
   form.
 
-## AC-15 Process ownership and cancellation (Routing §4 Draft)
+## AC-15 Process ownership and cancellation (Routing §4, Agreed: decisions D3, D4)
 
 Timing (Routing §4.2):
 
@@ -329,7 +349,7 @@ The fake adapter declares `cleanInterrupt: "supported"` or `"unavailable"` per t
 **Provider parent exits while descendants remain [fixture]:**
 
 - **Given** a task in `parent-exits` mode, **when** its root exits 0, **then**:
-  - the tracked grandchild is terminated (Draft) and listed in the task result;
+  - the tracked grandchild is terminated (decision D4, B2) and listed in the task result;
   - the task is still reported with its real exit outcome.
 
 **Crash recovery [fixture, using injected crash points]:**
@@ -361,14 +381,14 @@ The fake adapter declares `cleanInterrupt: "supported"` or `"unavailable"` per t
   - where it is unavailable, forced cleanup starts immediately;
   - in both cases, forced cleanup completes within 13 s and no tracked process remains.
 
-## AC-16 User-answer handling [fixture]
+## AC-16 User-answer handling (Agreed: decision D10) [fixture]
 
 - Answering item A's question resumes only A, in the same session reference. Other items'
   launch counts are unchanged.
 - A duplicate answer (same `questionId`) resumes A exactly once.
 - An answer to a cancelled item's question is rejected with a message.
 
-## AC-17 No silent model or provider substitution [fixture]
+## AC-17 No silent model or provider substitution (Agreed: product requirement and decision D10) [fixture]
 
 - The recorded launch uses the node's provider and model and passes no fallback chain.
 - A turn reporting a different model than configured → flagged; the item pauses; the Manager
@@ -377,12 +397,12 @@ The fake adapter declares `cleanInterrupt: "supported"` or `"unavailable"` per t
 
 ## AC-18 Accurate summaries backed by reconciliation [fixture]
 
-**Attribution model (Draft, pending):**
+**Attribution model (Agreed: decisions D5 and D6, 2026-11-17):**
 
 - **Serialized writers per project.** At most one task with write permission runs in a project
   at a time; other writing tasks queue. Read-only tasks may run alongside.
-  - Alternative: isolated workspaces (a Git worktree or folder copy per writing task, merged
-    back afterwards). Not drafted.
+  - Alternative (not chosen): isolated workspaces (a Git worktree or folder copy per writing
+    task, merged back afterwards).
 - **Content baselines with retained bytes.** Immediately before each writing task starts, the
   engine captures a baseline that can reconstruct every non-ignored file as it was. A hash alone
   is not enough, because a diff needs the original content.
@@ -393,9 +413,11 @@ The fake adapter declares `cleanInterrupt: "supported"` or `"unavailable"` per t
     default exclusion list (for example `node_modules/` and `.git/`).
   - **The store.** It lives in a WorkTreeAI-owned location outside the project. Blobs are keyed
     by SHA-256 and deduplicated across baselines. The baseline manifest maps each path to its
-    SHA-256 and to its source (store blob, or Git commit plus path). The store is kept until the
-    request is archived; the retention period is pending.
-  - **Size caps (draft).** 50 MB per file and 1 GB per baseline. A file over the per-file cap is
+    SHA-256 and to its source (store blob, or Git commit plus path). When the request is
+    archived, its baseline manifests and references are deleted. Blobs still referenced by
+    another request's baseline remain; unreferenced blobs are deleted. Archived summaries
+    retain file lists without diffs.
+  - **Size caps (decision D6).** 50 MB per file and 1 GB per baseline. A file over the per-file cap is
     recorded by hash only and listed as "too large to diff".
   - **Attribution** compares the after-state with this baseline, **not with the current
     `HEAD`**.
@@ -472,6 +494,9 @@ The fake adapter declares `cleanInterrupt: "supported"` or `"unavailable"` per t
   (corroborated)".
 - **Given** a task cancelled mid-edit, **then** its reconciled files are reported as "possibly
   partial".
+- **Retention.** **Given** a request is archived, **then** its baseline store entries are deleted,
+  except blobs still referenced by another request's baseline, and the archived summary shows
+  file lists without diffs.
 
 **Check results.** Each check in the summary is one of:
 
@@ -524,7 +549,7 @@ The summary never reports "passed" unless the check's task result says passed.
 - **Given** the user declines the rebase, **then** the item stays paused or is skipped by the
   user, and the edited tree applies to new requests only.
 
-## AC-21 Same-role selection (Routing §2.8) [fixture]
+## AC-21 Same-role selection (Routing §2.8, Agreed: decisions A7, D7) [fixture]
 
 **(Agreed) Highest-priority idle eligible agent:**
 
@@ -546,9 +571,14 @@ The summary never reports "passed" unless the check's task result says passed.
 
 - A correction for work authored by Builder B → goes to B, even when A is idle.
 
-**Draft details:**
+**(Agreed, decision D7):**
 
 - Each choice appears in the activity feed.
+- **Unique priorities.** **Given** the user sets Builder B to Builder A's priority, **then** the
+  editor rejects the save, or reorders so priorities stay unique, and never stores two equal
+  priorities in one role.
+- **Tie safeguard.** **Given** a tree file with two equal priorities in one role (for example
+  edited outside 0rqestra), **then** the agent created first is selected.
 - Builder A becomes unavailable while an item waits for it → the Manager asks the user; the item
   is not moved to Builder B silently.
 
@@ -572,9 +602,9 @@ The summary never reports "passed" unless the check's task result says passed.
   unselected, and the *Add* button is enabled only when all three are chosen (Agreed: decision
   A8). Nothing is pre-filled from the parent or from earlier choices.
 
-**Proposed details (not agreed):**
+**(Agreed, decision D8):**
 
-- Cancelling the picker creates no node and no edge.
+- Cancelling the picker creates no node and no edge, and the tree file is unchanged.
 
 ## Traceability
 

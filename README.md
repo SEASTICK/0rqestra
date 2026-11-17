@@ -57,9 +57,9 @@ Release `v0.1.0` was published on 2026-11-16.
 | [`docs/product-brief.md`](docs/product-brief.md) | Agreed product decisions: users, workflow, roles, node settings, routing rules, distribution |
 | [`docs/provider-integrations.md`](docs/provider-integrations.md) | Claude Code and Codex integration facts verified against official sources, with dates, plus open legal and runtime gates |
 | [`docs/architecture.md`](docs/architecture.md) | Agreed components; chosen stack (Electron + TypeScript + React); Electron security requirements; credential ownership; the development foundation and its verified checks |
-| [`docs/tree-routing-and-permissions.md`](docs/tree-routing-and-permissions.md) | Agreed requirements ("+" adds a connected child agent; highest-priority idle selection; decisions A1–A8), plus draft proposals pending your decision: edge and provenance rules, correction loops, bounds, snapshots and rebase, permission layers, process ownership and recovery |
+| [`docs/tree-routing-and-permissions.md`](docs/tree-routing-and-permissions.md) | Agreed tree, routing, permission, and process rules: the "+" child agent, highest-priority idle selection, decisions A1–A8 (2026-11-16) and D1–D12 (2026-11-17) |
 | [`docs/release.md`](docs/release.md) | Release channels (`test`, `stable`), the approval step, one-time setup, and how the app updates itself |
-| [`docs/acceptance-criteria.md`](docs/acceptance-criteria.md) | Draft Given/When/Then specifications AC-01–AC-22 with deterministic fixtures (future tests, not passing tests) |
+| [`docs/acceptance-criteria.md`](docs/acceptance-criteria.md) | Given/When/Then specifications AC-01–AC-22, reconciled with the user's decisions (revision 6, accepted by independent review as a specification; not yet implemented), with deterministic fixtures (future tests, not passing tests) |
 
 ## Using provider tools
 

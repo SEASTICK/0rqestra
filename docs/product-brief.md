@@ -117,18 +117,15 @@ Every agent node in the tree has:
 - **"+" picker starts empty** (decision A8). Role, provider, and model start unselected, and you
   choose all three before adding the agent.
 
-The rules above are the agreed ones. Precise semantics for them are **proposed, not agreed**, in
-[`tree-routing-and-permissions.md`](tree-routing-and-permissions.md). They cover:
-
-- exactly one Manager;
-- what an edge authorizes, and whether `Manager → Builder → Reviewer` lets the Manager dispatch
-  the Reviewer;
-- engine-owned IDs and provenance checks;
-- what happens if the top-priority agent becomes unavailable while work waits for it;
-- the three permission enforcement layers;
-- process ownership and cancellation.
-
-Each has labelled alternatives. None of these is approved yet.
+**Decided by the user on 2026-11-17 (decisions D1–D12):** the user accepted every
+recommendation of the item 10 questionnaire. The precise semantics in
+[`tree-routing-and-permissions.md`](tree-routing-and-permissions.md) are therefore agreed:
+tree validation and dispatch rules, engine-owned IDs and provenance checks, selection details,
+missing-role handling (add, connect, or skip a step), permission layers with fail-closed
+behavior, one process per task with its cancellation timing, crash recovery and leftover
+processes, one writing task per project at a time, change snapshots, and the request-limit menu.
+Routing §1 lists each decision. Engineering mechanics may change through review without a
+separate decision (D12).
 
 ## 7. Distribution
 
@@ -168,6 +165,6 @@ iOS companion will be a separate client of the engine's API.
 
 - [`docs/provider-integrations.md`](provider-integrations.md) — Stage 1 item 6.
 - [`docs/architecture.md`](architecture.md) — Stage 1 items 8–9.
-- [`docs/tree-routing-and-permissions.md`](tree-routing-and-permissions.md) — proposed
-  semantics for item 5's rules.
+- [`docs/tree-routing-and-permissions.md`](tree-routing-and-permissions.md) — agreed
+  semantics for item 5's rules, including decisions D1–D12.
 - [`docs/acceptance-criteria.md`](acceptance-criteria.md) — Stage 1 item 10.

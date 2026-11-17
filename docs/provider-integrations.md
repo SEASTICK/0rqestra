@@ -15,18 +15,26 @@ Sign in with ChatGPT, Codex configuration loading) to revision 3.
 - **Revision 3** corrects all of these.
 - **Revision 4** (2026-11-17) reads the sources revision 3 listed as unread: the Anthropic Usage
   Policy (A10), the OpenAI Terms of Use, Usage Policies, Service Terms and Sign in with ChatGPT
-  Terms (O8–O11), and the open-source Sign in with ChatGPT guide (O12–O15). It re-fetches A1,
-  A6 and O1, and documents Codex configuration loading and its documented controls (O16–O22,
+  Terms (O8–O11, with both the current and the announced Usage Policies, O9 and O9b), and the
+  open-source Sign in with ChatGPT guide (O12–O15). It re-fetches A1,
+  A6 and O1, and documents Codex configuration loading and its documented controls (O16–O23,
   §2.4). It adds the block types **Interpretation** and **Runtime observation**, and splits §4
   into documentation, adapter, release, and macOS gates. No provider was contacted, no provider
   binary was run, and nothing was installed for this revision.
+  - Corrected the same day after review of commit 93b289d: the current OpenAI Usage Policies
+    (effective October 29, 2025, O9) are cited next to the announced version (O9b); starting
+    Codex in a subdirectory is no longer described as limiting `AGENTS.md`; the limits of
+    `plugins._default.enabled` and a fail-closed rule were added to §2.4; O11's exception for
+    permitted token handling is quoted; provider naming requirements are separated from project
+    policy; and "only way" claims about asking providers were replaced by optional written
+    clarification.
 
 This is not legal advice. Statements about terms quote the provider's own text. They are not a
 legal clearance for WorkTreeAI.
 
 ## How to read this document
 
-Every finding is in one of three kinds of block:
+Every finding is in one of five kinds of block:
 
 | Block | Meaning |
 |---|---|
@@ -74,7 +82,8 @@ those builds is a runtime question.
 | O7 | Sign in with ChatGPT — Quickstart (re-read 2026-11-17) | https://developers.openai.com/siwc/quickstart |
 | A10 | Anthropic Usage Policy (effective Nov 12, 2026; read 2026-11-17) | https://www.anthropic.com/legal/aup |
 | O8 | OpenAI Europe Terms of Use (updated 16 Jan 2026; read 2026-11-17) | https://openai.com/policies/terms-of-use/ (served as /en-GB/) |
-| O9 | OpenAI Usage Policies (version effective 20 Nov 2026, changelog 2026-10-21; read 2026-11-17) | https://openai.com/policies/usage-policies/ |
+| O9 | OpenAI Usage Policies — **current** version, effective October 29, 2025 (read 2026-11-17) | https://openai.com/policies/usage-policies/revisions/2025-10-29/ |
+| O9b | OpenAI Usage Policies — **announced** version, effective November 20, 2026 (changelog 2026-10-21; read 2026-11-17) | https://openai.com/policies/usage-policies/ |
 | O10 | OpenAI Service Terms (updated 13 Nov 2026; read 2026-11-17) | https://openai.com/policies/service-terms/ |
 | O11 | OpenAI Sign in with ChatGPT Terms (effective Nov 4, 2026; read 2026-11-17) | https://openai.com/policies/sign-in-with-chatgpt-terms/ |
 | O12 | Sign in with ChatGPT — open-source overview (2026-11-17) | https://developers.openai.com/siwc/token-sharing-open-source |
@@ -88,6 +97,7 @@ those builds is a runtime question.
 | O20 | Codex — Hooks (2026-11-17) | https://learn.chatgpt.com/docs/hooks |
 | O21 | Codex — Model Context Protocol (2026-11-17) | https://learn.chatgpt.com/docs/extend/mcp |
 | O22 | Codex — Subagents (2026-11-17) | https://learn.chatgpt.com/docs/agent-configuration/subagents |
+| O23 | Codex — Plugins (2026-11-17) | https://learn.chatgpt.com/docs/plugins |
 
 ---
 
@@ -199,7 +209,8 @@ prohibit bundling.
 4. WorkTreeAI does not use the Agent SDK with subscription credentials. If the SDK is used at
    all, it is only with the user's own API key. (Follows A1's developer guidance.)
 5. The name and logo contain no "Claude Code" or "Anthropic". Docs may say WorkTreeAI "runs
-   Claude Code". (Provider requirement.)
+   Claude Code". (A1 states this for products that run Claude Code; WorkTreeAI follows it as
+   project policy whether or not A1's product clause applies.)
 
 **Unresolved:**
 
@@ -219,7 +230,8 @@ prohibit bundling.
 - **Not explicitly covered.** No Anthropic source read says that a separate local application
   may launch a user-installed, user-signed-in Claude Code binary on the user's behalf. The
   closest texts are A1's end-user exception and A10's prohibition. Asking Anthropic (A1's
-  contact link) is the only way to get an explicit answer; that is a user decision (G6.4).
+  contact link) for optional written clarification is a user decision (G6.4); it is not required
+  by any source read.
 - **Technical success is not permission.** The successful probe runs (2026-11-16) and the
   user's existing Pro subscription do not establish contractual permission.
 
@@ -536,8 +548,8 @@ used.
   app must launch its own (O14 describes only an app-launched child process).
 - **Not explicitly covered.** No OpenAI source read says that a new local open-source app may
   drive a user-installed Codex that the user signed in to with `codex login`. The O1
-  continuation sentence is the closest text. Asking OpenAI is the only way to get an explicit
-  answer; that is a user decision (G6.4).
+  continuation sentence is the closest text. Asking OpenAI for optional written clarification is
+  a user decision (G6.4); it is not required by any source read.
 - **Technical success is not permission.** The successful probe runs and the user's existing
   ChatGPT subscription do not establish permission.
 - **Rate limits:** numeric plan rate limits are not published in the sources read.
@@ -558,16 +570,29 @@ application owns the user's ChatGPT auth lifecycle", and that `chatgptDeviceCode
 - The Usage Policies, Service Terms, and other listed policies form part of these Terms.
 - O8 does not mention Codex, app-server, or third-party applications that drive Codex.
 
-**Provider statement (O9, OpenAI Usage Policies; the version read takes effect 20 Nov 2026,
-three days after this revision; changelog 2026-10-21):**
+**Provider statement (O9, OpenAI Usage Policies currently in effect, effective October 29,
+2025):**
 
-- Prohibits "circumventing our safeguards".
-- "If you operate a model-access intermediary platform or other service that enables third
-  parties to directly access OpenAI models, you must obtain our prior review and approval. This
-  requirement does not apply solely because an application integrates OpenAI models to power its
-  features or functionality."
-- "You may use OpenAI models for research, software development, model evaluation and
-  benchmarking, and product development, within these boundaries."
+- Prohibits, among others, "circumventing our safeguards", "unsolicited safety testing", and
+  "automation of high-stakes decisions in sensitive areas without human review".
+- It contains **no** clause on model-access intermediaries and no clause on training other
+  models with outputs.
+
+**Provider statement (O9b, announced OpenAI Usage Policies, effective November 20, 2026 — three
+days after this revision; until then O9 applies):**
+
+- Keeps "circumventing our safeguards".
+- **New:** "If you operate a model-access intermediary platform or other service that enables
+  third parties to directly access OpenAI models, you must obtain our prior review and approval.
+  This requirement does not apply solely because an application integrates OpenAI models to
+  power its features or functionality."
+- **New:** a section on training and developing models, which forbids using OpenAI models or
+  outputs to prepare training material for models "intended as alternatives to or substitutes
+  for OpenAI models or services", and adds: "You may use OpenAI models for research, software
+  development, model evaluation and benchmarking, and product development, within these
+  boundaries."
+- **Changed:** "automation of high-stakes decisions" becomes "automation of high-stakes
+  actions in sensitive areas without human review".
 
 **Provider statement (O10, OpenAI Service Terms, updated 13 Nov 2026):**
 
@@ -582,7 +607,8 @@ a developer who integrates Sign in with ChatGPT (SIWC), not to the current desig
   persistent storage of Authentication Tokens must be local and under the user's control, not in
   a remote or managed environment."
 - For the ChatGPT Plan scope (§3.1), the app must not enable "Pooling, transferring, reselling,
-  gifting, or sharing ChatGPT plan usage or Authentication Tokens" or "Using one user's
+  gifting, or sharing ChatGPT plan usage or Authentication Tokens, except for token handling
+  expressly permitted by these Terms" or "Using one user's
   subscription to fulfill another user's requests", and must meet: "Requests must originate from
   the user's local runtime or a remote runtime only that user controls"; requests "for the
   authenticated user" from "their activity or expressly authorized automations or background
@@ -616,8 +642,14 @@ a developer who integrates Sign in with ChatGPT (SIWC), not to the current desig
   app-server authentication", and it says such an app "can continue using it". WorkTreeAI is
   intended to be local and open source and never handles tokens. O1 does not say whether
   "continue" covers an app first released after Sign in with ChatGPT launched.
-- **O9's intermediary rule** does not appear to apply: WorkTreeAI does not let third parties
-  access OpenAI models; it runs the user's own Codex for the user.
+- **Current requirements (O9)** contain no rule that specifically addresses a local app
+  launching the user's own Codex. The closest general item is "circumventing our safeguards".
+  The project intends the proposed design not to circumvent any safeguard, but whether it
+  complies is the project's interpretation, not something OpenAI has confirmed.
+- **Future requirement (O9b, from November 20, 2026): the intermediary rule** does not appear to
+  apply: WorkTreeAI does not let third parties access OpenAI models; it runs the user's own Codex
+  for the user. O9b's training restrictions do not concern WorkTreeAI's use, which sends no
+  outputs to train models.
 - **O8's "programmatically extracting ... Output"** is aimed at extraction; WorkTreeAI drives
   the supported app-server protocol that OpenAI documents for integrations. Not confirmed by
   OpenAI.
@@ -680,16 +712,17 @@ This depends on the unresolved items in §2.2.
 
 ### 2.4 Project-supplied configuration
 
-**Provider statements (O16–O22, O1; read 2026-11-17):**
+**Provider statements (O16–O23, O1; read 2026-11-17):**
 
 | What | Where it can come from | Documented control | Source |
 |---|---|---|---|
 | Config layers | CLI flags and `--config` overrides; project `.codex/config.toml` from project root to cwd ("closest wins; trusted projects only"); `--profile`; user `~/.codex/config.toml`; cloud-managed defaults; system `/etc/codex/config.toml`; built-in defaults (highest first). `requirements.toml` constrains behavior | `-c key=value` (value parsed as TOML, dot notation for nested keys) | O16, O17 |
 | Project trust | `projects.<path>.trust_level` = `"trusted"` or `"untrusted"` in user config | "Untrusted projects skip project-scoped `.codex/` layers, including project-local config, hooks, and rules." User and system config still load. **The default for a project with no entry is not stated** | O16, O18 |
 | Keys a project cannot set | Project-local config | Ignored with a warning: `openai_base_url`, `chatgpt_base_url`, `apps_mcp_product_sku`, `model_provider`, `model_providers`, `notify`, `profile`, `profiles`, `experimental_realtime_ws_base_url`, `otel` | O17 |
-| `AGENTS.md` | Global: `AGENTS.override.md` or `AGENTS.md` in `CODEX_HOME` (default `~/.codex`). Project: one file per directory from project root down to cwd (`AGENTS.override.md`, `AGENTS.md`, then `project_doc_fallback_filenames`); combined limit `project_doc_max_bytes` (default 32 KiB) | **No documented way to turn project instructions off.** Starting in a subdirectory limits the walk; `CODEX_HOME` changes only the global file. Whether `project_doc_max_bytes = 0` disables loading is not stated. O19 does not say whether trust affects `AGENTS.md`. O1: `thread/start` returns `instructionSources`, "an array of loaded instruction-file paths" — **detection, not suppression** | O19, O1 |
+| `AGENTS.md` | Global: `AGENTS.override.md` or `AGENTS.md` in `CODEX_HOME` (default `~/.codex`). Project: one file per directory from project root down to cwd (`AGENTS.override.md`, `AGENTS.md`, then `project_doc_fallback_filenames`); combined limit `project_doc_max_bytes` (default 32 KiB) | **No documented way to turn project instructions off.** Starting in a subdirectory only stops the walk *below* that directory: files from the project root down to it are still loaded, so it is **not** a suppression mechanism. `CODEX_HOME` changes only the global file. Whether `project_doc_max_bytes = 0` disables loading is not stated. O19 does not say whether trust affects `AGENTS.md`. O1: `thread/start` returns `instructionSources`, "an array of loaded instruction-file paths" — **detection, not suppression** | O19, O1 |
 | Hooks | User, project (`.codex/hooks.json` or `[hooks]`), plugins, managed sources | "Hooks are enabled by default"; `[features] hooks = false` turns them off. Project hooks load only for trusted projects, and each non-managed hook must be reviewed and trusted by hash before it runs. Admins: `allow_managed_hooks_only = true` | O20 |
-| MCP servers | User config, project config ("trusted projects only"), plugins | Per server `enabled = false`; per tool `enabled_tools` / `disabled_tools`. **No global switch documented.** Plugins: `plugins._default.enabled`, `plugins.<plugin>.enabled`. A server marked `required` makes `thread/start` fail if it does not start | O21, O18, O1 |
+| MCP servers | User config, project config ("trusted projects only"), plugins | Per server `enabled = false`; per tool `enabled_tools` / `disabled_tools`. **No global switch documented.** Plugins: `plugins._default.enabled` sets only the default — "An explicit `plugins.<plugin>.enabled` overrides this default for plugins their source enables" — and `plugins.<plugin>.enabled` "does not override workspace-managed enabled states"; per plugin MCP server: `plugins.<plugin>.mcp_servers.<server>.enabled`. A server marked `required` makes `thread/start` fail if it does not start | O21, O18, O1 |
+| Plugins | Installed, marketplace, workspace-managed, and default plugins; a plugin can bundle skills, MCP servers, and hooks | `plugins._default.enabled = false` does **not** override an explicit per-plugin `enabled` setting and does **not** guarantee that managed plugins are off ("does not override workspace-managed enabled states"; workspace-installed or default plugins may be controlled by the administrator). "Marketplace refresh can install or refresh configured plugins even when disabled." Plugin hooks must be reviewed and trusted before they run | O18, O23 |
 | Apps (connectors) | Workspace / plugins | `features.apps` ("on by default") | O18 |
 | Native delegation (subagents) | Built in; custom agents in `~/.codex/agents/` or project `.codex/agents/` | "Current Codex releases enable subagent workflows by default." `agents.enabled = false` "to disable multi-agent tools" (O22, O18); O18 also lists `features.multi_agent` (on by default). Subagents in local clients "inherit your current sandbox policy" and, in the CLI, the parent's approval settings. O22 does not say whether project-defined agents need trust | O22, O18 |
 | Skills | Bundled and installed | `skills.bundled.enabled`; `skills.config` rules by name or path | O18 |
@@ -710,7 +743,14 @@ This depends on the unresolved items in §2.2.
   project MCP servers are skipped.
 - `-c features.hooks=false`, `-c agents.enabled=false` (and `features.multi_agent=false`),
   `-c features.apps=false`, `-c plugins._default.enabled=false`, and `enabled = false` for each
-  user MCP server WorkTreeAI did not configure.
+  user MCP server WorkTreeAI did not configure. Because `plugins._default.enabled=false` can be
+  overridden by explicit per-plugin settings and does not reach managed plugins, the profile
+  also disables each enabled plugin explicitly and, after start, compares the loaded plugins
+  and tools with an allow-list (see the fail-closed rule below).
+- **Fail closed:** if a required suppression cannot be enforced or verified — for example a
+  managed or explicitly enabled plugin that stays on, an MCP server that still starts, or
+  delegation tools that remain — the task does not start, or is stopped before its first
+  prompt, and is reported as a configuration error.
 - Read `instructionSources` from `thread/start` and show the user which instruction files were
   loaded, since `AGENTS.md` cannot be turned off by a documented control.
 - Stay on documented, non-experimental controls; never rely on project-local config to set
@@ -728,6 +768,10 @@ This depends on the unresolved items in §2.2.
   provider-runtime-results.md);
 - which user-level MCP servers, plugins, and apps load on the user's machine, and that the
   proposed overrides stop them;
+- plugin cases: a plugin with an explicit `plugins.<plugin>.enabled = true` while
+  `plugins._default.enabled = false`; a workspace-managed or default plugin; and whether the
+  explicit per-plugin `false` override reaches each; and how a remaining plugin shows up so the
+  fail-closed check can detect it;
 - that these controls exist in the pinned Codex version (docs carry no version).
 
 AC-13's Codex assertions stay deferred until these runtime results exist.
@@ -753,13 +797,13 @@ AC-13's Codex assertions stay deferred until these runtime results exist.
 
 None of these is a Stage 2 (interface) blocker.
 
-### 4.1 Remaining work to accept Stage 1's item 6 documentation
+### 4.1 Stage 1 item 6 documentation (accepted 2026-11-17)
 
 | Gate | Status |
 |---|---|
-| Read the Anthropic Usage Policy and the OpenAI terms, policies, and open-source Sign in with ChatGPT guide | **Done in revision 4** (A10, O8–O15). Awaits independent review |
-| Document Codex configuration loading and its documented controls (§2.4) | **Done in revision 4** for documentation; the runtime items are in 4.2 |
-| Independent review verdict on this document (revision 4) as a whole | Open |
+| Read the Anthropic Usage Policy and the OpenAI terms, policies, and open-source Sign in with ChatGPT guide | **Done in revision 4** (A10, O8–O15, O9b). Accepted by independent review |
+| Document Codex configuration loading and its documented controls (§2.4) | **Done in revision 4** for documentation (O16–O23). Accepted; the runtime items are in 4.2 |
+| Independent review verdict on this document (revision 4) as a whole | **Accepted 2026-11-17**, with the corrections made after review of 93b289d. This covers documentation only: no adapter is verified at runtime, and the gates in 4.2–4.4 stay open |
 
 ### 4.2 Gates before enabling each real adapter
 
@@ -788,7 +832,8 @@ None of these is a Stage 2 (interface) blocker.
 |---|---|
 | License choice (checklist C1) | User |
 | The provider-condition decisions in 4.2 settled for every adapter that ships enabled | User / legal |
-| Naming: no "Claude Code", "Anthropic", "OpenAI", or "Codex" in the product name or logo (A1, O11 §5 for SIWC) | Docs |
+| Naming, provider requirements: no "Claude Code" or "Anthropic" name or logo in the product name or logo and no implied endorsement (A1, for products running Claude Code); OpenAI names and logos only per its Brand Guidelines (O8) and, with SIWC, only as authorized and without implied sponsorship (O11 §5) | Docs |
+| Naming, project policy (stricter than the providers require): no "Claude Code", "Anthropic", "OpenAI", or "Codex" in the product name or logo | Docs |
 | If Sign in with ChatGPT is chosen: privacy notice, consent and revocation controls, local owner-only token storage (O11 §2.3–2.4, O13) | Docs + implementation |
 
 ### 4.4 macOS verification (deferred by the user on 2026-11-17)

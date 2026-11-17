@@ -4,12 +4,19 @@ Revision 3, 2026-11-16. Revised after the third independent review round. §4.2 
 the review of 4e812f3: when clean interruption is unavailable, forced cleanup starts immediately;
 the 13 s deadline applies in every path.
 
-- §1 restates the **agreed** product requirements, including those the user confirmed on
-  2026-11-16: the "+" child agent, highest-priority idle selection, and decisions A1–A8.
-- **Everything else in §2–§4 is a draft proposal pending the user's decision**, except where a
-  rule is explicitly marked **Agreed**.
-- Where alternatives exist, the draft choice is marked **Draft** and the others **Alternative**.
-- [`acceptance-criteria.md`](acceptance-criteria.md) is written against the Draft choices.
+**Revision 4, 2026-11-17.** The user accepted every recommendation in the item 10 decision
+questionnaire (decisions D1–D12, recorded in §1). The rules in §2–§4 that were drafts are now
+**Agreed**; each section names its decision. Where an alternative existed, it is kept as
+**Alternative (not chosen)**.
+
+- §1 restates the **agreed** product requirements: those confirmed on 2026-11-16 (the "+" child
+  agent, highest-priority idle selection, decisions A1–A8) and decisions D1–D12 of 2026-11-17.
+- Under decision D12, engineering mechanics (ID formats, ledger write order, polling interval,
+  platform stop commands, store format) follow this document but may change through review
+  without a separate user decision. Policy changes need the user.
+- Runtime gates named here (for example "runtime gate pending") stay open; agreeing a rule does
+  not mean the provider behavior it relies on has been verified.
+- [`acceptance-criteria.md`](acceptance-criteria.md) is written against these agreed rules.
 
 ## 1. Agreed requirements these rules must preserve
 
@@ -62,7 +69,38 @@ the 13 s deadline applies in every path.
 - **"+" picker starts empty** (decision A8). The picker opens with role, provider, and model
   unselected. The user chooses all three before the agent can be added. Nothing is pre-filled.
 
-## 2. Proposal — tree and routing semantics
+**Decided by the user on 2026-11-17 (item 10 questionnaire; the user accepted all
+recommendations):**
+
+- **D1 — tree rules and dispatch** (§2.1–§2.4): exactly one Manager, no edges into the
+  Manager, directed edges without duplicates, specialist cycles allowed within the limits;
+  the Manager as the only dispatcher; engine-owned IDs and provenance checks; dispatch rules
+  (a), (b), and (c); rejected dispatch decisions launch no specialist task and consume no
+  dispatch budget; the Manager turn that produced the decision may still consume provider
+  usage; 3 consecutive rejected decisions pause the request and the user is told.
+- **D2 — permission layers and fail-closed** (§3.1–§3.4).
+- **D3 — one dedicated process per task and the cancellation timing** (§4.1–§4.2).
+- **D4 — crash recovery and leftover processes** (§4.3–§4.4): B1, matched orphans are
+  terminated automatically and reported, unknown ownership blocks resume; B2, tracked
+  descendants still alive after a task ends are terminated and listed.
+- **D5 — one writing task per project at a time** (B3; acceptance-criteria AC-18).
+- **D6 — change snapshots as specified in AC-18**, with caps of 50 MB per file and 1 GB per
+  baseline, and a request's baseline store deleted when the request is archived.
+- **D7 — selection details** (§2.6, §2.8): outage-retry waits of 5 s, 20 s, and 60 s; unique
+  priorities within a role, enforced by the editor; ties broken by node creation order; every
+  selection shown in the activity feed; if the top-priority agent becomes unavailable while work
+  waits for it, the Manager asks the user.
+- **D8 — Cancel in the "+" picker** creates no node and no edge (AC-22).
+- **D9 — problem routing and missing roles** (§2.9; AC-05, AC-07): a failing test reported by a
+  Builder goes to the Debugger; a missing role pauses only that item and the Manager offers to
+  add or connect an agent or skip the step.
+- **D10 — failure, answer, and session handling** (AC-09, AC-10, AC-14, AC-16, AC-17).
+- **D11 — request-limit menu** (§2.6): raise the limit by a chosen amount; stop (queued items
+  are cancelled and a final summary is produced); or continue only selected items.
+- **D12 — engineering details** follow this document and may change through review without a
+  separate user decision.
+
+## 2. Tree and routing semantics (Agreed: decisions D1, D7, D9, D11, and A1–A7 as marked)
 
 ### 2.1 Tree structure
 
@@ -167,18 +205,20 @@ making valid decisions.
 limit, and the behavior when a request-wide limit is reached. The defaults are starting values;
 each tree can change them.
 
-**Draft — not approved:** the wait times between outage retries (5 s, then 20 s, then 60 s). The
-count of 3 outage retries is agreed; these timings are not.
+**Agreed (user, 2026-11-17, decision D7):** the wait times between outage retries are 5 s, then
+20 s, then 60 s. The count of 3 outage retries was agreed in decision A5.
 
 | Counter | Default | Counts | Scope |
 |---|---|---|---|
 | Retries after task failure | per node, default 2 | Same-node re-run after a task failure | per task chain |
 | Review rounds | 3 | Correction rounds on one work item | per work item |
-| Outage retries (WorkTreeAI level) | 3 (backoff timings: Draft, see above) | Re-runs after a provider availability error | per task chain |
+| Outage retries (WorkTreeAI level) | 3 (backoff 5 s / 20 s / 60 s, decision D7) | Re-runs after a provider availability error | per task chain |
 | **Request dispatch limit** | **25** | **Every agent launch for the request:** initial attempts, retries, correction rounds, and outage retries. Not counted: provider-internal retries, rejected decisions | per request |
 | Manager turns | 50 | Manager runs for the request | per request |
 
-**When a request-wide limit is reached (Agreed, decision A5):**
+**When a request-wide limit is reached.** Decision A5 agreed the first three points below and
+that the Manager asks the user; decision D11 (2026-11-17) agreed the exact choices in the last
+point:
 
 - No new launch starts for that request.
 - **Running** tasks continue to completion (the user can cancel them). Their outputs are
@@ -234,7 +274,7 @@ How this fits the highest-priority idle rule: selection happens when the work ar
 **Agreed in decision A1:** corrections always return to the authoring node (§2.4c), regardless of
 priority.
 
-**Draft — still pending:**
+**Agreed (user, 2026-11-17, decision D7):**
 
 - **Priority uniqueness.** Priorities are unique within a role, and the editor enforces this
   (for example when the user reorders agents).
@@ -242,9 +282,10 @@ priority.
   tie by node creation order.
 - **Visibility.** Every choice is shown in the activity feed.
 - **Top-priority candidate becomes unavailable while work waits for it** (for example its
-  provider signs out). Draft: the Manager asks the user; the work is not moved silently.
+  provider signs out). The Manager asks the user; the work is not moved silently.
+  *Alternative (not chosen):* moving the work to the next priority automatically.
 
-### 2.9 Other edge cases
+### 2.9 Other edge cases (Agreed: decision D9)
 
 - **Disconnected node** (no path from the Manager): never receives work and does not provide its
   role. The UI marks it.
@@ -312,39 +353,38 @@ Without an explicit bridge, an added agent could never help the paused request.
 *Rejected alternatives:* restarting the request on the edited tree; rebasing without waiting for
 running tasks to finish.
 
-### 2.12 Decisions for the user
+### 2.12 Decisions
 
-| Topic | Draft | Alternatives |
+All decisions in this document are made. No routing, permission, or process policy here is
+pending.
+
+| Topic | Decision | Alternative (not chosen) |
 |---|---|---|
-| Correction return path | **Agreed (A1):** implicit via forward edge | — |
-| Missing verification | **Agreed (A2):** ask before skipping | — |
+| Tree validation, dispatch rules (a)/(b)/(c), provenance, pause after 3 rejected decisions | **Agreed (D1)** (§2.1–§2.4) | — |
+| Correction return path | **Agreed (A1):** implicit via forward edge | Explicit return edges |
+| Missing verification | **Agreed (A2):** ask before skipping | Automatic "completed — unverified" |
 | Same-role selection | **Agreed:** highest-priority idle eligible agent. **Agreed (A7):** priority wins over a named agent; "+" nodes get the lowest priority; when all are busy, wait for the top-priority agent | — |
-| Top-priority agent becomes unavailable while work waits for it | Manager asks the user (§2.8) | Move the work to the next priority |
-| Request limit reached | **Agreed (A5):** running tasks finish; queued paused | — |
+| Priority uniqueness, tie-breaking, selection visibility | **Agreed (D7):** unique within a role (editor-enforced); ties by creation order; every choice in the activity feed | — |
+| Top-priority agent becomes unavailable while work waits for it | **Agreed (D7):** the Manager asks the user (§2.8) | Move the work to the next priority |
+| Outage-retry waits | **Agreed (D7):** 5 s, 20 s, 60 s (§2.6) | — |
+| Request limit reached | **Agreed (A5):** running tasks finish; queued work pauses; the Manager asks. **Agreed (D11):** the choices are raise the limit, stop, or continue selected items | Cancel running tasks immediately |
 | Editing the tree during a request | **Agreed (A4):** snapshot per request | — |
 | Applying an added or connected agent to a paused request | **Agreed (A3):** user-approved rebase once no task is running (§2.11) | — |
 | Default bounds | **Agreed (A5):** table in §2.6 | — |
 | Planning | **Agreed (A6):** plan first when a Planner is connected (§2.10) | — |
-| Matched orphan processes after a crash | Terminate automatically and report (§4.3) | Ask first |
-| Processes of unknown ownership | Block resume until the user resolves them (§4.4) | — |
-| Descendants left behind by a finished task | Terminate tracked descendants (§4.3) | Allow with explicit permission (later) |
-| Change attribution between writing tasks | Serialized writers per project, with captured baselines ([acceptance-criteria.md AC-18](acceptance-criteria.md#ac-18-accurate-summaries-backed-by-reconciliation-fixture)) | Isolated workspace per writing task |
+| "+" picker | **Agreed (A8):** role/provider/model start unselected. **Agreed (D8):** Cancel creates no node or edge | — |
+| Failure, answer, and session handling | **Agreed (D10):** AC-09, AC-10, AC-14, AC-16, AC-17 | — |
+| Problem routing and missing roles | **Agreed (D9):** failing test to the Debugger; missing role pauses only that item; add, connect, or skip (§2.9) | — |
+| Permission layers and fail-closed | **Agreed (D2)** (§3) | — |
+| Process model and cancellation | **Agreed (D3):** one process per task; 10 s graceful where clean interruption is verified, otherwise immediate forced cleanup; 13 s deadline (§4.1–§4.2) | Shared processes |
+| Matched orphan processes after a crash (B1) | **Agreed (D4):** terminate automatically and report (§4.3) | Ask first |
+| Processes of unknown ownership | **Agreed (D4):** block resume until the user resolves them (§4.4) | — |
+| Descendants left behind by a finished task (B2) | **Agreed (D4):** terminate tracked descendants (§4.3) | Allow with explicit permission (later) |
+| Change attribution between writing tasks (B3) | **Agreed (D5):** serialized writers per project | Isolated workspace per writing task |
+| Change snapshots | **Agreed (D6):** as in [acceptance-criteria.md AC-18](acceptance-criteria.md#ac-18-accurate-summaries-backed-by-reconciliation-fixture); 50 MB per file, 1 GB per baseline; deleted when the request is archived | — |
+| Engineering mechanics | **Agreed (D12):** follow this document; may change through review without a user decision | — |
 
-**Agreed, not pending:**
-
-- the "+" child-agent behavior (§1);
-- highest-priority idle selection (§2.8);
-- implicit correction returns (§2.5, decision A1);
-- asking before finishing unverified work (§2.7, decision A2);
-- the user-approved rebase of a paused request (§2.11, decision A3);
-- one configuration snapshot per request (§2.11, decision A4);
-- the default limits and the behavior at a request limit (§2.6, decision A5);
-- the plan-first rule (§2.10, decision A6);
-- the same-role details (§2.8, decision A7): priority wins over a named agent; new agents get
-  the lowest priority; when all are busy, work waits for the top-priority agent;
-- the "+" picker starting empty (§1, decision A8).
-
-## 3. Proposal — permission enforcement layers
+## 3. Permission enforcement layers (Agreed: decision D2)
 
 Actions such as shell commands and file edits are generated **inside** provider CLIs.
 Enforcement therefore has three layers, each with different guarantees.
@@ -388,23 +428,23 @@ WorkTreeAI provides no OS sandbox of its own in the initial scope.
   provider, or use a supporting environment.
 - A permission is never weakened silently.
 
-## 4. Proposal — process ownership and cancellation
+## 4. Process ownership and cancellation (Agreed: decisions D3 and D4)
 
 ### 4.1 Ownership model
 
-- **Draft — dedicated processes.** Every task launch gets its own provider process: one
+- **Agreed (decision D3) — dedicated processes.** Every task launch gets its own provider process: one
   `claude -p` per Claude task, and one `codex app-server` (one thread) per Codex task. The engine
   is the parent and owns the whole process tree.
   - Cancelling or killing one task's tree affects no other task.
   - The cost is process start-up time per task.
-- **Alternative — shared processes.** One long-lived `codex app-server` per node or project
+- **Alternative (not chosen) — shared processes.** One long-lived `codex app-server` per node or project
   serves several tasks.
   - Cancellation uses `turn/interrupt` per task.
   - A forced termination kills every task on that process, and each must then be reported as
     `interrupted`, naming the cancellation that caused it.
   - Not drafted, because of that blast radius.
 
-### 4.2 Cancelling task A while task B continues (Draft)
+### 4.2 Cancelling task A while task B continues (Agreed: decision D3)
 
 Each adapter reports, per platform, whether **clean interruption** is supported. That means a
 documented way to end the current turn cleanly, which a runtime test has confirmed. The cancel
@@ -478,8 +518,9 @@ terminated", never as "all processes terminated".
 shell tool). When the provider root exits — success, failure, or crash — the engine checks
 every tracked descendant of that task (identity checked by PID, start time, and executable).
 
-- Draft: any that are still alive are terminated, and the task result lists them.
-- Alternative: allow a task to leave a process running, only with an explicit node permission
+- Agreed (decision D4, B2): any that are still alive are terminated, and the task result lists
+  them.
+- Alternative (not chosen; possible later): allow a task to leave a process running, only with an explicit node permission
   (later; not drafted).
 
 This relies on the 2 s descendant polling. A short-lived intermediate process can spawn and exit
@@ -489,8 +530,9 @@ between polls, so this is best effort. The limits in §4.2 apply.
 
 - **PID was persisted (step 2 done):** check whether that PID exists with the same start time and
   executable. This guards against PID reuse.
-  - If it matches, it is an orphan. Draft: terminate it and its tracked descendants, record
-    "orphan terminated after restart", and tell the user. Alternative: ask first.
+  - If it matches, it is an orphan. Agreed (decision D4, B1): terminate it and its tracked
+    descendants, record "orphan terminated after restart", and tell the user. Alternative (not
+    chosen): ask first.
   - If nothing matches, the root is gone. Tracked descendants are still checked and terminated
     if alive.
 - **Crash between spawn and PID persistence (step 1 done, step 2 not):** ownership is

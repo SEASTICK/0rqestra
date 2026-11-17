@@ -85,6 +85,10 @@ Status legend:
   [ ]  Open.
   Item 9 is [x] for the Windows-only scope, accepted by the user; its macOS part is deferred
   (see item 9).
+  Item 10 is [x] for specification delivery and independent review only (2026-11-17); no
+  acceptance test exists or passes yet.
+  Item 6 is [x] for documentation research and independent verification only (2026-11-17);
+  its adapter, runtime, provider-condition, and release gates stay open (see item 6).
 
 Status words used below:
   Agreed      = the user decided it. A requirement, not an implementation.
@@ -141,23 +145,27 @@ Verification types used below:
           - decision A7: priority wins over an agent named in the prompt; "+" agents get the
             lowest priority; when all are busy, work waits for the top-priority agent;
           - decision A8: the "+" picker starts with role, provider, and model unselected.
-    Note: all other detailed semantics in docs/tree-routing-and-permissions.md are DRAFT
-    PROPOSALS awaiting the user's decision (§2.12 lists them). They are not covered by this
-    checkmark. They include: small same-role details (ties, an unavailable top-priority
-    agent); what Cancel does in the "+" picker; process ownership, recovery, and cancellation
-    (Category B).
+    Detailed semantics: on 2026-11-17 the user accepted every recommendation of the item 10
+    questionnaire (decisions D1-D12; see ALREADY DECIDED). The rules in
+    docs/tree-routing-and-permissions.md §2-§4 are therefore agreed (§2.12 lists each).
 
-[~] 6. Verify official Codex and Claude Code integration approaches, authentication,
+[x] 6. Verify official Codex and Claude Code integration approaches, authentication,
     subscription conditions, and Windows/macOS support.
+    [x] FOR DOCUMENTATION RESEARCH AND INDEPENDENT VERIFICATION ONLY (2026-11-17): the
+    independent review accepted provider-integrations.md revision 4 with the corrections made
+    after review of 93b289d (see REVIEW LOG). This does NOT mean any real adapter is verified
+    or enabled, that the provider conditions are settled, or that any runtime gate is closed.
+    Those gates stay open (provider-integrations.md §4.2 and §4.3; G6.4-G6.6 below); macOS is
+    deferred.
     Evidence: docs/provider-integrations.md (revision 4, 2026-11-17).
     Done (documentation verification):
           - primary sources A1-A9 and O1-O7, with A1, A4, and O1 re-fetched for revision 3;
           - revision 4 (2026-11-17, awaiting independent review): read the Anthropic Usage
             Policy (A10), the OpenAI Terms of Use, Usage Policies, Service Terms, and Sign in
-            with ChatGPT Terms (O8-O11), and the open-source Sign in with ChatGPT guide
-            (O12-O15); re-fetched A1, A6, and O1; documented Codex configuration loading and
+            with ChatGPT Terms (O8-O11, with the current and announced Usage Policies O9 and
+            O9b), and the open-source Sign in with ChatGPT guide (O12-O15); re-fetched A1, A6, and O1; documented Codex configuration loading and
             its documented controls for trust, AGENTS.md, hooks, MCP servers, and subagents
-            (O16-O22, §2.4), separated from what needs runtime tests; added Interpretation and
+            (O16-O23, §2.4), separated from what needs runtime tests; added Interpretation and
             Runtime observation blocks; split the gates into documentation, adapter, release,
             and macOS (§4);
           - provider statements, WorkTreeAI decisions, and unresolved interpretation are
@@ -197,9 +205,9 @@ Verification types used below:
           - neither provider's sources explicitly cover a local app launching a
             user-installed, user-signed-in CLI (§1.1, §2.2); the user's decisions on that
             (G6.4) and on the Codex sign-in path are open.
-    Stays [~] until review accepts the documentation verification. The runtime and legal items
-    are gates before real adapters are enabled (provider-integrations.md §4.2); release gates
-    are in §4.3; macOS is deferred (§4.4).
+    The documentation verification was accepted on 2026-11-17. The runtime and legal items
+    above remain gates before real adapters are enabled (provider-integrations.md §4.2);
+    release gates are in §4.3; macOS is deferred (§4.4).
 
 [x] 7. Choose public, open-source release.
     Evidence: docs/product-brief.md §7.
@@ -263,8 +271,13 @@ Verification types used below:
           - root cause of the intermittent Windows crash in the failure-case verifier;
           - the "unresponsive" handler is still not exercised.
 
-[~] 10. Write testable acceptance criteria for the first complete workflow.
-    Evidence: docs/acceptance-criteria.md (revision 5).
+[x] 10. Write testable acceptance criteria for the first complete workflow.
+    [x] FOR SPECIFICATION DELIVERY AND INDEPENDENT REVIEW ONLY (2026-11-17): the independent
+    follow-up review accepted the four corrections, docs/acceptance-criteria.md revision 6,
+    and the reconciled docs/tree-routing-and-permissions.md (see REVIEW LOG). This does NOT
+    mean any acceptance test is implemented or passes, that any adapter is verified, or that
+    any runtime gate is closed.
+    Evidence: docs/acceptance-criteria.md (revision 6, 2026-11-17).
           - AC-01 to AC-22, with fixtures for routing (T1-T9), process ownership (fake-cli
             cooperative / uncooperative / detached / parent-exits modes, injected crash points),
             and attribution (P7/P8 pre-existing changes, concurrent and external writes);
@@ -276,13 +289,17 @@ Verification types used below:
             forced cleanup when it is unavailable (Claude on native Windows until its gate
             passes); 13 s deadline in every path;
           - AC-20 user-approved rebase;
-          - AC-22 "+" child agent: the agreed interaction, parent-to-child edge, and picker
-            that starts with role, provider, and model unselected (A8). Only remaining picker
-            details, such as what Cancel does, are still proposed.
-    These are specifications for future tests, not passing tests. The independent review
-    accepted the latest corrections (see REVIEW LOG). The item stays [~] because many criteria
-    implement Draft rules that are still pending the user's decision (see DECISIONS), and
-    change if the user picks alternatives.
+          - AC-22 "+" child agent: the agreed interaction, parent-to-child edge, picker that
+            starts with role, provider, and model unselected (A8), and Cancel that creates
+            nothing (D8).
+    Revision 6 (2026-11-17) records the user's decisions D1-D12: every criterion now
+    implements an agreed rule, and no Draft label remains. It adds assertions for the
+    outage-retry waits (AC-09), unique priorities and the tie safeguard (AC-21), snapshot
+    retention (AC-18), skipping a missing-role step (AC-07), and the exact request-limit menu
+    (AC-08).
+    These are specifications for future tests, not passing tests; approving them does not
+    require them to pass. Independent review accepted revision 6 as a whole on 2026-11-17
+    (G10.3).
 
 STATUS RULE
 
@@ -291,6 +308,72 @@ implementations. Only mark remaining tasks complete when their deliverables and 
 exist.
 
 REVIEW LOG
+
+2026-11-17 — Independent follow-up review of the item 10 corrections: ACCEPTED.
+  - Accepted: the four documentation corrections requested in the previous review,
+    docs/acceptance-criteria.md revision 6, and the reconciled
+    docs/tree-routing-and-permissions.md.
+  - Result: G10.3 DONE; item 10 [x] for specification delivery and independent review only.
+    No acceptance test is implemented or passes. Adapter, runtime, and release gates stay open;
+    macOS verification stays deferred. Stage 1 is not declared complete.
+  - Review limits: the limits of this follow-up review were not included in the message
+    relayed to the implementer, so they are not restated here. (The limits recorded for the
+    previous review, below, belong to that review.)
+
+2026-11-17 — Independent review of the item 10 reconciliation (decisions D1-D12; routing
+revision 4, acceptance criteria revision 6): CHANGES REQUESTED.
+  - Requested corrections, applied in the working tree:
+      1. routing §2.12: add the missing rows for the "+" picker (A8, D8) and for failure,
+         answer, and session handling (D10);
+      2. AC-18: make the store-retention wording consistent with the retention criterion
+         (manifests and references deleted on archive; blobs still referenced by another
+         request's baseline remain; unreferenced blobs deleted; archived summaries keep file
+         lists without diffs);
+      3. product brief, Related documents: "proposed semantics" replaced by "agreed semantics
+         for item 5's rules, including decisions D1-D12";
+      4. routing §1, D1: rejected dispatch decisions launch no specialist task and consume no
+         dispatch budget; the Manager turn that produced the decision may still consume
+         provider usage.
+  - Otherwise aligned, per the reviewer: the A5/D11 split, decision mappings, caps, new
+    assertions, and checklist statuses. Adapter, runtime, and release gates remain open;
+    macOS verification remains deferred. The reviewer did not re-review item 6.
+  - Review limits (as stated by the reviewer): "Normal Git diff failed. The reviewer compared
+    the five item-10 documents against their committed 93b289d versions instead. The original
+    questionnaire was not present in the inspected files, so exact Q1-Q12 wording was not
+    independently verified. No files changed and no tests or providers ran."
+  - Item 10 stays [~]; G10.3 stays OPEN pending a follow-up review of these corrections.
+    Stage 1 is not complete.
+
+2026-11-17 — Independent review of the corrections to 93b289d (item 6 documentation):
+  - Accepted: all requested corrections (current and announced OpenAI Usage Policies kept
+    apart; the AGENTS.md subdirectory statement; plugin limits and the fail-closed rule; AC-13's
+    plugin allow-list reconciled with C4; block count, O11's token-handling exception, naming
+    split, and optional written clarification).
+  - One non-blocking wording refinement was offered for the "Current requirements (O9)"
+    interpretation bullet in provider-integrations.md §2.2. The reviewer's replacement text
+    was not available to the implementer, so the bullet was reworded by the implementer
+    instead (it now states the item is an interpretation, not confirmed by OpenAI). This
+    rewording is not the reviewer's text and has not been reviewed.
+  - Scope: documentation research and its independent verification only. The review did not
+    run provider tools or tests and did not verify any adapter at runtime.
+  -Review limitation: normal git diff failed because the reviewer's environment did not
+    recognize the work tree. The reviewer instead compared current files against committed
+    93b289d blobs and checked all 79 tracked files, accounting for CRLF differences. Only
+    docs/provider-integrations.md, docs/acceptance-criteria.md, and WorkTreeAI stages.txt
+    differed. Code and historical evidence were unchanged. This comparison did not inventory
+    untracked files.
+  - Result: item 6 is [x] for documentation research and independent verification only. The
+    adapter, runtime, provider-condition (G6.4), and release gates stay open; macOS
+    verification stays deferred; item 10 stays [~]. Stage 1 is not complete.
+
+2026-11-17 — Independent review of the item 6 documentation research (commit 93b289d):
+  - Changes requested: cite the current OpenAI Usage Policies (effective 2025-10-29) next to the
+    announced 2026-11-20 version; correct the AGENTS.md subdirectory statement; document the
+    limits of plugins._default.enabled and fail closed; reconcile AC-13's plugin requirement
+    with runtime finding C4; fix the block count, quote O11's token-handling exception,
+    separate provider naming requirements from project policy, and replace "only way" claims.
+  - Corrections made in the working tree; they await independent acceptance. Item 6 stays
+    [~]. Stage 1 is not complete.
 
 2026-11-17 — Independent review of the probe-runner code fixes (commit 36443bb):
   - Accepted: Codex approvals are counted only when they are supported approval requests
@@ -371,11 +454,33 @@ ALREADY DECIDED (not to be asked again)
         lower-priority agent becomes free sooner (differs from the earlier draft).
   - A8, "+" picker: role, provider, and model start unselected; the agent can be added only
     when all three are chosen (2026-11-16).
+  - Item 10 questionnaire (2026-11-17): the user answered "Accept all", accepting every
+    recommendation. Full wording: docs/tree-routing-and-permissions.md §1 and §2.12.
+      - D1 tree rules and dispatch (routing §2.1-§2.4), including pausing after 3 consecutive
+        rejected decisions;
+      - D2 permission layers and fail-closed (§3.1-§3.4);
+      - D3 one process per task; 10 s graceful where clean interruption is verified,
+        otherwise immediate forced cleanup; 13 s deadline (§4.1-§4.2);
+      - D4 = B1 and B2: matched orphans terminated automatically and reported; unknown
+        ownership blocks resume; tracked leftover processes terminated and listed (§4.3-§4.4);
+      - D5 = B3: one writing task per project at a time;
+      - D6 change snapshots as in AC-18; 50 MB per file, 1 GB per baseline; a request's
+        snapshots deleted when it is archived (New proposal, accepted);
+      - D7 outage-retry waits 5 s / 20 s / 60 s; unique priorities; ties by creation order;
+        selections in the activity feed; Manager asks if a waiting top-priority agent becomes
+        unavailable;
+      - D8 Cancel in the "+" picker creates nothing;
+      - D9 failing Builder test goes to the Debugger; missing role pauses only that item, with
+        add, connect, or skip offered;
+      - D10 failure, answer, and session handling (AC-09, AC-10, AC-14, AC-16, AC-17);
+      - D11 request-limit menu: raise the limit, stop, or continue selected items;
+      - D12 engineering mechanics may change through review without a user decision (New
+        proposal, accepted).
 
 DECISIONS NEEDED FROM THE USER
 
 A. Before Stage 2 (interface) implementation — these shape what the interface shows and asks.
-   Draft choices are in docs/tree-routing-and-permissions.md §2.12.
+   All decisions are listed in docs/tree-routing-and-permissions.md §2.12.
    A1. (Decided 2026-11-16) Correction returns: yes, implicitly, without a drawn return edge.
    A2. (Decided 2026-11-16) Missing verification: ask first.
    A3. (Decided 2026-11-16) Adding an agent to a paused request: user-approved rebase once
@@ -390,19 +495,16 @@ A. Before Stage 2 (interface) implementation — these shape what the interface 
        the lowest priority; when all are busy, wait for the top-priority agent.
    A8. (Decided 2026-11-16) "+" picker: starts empty.
 
-   All Category A decisions are made. Small details still drafted, not blocking: the wait
-   times between outage retries (5 s / 20 s / 60 s); enforcing unique priorities within a role;
-   tie-breaking by creation order; showing each selection in the activity feed; what happens
-   if the top-priority agent becomes unavailable while work waits for it; what Cancel does in
-   the "+" picker.
+   All Category A decisions are made. The small details formerly drafted here were decided on
+   2026-11-17 (D7, D8).
 
 B. Before orchestration work (a later stage) — not needed for the interface.
-   B1. Process recovery after a crash: terminate leftover processes that can be positively
-       identified automatically, or ask first? (Draft: automatically, and report it.)
-       Processes of unknown ownership always block resume until the user decides.
-   B2. Processes left behind by a finished task: terminate the tracked ones? (Draft: yes.)
-   B3. Writer isolation: one writing task per project at a time, or a separate workspace per
-       writing task? (Draft: one at a time.)
+   B1. (Decided 2026-11-17, D4) Crash recovery: positively identified leftover processes are
+       terminated automatically and reported; unknown ownership blocks resume.
+   B2. (Decided 2026-11-17, D4) Tracked processes left by a finished task are terminated and
+       listed.
+   B3. (Decided 2026-11-17, D5) One writing task per project at a time.
+   All Category B decisions are made.
 
 C. Before a public release — not blocking interface work.
    C1. License: MIT or Apache-2.0 (or another)? No LICENSE file is added until chosen.
@@ -435,13 +537,17 @@ Item 9 — development foundation. CLOSED for the Windows-only scope by the user
 
 Item 6 — provider verification. Gate: review accepts the documentation verification. The
 runtime and legal items below gate enabling real provider adapters, not the interface.
-  Remaining work to accept item 6's documentation:
-  G6.1 [local] Explicit review verdict on docs/provider-integrations.md revision 4 as a whole.
-               Next step: ask the reviewer for that verdict.
-  G6.2 [local] DONE pending review (2026-11-17): Anthropic Usage Policy (A10), OpenAI terms
+  Item 6 documentation (accepted 2026-11-17):
+  G6.1 [local] DONE (2026-11-17): the independent review accepted
+               docs/provider-integrations.md revision 4, including the corrections made after
+               review of 93b289d. Scope and limitation: see REVIEW LOG.
+  G6.2 [local] DONE, accepted (2026-11-17): Anthropic Usage Policy (A10), OpenAI terms
                and policies (O8-O11), and the open-source Sign in with ChatGPT guide (O12-O15)
-               read and recorded with dates (provider-integrations §1.1, §2.2).
-  G6.3 [local] DONE for documentation, pending review (2026-11-17): Codex configuration
+               read and recorded with dates (provider-integrations §1.1, §2.2). OpenAI Usage
+               Policies: the current version (effective 2025-10-29, O9) and the announced
+               version (effective 2026-11-20, O9b) are both cited, with current and future
+               requirements kept apart (corrected after review of 93b289d).
+  G6.3 [local] DONE for documentation, accepted (2026-11-17): Codex configuration
                loading and documented controls recorded (§2.4). Its runtime part moves to the
                adapter gates (§4.2).
   Gates before enabling real adapters (provider-integrations §4.2):
@@ -475,13 +581,13 @@ runtime and legal items below gate enabling real provider adapters, not the inte
 
 Item 10 — acceptance criteria. Gate: the criteria stop depending on undecided rules, then
 review accepts the document as a whole.
-  G10.1 [user]  Category B drafts still shape AC-15 and AC-18. Next step: the user answers B1
-                (crash recovery), B2 (leftover processes), and B3 (one writer at a time).
-  G10.2 [user]  Small drafted details. Next step: the user confirms or changes them in one
-                pass: outage backoff timings; unique priorities; tie-breaking; activity-feed
-                visibility; an unavailable top-priority agent; Cancel in the "+" picker.
-  G10.3 [local] Next step after G10.1 and G10.2: update the criteria, then ask the reviewer
-                for a verdict on docs/acceptance-criteria.md as a whole.
+  G10.1 [user]  DONE (2026-11-17): B1, B2, and B3 decided (D4, D5).
+  G10.2 [user]  DONE (2026-11-17): every remaining draft decided in the item 10 questionnaire
+                (D1-D3, D6-D12), including the request-limit menu (D11).
+  G10.3 [local] DONE (2026-11-17): the first review of revision 6 requested four
+                documentation corrections; they were applied, and the follow-up review
+                accepted them together with docs/acceptance-criteria.md revision 6 and the
+                reconciled routing document (REVIEW LOG).
   Not part of this gate: making the criteria pass. They are specifications for future stages.
 
 Before a public release (not a Stage 1 item): [user] choose the license (C1); settle the
@@ -500,4 +606,9 @@ STAGE 1 DELIVERABLES
 - Appropriate repository setup and documented development prerequisites (accepted by the user
   for the Windows-only scope on 2026-11-17; macOS verification deferred)
 
-STAGE 1 IS NOT COMPLETE. Items 6 and 10 remain [~].
+STAGE 1 IS NOT DECLARED COMPLETE. Every item is now [x], but three are scoped: item 6 for
+documentation research and independent verification only, item 9 for the Windows-only scope
+(macOS verification deferred), and item 10 for specification delivery and review only (no
+acceptance test exists or passes). The adapter, runtime, provider-condition, and release gates
+stay open, and macOS verification stays deferred. Declaring Stage 1 complete is the user's
+decision after independent review.
