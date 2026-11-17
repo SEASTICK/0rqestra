@@ -91,3 +91,42 @@ export const FAILURE_HELP = {
   provider_error: 'The tool could not answer. Try again.',
   crashed: 'The tool stopped unexpectedly. Try again.',
 };
+
+// ---- Agents in the tree (phase 2) -------------------------------------------------------------
+// A node runs on a real tool when it has `agent: { tool, model, effort }`. Nodes without it keep
+// the demo provider and model they always had. `provider` and `model` on the node stay as display
+// text, so the tree and the task panels need no changes to show what an agent runs on.
+
+export function isRealAgent(node) {
+  return Boolean(node && node.agent && (node.agent.tool === 'claude' || node.agent.tool === 'codex'));
+}
+
+export function agentTarget(node) {
+  return isRealAgent(node) ? { provider: node.agent.tool, model: node.agent.model ?? null, effort: node.agent.effort ?? null } : null;
+}
+
+// The fields a node gets for a chosen target. `status` is the tool's entry from AI accounts.
+export function nodeFieldsFor(target, status) {
+  if (!target || target.provider === 'demo' || !status) return { agent: null };
+  const model = (status.models || []).find((m) => m.id === target.model);
+  return {
+    agent: { tool: status.provider, model: target.model ?? null, effort: target.effort ?? null },
+    provider: status.name,
+    model: model ? model.label : 'Default',
+  };
+}
+
+export function agentBadge(node) {
+  if (!isRealAgent(node)) return null;
+  return [node.provider, node.model, node.agent.effort].filter(Boolean).join(' · ');
+}
+
+export const TEST_PROMPT = 'Reply with one short sentence: say which model you are and that this is a test of a 0rqestra agent.';
+
+export const isTerminal = (event) => Boolean(event) && ['completed', 'cancelled', 'failed'].includes(event.type);
+
+// State of a "Try this agent" run, built from the same events as a chat reply.
+export function testState(state, event) {
+  const next = applyChatEvent({ text: state.text, status: state.status, model: state.model }, event);
+  return { ...state, text: next.text, status: next.status === 'streaming' ? 'running' : next.status, model: next.model ?? state.model, error: next.error ?? null, reason: next.reason ?? null, usage: next.usage ?? null, limits: next.limits ?? [] };
+}

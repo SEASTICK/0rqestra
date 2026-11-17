@@ -61,3 +61,46 @@ describe('chat messages', () => {
     expect(settleInterrupted([{ kind: 'assistant', status: 'streaming' }, { kind: 'user' }])).toEqual([{ kind: 'assistant', status: 'stopped' }, { kind: 'user' }]);
   });
 });
+
+import { agentBadge, agentTarget, isRealAgent, isTerminal, nodeFieldsFor, testState } from './live-chat.mjs';
+
+describe('agents in the tree', () => {
+  const real = { provider: 'Codex', model: 'GPT-6.1 Sol', agent: { tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' } };
+
+  it('tells real agents from demo agents', () => {
+    expect(isRealAgent(real)).toBe(true);
+    expect(isRealAgent({ provider: 'OpenAI', model: 'Codex (demo)' })).toBe(false);
+    expect(isRealAgent({ agent: { tool: 'bash' } })).toBe(false);
+    expect(isRealAgent(null)).toBe(false);
+    expect(agentTarget(real)).toEqual({ provider: 'codex', model: 'gpt-6.1-sol', effort: 'high' });
+    expect(agentTarget({})).toBeNull();
+  });
+
+  it('builds the node fields for a chosen tool, model and effort', () => {
+    expect(nodeFieldsFor({ provider: 'codex', model: 'gpt-6.1-sol', effort: 'high' }, codex)).toEqual({
+      agent: { tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' }, provider: 'Codex', model: 'GPT-6.1 Sol',
+    });
+    expect(nodeFieldsFor({ provider: 'claude', model: 'default', effort: null }, claude)).toMatchObject({ model: 'Default', agent: { tool: 'claude', effort: null } });
+    expect(nodeFieldsFor({ provider: 'demo' }, null)).toEqual({ agent: null });
+    expect(nodeFieldsFor({ provider: 'codex', model: 'x' }, undefined)).toEqual({ agent: null });
+  });
+
+  it('shows what a real agent runs on', () => {
+    expect(agentBadge(real)).toBe('Codex · GPT-6.1 Sol · high');
+    expect(agentBadge({ provider: 'OpenAI' })).toBeNull();
+  });
+
+  it('follows a test run from streamed events', () => {
+    let s = { status: 'running', text: '', model: null };
+    s = testState(s, { type: 'started', model: 'gpt-6.1-sol' });
+    s = testState(s, { type: 'delta', text: 'I am ' });
+    s = testState(s, { type: 'delta', text: 'a model.' });
+    expect(s).toMatchObject({ status: 'running', text: 'I am a model.', model: 'gpt-6.1-sol' });
+    s = testState(s, { type: 'completed', text: 'I am a model.', usage: { inputTokens: 9, outputTokens: 4 }, limits: [] });
+    expect(s).toMatchObject({ status: 'done', usage: { inputTokens: 9, outputTokens: 4 } });
+    expect(testState({ status: 'running', text: '', model: null }, { type: 'failed', reason: 'usage_limit', message: 'limit', text: '' })).toMatchObject({ status: 'failed', reason: 'usage_limit', error: 'limit' });
+    expect(isTerminal({ type: 'delta' })).toBe(false);
+    expect(isTerminal({ type: 'cancelled' })).toBe(true);
+    expect(isTerminal(undefined)).toBe(false);
+  });
+});

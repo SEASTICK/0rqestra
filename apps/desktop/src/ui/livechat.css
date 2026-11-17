@@ -33,3 +33,11 @@
 .provider-limit i{height:6px;border-radius:6px;background:var(--shell-hover);overflow:hidden}
 .provider-limit b{display:block;height:100%;background:var(--shell-accent);border-radius:6px}
 .provider-limit em{font-style:normal;text-align:right}
+.agent-try{border:1px solid var(--shell-line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.agent-try-head{display:flex;justify-content:space-between;align-items:center;gap:14px}
+.agent-try-head span{display:flex;flex-direction:column;gap:3px}
+.agent-try-head strong{font-size:12px;font-weight:600;color:var(--shell-text)}
+.agent-try-head small{font-size:11px;color:var(--shell-muted);line-height:1.45}
+.agent-try-result{font-size:12px;line-height:1.55;color:var(--shell-text);white-space:pre-wrap;overflow-wrap:anywhere;background:var(--shell-bg);border-radius:8px;padding:10px 12px}
+.agent-try-result .live-note,.agent-try-result .live-error{padding-left:0;margin-top:6px;white-space:normal}
+.agent-try-result.is-running{color:var(--shell-muted)}

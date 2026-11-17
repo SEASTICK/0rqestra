@@ -125,6 +125,15 @@ This is the first thing that makes 0rqestra a real chat bot, and it costs nothin
   standalone installs, macOS) and are closed here.
 
 ### Phase 2 — Manual control of every agent (Claude, M)
+**Status 2026-11-17: built, in review.** What exists: in the agent editor, **Runs on** (Demo,
+Claude Code, or Codex, listing only tools that are installed and signed in with a subscription),
+then **Model** and **Effort** from what the tool reports (Codex lists its models and effort levels;
+Claude Code offers Default, Opus, Sonnet and Haiku and no effort setting yet). **Try this agent**
+sends one short real request with the chosen settings and shows the answer and the usage. A real
+agent shows its tool, model and effort on its card in the tree, and the demo allowance ring and
+recovery stack are hidden for it. The Manager node's settings are the settings of the Manager chat:
+the box under the chat and the editor change the same thing. Agents other than the Manager do not
+run yet; that is phase 3.
 - Each agent node gets **provider, model, and effort** (for example Claude with Opus and medium
   thinking, or Codex with a chosen model and reasoning level). The options come from what each tool
   accepts, checked at runtime, because the providers name and limit them differently.
