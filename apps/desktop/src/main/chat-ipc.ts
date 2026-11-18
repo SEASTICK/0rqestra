@@ -4,6 +4,7 @@ import { app, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "elect
 import { ChatService } from "./chat-service";
 import { ClaudeCodeAdapter } from "./providers/claude-code";
 import { CodexAdapter } from "./providers/codex";
+import { toolEnvironment } from "./providers/tool-env";
 
 // Electron wiring for the chat: three request channels from the window and one event channel
 // back to it. Each request is accepted only from the app's own window (isTrusted).
@@ -14,7 +15,7 @@ export function createAdapters(): { claude: ClaudeCodeAdapter; codex: CodexAdapt
   return { claude: new ClaudeCodeAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), codex: new CodexAdapter() };
 }
 
-export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolean, getWindow: () => BrowserWindow | null, adapters = createAdapters()): void {
+export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolean, getWindow: () => BrowserWindow | null, adapters = createAdapters()): ChatService {
   // An empty folder that is the working directory of every chat. The tools get no tools in a
   // chat, but if one ever looked around, there is nothing here to find.
   const cwd = () => {
@@ -26,8 +27,12 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
   };
-  ipcMain.handle("chat:providers", (event, refresh: unknown) => {
+  // The PATH is read from the registry at start and on every forced check (providers/tool-env.ts).
+  const firstPath = toolEnvironment.refresh();
+  ipcMain.handle("chat:providers", async (event, refresh: unknown) => {
     guard(event);
+    await firstPath;
+    if (refresh === true) await toolEnvironment.refresh();
     return service!.providers(refresh === true);
   });
   ipcMain.handle("chat:send", (event, payload: unknown) => {
@@ -46,4 +51,5 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
   });
   // Nothing keeps running in the background after the app quits.
   app.on("before-quit", () => service?.stopAll());
+  return service;
 }

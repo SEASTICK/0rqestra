@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { buildPrompt } from "./history";
 import { EFFORT_NAME, findBinary, killTree, MODEL_NAME, onJsonLines, providerEnv, runShort, spawnTool, type ToolBinary } from "./process";
+import { toolEnvironment } from "./tool-env";
 import { EventQueue, type ChatEvent, type ChatHandle, type ChatRequest, type ModelOption, type ProviderAdapter, type ProviderStatus, type RateLimit, type Usage } from "./types";
 
 // Codex, signed in with the user's own ChatGPT plan, driven through `codex app-server` (JSON-RPC
@@ -114,15 +115,18 @@ function limitsFrom(snapshot: unknown): RateLimit[] {
 export class CodexAdapter implements ProviderAdapter {
   readonly id = "codex" as const;
   private readonly find: () => ToolBinary | null;
-  private readonly env: NodeJS.ProcessEnv;
 
   constructor(private readonly options: CodexOptions = {}) {
-    this.env = providerEnv(options.env);
-    this.find = options.find ?? (() => findBinary("codex", options.env ?? process.env));
+    this.find = options.find ?? (() => findBinary("codex", this.options.env ?? toolEnvironment.env()));
+  }
+
+  // Read at each use, so a PATH change found by a later check reaches the tool (tool-env.ts).
+  private env(): NodeJS.ProcessEnv {
+    return providerEnv(this.options.env ?? toolEnvironment.env());
   }
 
   private server(bin: ToolBinary, cwd?: string): RpcProcess {
-    return new RpcProcess({ bin, prefixArgs: this.options.prefixArgs, args: ["app-server"], cwd, env: this.env }, this.options.requestTimeoutMs ?? 30_000);
+    return new RpcProcess({ bin, prefixArgs: this.options.prefixArgs, args: ["app-server"], cwd, env: this.env() }, this.options.requestTimeoutMs ?? 30_000);
   }
 
   async status(): Promise<ProviderStatus> {
@@ -131,8 +135,12 @@ export class CodexAdapter implements ProviderAdapter {
       subscription: false, models: [], limits: [], problem: null,
     };
     const bin = this.find();
-    if (!bin) return { ...base, problem: "Codex is not installed, or not on PATH." };
-    const version = await runShort({ bin, prefixArgs: this.options.prefixArgs, args: ["--version"], env: this.env });
+    if (!bin) return { ...base, problem: "Codex is not installed." };
+    const found = { binaryPath: bin.path, source: bin.source ?? null };
+    const version = await runShort({ bin, prefixArgs: this.options.prefixArgs, args: ["--version"], env: this.env() });
+    if (version.error || version.code !== 0) {
+      return { ...base, ...found, installed: true, checkFailed: true, problem: `Codex was found but did not start (${version.error ?? `exit ${version.code}`}). Reinstall it, or run \`codex --version\` in a terminal to see the error.` };
+    }
     const server = this.server(bin);
     try {
       await server.initialize();
@@ -152,7 +160,9 @@ export class CodexAdapter implements ProviderAdapter {
         }));
       return {
         ...base,
+        ...found,
         installed: true,
+        authMethod: type === null ? null : type === "chatgpt" ? "subscription" : /api/i.test(type) ? "api_key" : "other",
         version: version.stdout.trim().split(/\s+/).pop() || null,
         signedIn: type !== null,
         plan: account?.account?.planType ?? null,
@@ -160,13 +170,13 @@ export class CodexAdapter implements ProviderAdapter {
         models: options,
         limits: limitsFrom(limits?.rateLimits),
         problem: type === null
-          ? "Not signed in. Run `codex login` in a terminal and sign in with ChatGPT."
+          ? "Not signed in."
           : type !== "chatgpt"
             ? "Codex is signed in with an API key, not a ChatGPT plan. 0rqestra only uses subscriptions."
             : null,
       };
     } catch (error) {
-      return { ...base, installed: true, version: version.stdout.trim() || null, problem: `Could not talk to Codex: ${error instanceof Error ? error.message : String(error)}` };
+      return { ...base, ...found, installed: true, checkFailed: true, version: version.stdout.trim().split(/\s+/).pop() || null, problem: `Could not talk to Codex: ${error instanceof Error ? error.message : String(error)}` };
     } finally {
       server.stop();
     }

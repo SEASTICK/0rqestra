@@ -77,7 +77,17 @@ export interface ProviderStatus {
   models: ModelOption[];
   limits: RateLimit[];
   problem: string | null;
+  // How the tool is signed in: a subscription, an API key (never used by 0rqestra), or something else
+  // (a cloud provider, a token from the environment). Null when signed out or unknown.
+  authMethod?: AuthMethod | null;
+  // Where the tool was found, for AI accounts. Never a choice the window can make.
+  binaryPath?: string | null;
+  source?: string | null;
+  // True when the tool is installed but its version or sign-in state could not be read.
+  checkFailed?: boolean;
 }
+
+export type AuthMethod = "subscription" | "api_key" | "other";
 
 export interface ChatHandle {
   events: AsyncIterable<ChatEvent>;

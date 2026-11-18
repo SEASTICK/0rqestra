@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { buildPrompt } from "./history";
 import { findBinary, killTree, MODEL_NAME, onJsonLines, providerEnv, runShort, spawnTool, type ToolBinary } from "./process";
-import { EventQueue, type ChatEvent, type ChatHandle, type ChatRequest, type ModelOption, type ProviderAdapter, type ProviderStatus, type Usage } from "./types";
+import { toolEnvironment } from "./tool-env";
+import { EventQueue, type AuthMethod, type ChatEvent, type ChatHandle, type ChatRequest, type ModelOption, type ProviderAdapter, type ProviderStatus, type Usage } from "./types";
 
 // Claude Code, signed in with the user's own Claude subscription, run in print mode with streamed
 // JSON. Launch profile A from docs/provider-integrations.md §1.4, probed on Windows with 2.1.325
@@ -35,6 +36,15 @@ interface AuthStatus {
 
 export function isClaudeSubscription(status: AuthStatus): boolean {
   return status.loggedIn === true && status.authMethod === "claude.ai" && (status.apiProvider ?? "firstParty") === "firstParty";
+}
+
+// authMethod from `claude auth status` is one of none, claude.ai, oauth_token, api_key,
+// api_key_helper, or third_party (Claude Code CLI reference, checked 2026-11-18).
+export function claudeAuthMethod(status: AuthStatus | null): AuthMethod | null {
+  if (!status?.loggedIn) return null;
+  if (isClaudeSubscription(status)) return "subscription";
+  if (/^api_?key/i.test(status.authMethod ?? "")) return "api_key";
+  return "other";
 }
 
 export function claudeArgs(settingsFile: string, model: string | null): string[] {
@@ -73,12 +83,15 @@ function usageFrom(result: Record<string, unknown>): Usage | null {
 export class ClaudeCodeAdapter implements ProviderAdapter {
   readonly id = "claude" as const;
   private readonly find: () => ToolBinary | null;
-  private readonly env: NodeJS.ProcessEnv;
   private auth: { at: number; value: AuthStatus } | null = null;
 
   constructor(private readonly options: ClaudeOptions = {}) {
-    this.env = providerEnv(options.env);
-    this.find = options.find ?? (() => findBinary("claude", options.env ?? process.env));
+    this.find = options.find ?? (() => findBinary("claude", this.options.env ?? toolEnvironment.env()));
+  }
+
+  // Read at each use, so a PATH change found by a later check reaches the tool (tool-env.ts).
+  private env(): NodeJS.ProcessEnv {
+    return providerEnv(this.options.env ?? toolEnvironment.env());
   }
 
   private settingsFile(): string {
@@ -91,7 +104,7 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
 
   private async authStatus(bin: ToolBinary, fresh: boolean): Promise<AuthStatus | null> {
     if (!fresh && this.auth && Date.now() - this.auth.at < 60_000) return this.auth.value;
-    const run = await runShort({ bin, prefixArgs: this.options.prefixArgs, args: ["auth", "status"], env: this.env });
+    const run = await runShort({ bin, prefixArgs: this.options.prefixArgs, args: ["auth", "status"], env: this.env() });
     try {
       const value = JSON.parse(run.stdout) as AuthStatus;
       this.auth = { at: Date.now(), value };
@@ -107,21 +120,29 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
       subscription: false, models: CLAUDE_MODELS, limits: [], problem: null,
     };
     const bin = this.find();
-    if (!bin) return { ...base, problem: "Claude Code is not installed, or not on PATH." };
-    const version = await runShort({ bin, prefixArgs: this.options.prefixArgs, args: ["--version"], env: this.env });
+    if (!bin) return { ...base, problem: "Claude Code is not installed." };
+    const found = { binaryPath: bin.path, source: bin.source ?? null };
+    const version = await runShort({ bin, prefixArgs: this.options.prefixArgs, args: ["--version"], env: this.env() });
+    const versionText = version.stdout.trim().split(/\s+/)[0] || null;
+    if (version.error || !versionText) {
+      return { ...base, ...found, installed: true, checkFailed: true, problem: `Claude Code was found but did not start (${version.error ?? `exit ${version.code}`}). Reinstall it, or run \`claude --version\` in a terminal to see the error.` };
+    }
     const auth = await this.authStatus(bin, true);
     const subscription = auth ? isClaudeSubscription(auth) : false;
     return {
       ...base,
+      ...found,
       installed: true,
-      version: version.stdout.trim().split(/\s+/)[0] || null,
+      version: versionText,
       signedIn: auth?.loggedIn === true,
       plan: auth?.subscriptionType ?? null,
       subscription,
+      authMethod: claudeAuthMethod(auth),
+      checkFailed: !auth,
       problem: !auth
         ? "Could not read the sign-in status of Claude Code."
         : !auth.loggedIn
-          ? "Not signed in. Run `claude` in a terminal and sign in with your Claude account."
+          ? "Not signed in."
           : !subscription
             ? "Claude Code is signed in with an API key or another provider, not a Claude subscription. 0rqestra only uses subscriptions."
             : null,
@@ -160,7 +181,7 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
     }
 
     const child = spawnTool({
-      bin, prefixArgs: this.options.prefixArgs, args: claudeArgs(this.settingsFile(), request.model), cwd: request.cwd, env: this.env,
+      bin, prefixArgs: this.options.prefixArgs, args: claudeArgs(this.settingsFile(), request.model), cwd: request.cwd, env: this.env(),
     });
     let finished = false;
     let sawDelta = false;

@@ -18,7 +18,8 @@ import {readTarget,saveTarget,effectiveTarget,historyFor,newAssistant,applyChatE
 import {AgentRunsOn,TryAgent} from './AgentRuntime.jsx';
 import {PlanCard,TeamRunCard} from './TeamRun.jsx';
 // Provider screens are simulated stand-ins in 0rqestra Stage 2 (see SimulatedProviders.jsx).
-import {LocalWorkflow,apiGraph,AccountsPage} from './SimulatedProviders.jsx';
+import {LocalWorkflow,apiGraph} from './SimulatedProviders.jsx';
+import {AccountsPage} from './AccountsSetup.jsx';
 
 const ICONS = {
   tree: <><path d="M12 3v5m-7 4V8h14v4M5 16v5m14-5v5M12 8v10"/><rect x="2" y="12" width="6" height="4" rx="1"/><rect x="16" y="12" width="6" height="4" rx="1"/><rect x="9" y="18" width="6" height="4" rx="1"/></>,
@@ -132,6 +133,10 @@ function App() {
     const status=chatProviders.find(t=>t.provider===next.provider);
     patchProject({graph:{...graph,nodes:graph.nodes.map(n=>n.id===managerNode.id?{...n,...nodeFieldsFor(next,status)}:n)}});
   }
+  // AI accounts: choose a connected tool for the Manager or for one agent, with the tool's default model.
+  function defaultModel(status){const m=(status?.models||[]).find(x=>x.isDefault)||(status?.models||[])[0];return m?m.id:null;}
+  function useToolForManager(provider){const status=chatProviders.find(t=>t.provider===provider);if(!status)return;changeTarget({provider,model:defaultModel(status),effort:null});setToast(`Your Manager now answers with ${status.name}.`);}
+  function useToolForAgent(nodeId,provider){const status=chatProviders.find(t=>t.provider===provider);const node=graph.nodes.find(n=>n.id===nodeId);if(!status||!node)return;patchProject({graph:{...graph,nodes:graph.nodes.map(n=>n.id===nodeId?{...n,...nodeFieldsFor({provider,model:defaultModel(status),effort:null},status)}:n)}});setToast(`${node.name} now runs on ${status.name}.`);}
   // "Try this agent": one short real request with this tool, model and effort. It never touches the chat.
   function testAgent(spec,onEvent){
     const chat=window.orqestra?.chat;if(!chat)return null;
@@ -145,7 +150,7 @@ function App() {
   function endReply(requestId,projectId){replies.current.delete(requestId);setReplying(x=>{const n={...x};delete n[projectId];return n;});}
   function updateReply(projectId,messageId,event){setProjects(ps=>ps.map(p=>p.id!==projectId?p:{...p,messages:p.messages.map(m=>m.id===messageId?applyChatEvent(m,event):m)}));}
   useEffect(()=>{const chat=window.orqestra?.chat;if(!chat)return;chat.subscribe(message=>{const r=replies.current.get(message?.requestId);if(!r)return;if(r.onEvent){r.onEvent(message.event);if(isTerminal(message.event)){replies.current.delete(message.requestId);void refreshProviders(false);}return;}updateReply(r.projectId,r.messageId,message.event);if(isTerminal(message.event)){endReply(message.requestId,r.projectId);void refreshProviders(false);}});},[]);
-  useEffect(()=>{if(page==='accounts')void refreshProviders(true);},[page]);
+  // AI accounts reads the tools itself and hands the result back (onProvidersChanged).
   const liveModels={...MODELS};for(const p of subscriptionStatus?.providers||[])liveModels[p.provider]=[...(MODELS[p.provider]||[]),...(p.verifiedModels||[])];
   const liveCompletion=useRef(new Set());
   useEffect(()=>{if(liveRun)setProjects(ps=>ps.map(p=>mergeRunIntoProject(p,liveRun)));},[liveRun]);
@@ -239,7 +244,7 @@ function App() {
       <div className="title-actions"><span className="preview-badge"><span/> UI preview</span></div>
     </header>
     <div className="workspace">
-      <main className={`main-area view-${view} ${page==='accounts'?'accounts-main':''}`}>{page==='accounts'?<AccountsPage onBack={()=>setPage('project')} notify={setToast} providers={chatProviders} loading={providersLoading} onRefresh={()=>refreshProviders(true)}/>:page==='workflow'?<LocalWorkflow initialPrompt={liveDraft} project={project} run={liveRun?.projectId===project.id?liveRun:null} onRun={receiveLive} onCreate={createApiProject} onAccounts={()=>setPage('accounts')} onInbox={openInbox} onTree={()=>{setPage('project');setView('tree');}} Icon={Icon}/>:page==='inbox'?<ManagerInbox projects={workflowProjects} selectedId={inboxSelected} onSelect={setInboxSelected} onDecision={answerApproval} onTask={inspectTask} onStartDemo={startDemo} Icon={Icon}/>:<>
+      <main className={`main-area view-${view} ${page==='accounts'?'accounts-main':''}`}>{page==='accounts'?<AccountsPage onBack={()=>setPage('project')} notify={setToast} onProvidersChanged={setChatProviders} managerProvider={target.provider} agents={graph.nodes} onUseForManager={useToolForManager} onUseForAgent={useToolForAgent} onUseDemo={()=>{changeTarget({provider:'demo',model:null,effort:null});setToast('The Manager answers in Demo mode again.');}}/>:page==='workflow'?<LocalWorkflow initialPrompt={liveDraft} project={project} run={liveRun?.projectId===project.id?liveRun:null} onRun={receiveLive} onCreate={createApiProject} onAccounts={()=>setPage('accounts')} onInbox={openInbox} onTree={()=>{setPage('project');setView('tree');}} Icon={Icon}/>:page==='inbox'?<ManagerInbox projects={workflowProjects} selectedId={inboxSelected} onSelect={setInboxSelected} onDecision={answerApproval} onTask={inspectTask} onStartDemo={startDemo} Icon={Icon}/>:<>
         <div className="project-header"><div><div className="eyebrow">YOUR PROJECT</div><h1>{project.name}<span className="project-status">Draft</span></h1></div><div className="project-actions"><button className="button inbox-header-button" onClick={()=>openInbox()}><Icon name="chat" size={14}/> Manager inbox{pendingCount>0&&<span className="inbox-count-badge">{pendingCount}</span>}</button><button className={`button demo-run-button ${projectRun?.phase==='running'?'demo-is-running':''}`} onClick={project.liveWorkflow?()=>setPage('workflow'):['running','waiting'].includes(projectRun?.phase)?stopDemo:startDemo}><Icon name={['running','waiting'].includes(projectRun?.phase)?'close':'spark'} size={14}/>{project.liveWorkflow?'Build & review':['running','waiting'].includes(projectRun?.phase)?'Stop demo':'Run demo'}</button><span className="save-state"><span className={saved?'saved-dot':'unsaved-dot'}/>{saved?'Saved on this device':'Storage unavailable'}</span><button className={`button ${view!=='chat'?'button-active':''}`} onClick={()=>{setView(view==='chat'?'split':'chat');setActivity(false);}}><Icon name="tree" size={16}/>{view==='chat'?'Open worktree':'Close worktree'}<span className="count-badge">{graph.nodes.length}</span></button></div></div>
         <div className="content-panels">
           {view!=='tree'&&<section className="chat-panel" aria-label="Manager chat">

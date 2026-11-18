@@ -35,6 +35,22 @@ contextBridge.exposeInMainWorld("orqestra", {
       ipcRenderer.on("team:event", (_event, message: unknown) => listener(message));
     },
   },
+  // AI accounts (main/accounts/accounts-ipc.ts): check the tools, run the official installer or
+  // sign-in, test a connection. The page names a provider ("claude" or "codex") and a command kind
+  // ("install" or "signIn"); the main process decides the command.
+  accounts: {
+    status: (refresh?: boolean) => ipcRenderer.invoke("accounts:status", refresh !== false),
+    install: (provider: string) => ipcRenderer.invoke("accounts:install", String(provider)),
+    signIn: (provider: string) => ipcRenderer.invoke("accounts:sign-in", String(provider)),
+    openTerminal: (provider: string, kind: string) => ipcRenderer.invoke("accounts:open-terminal", String(provider), String(kind)),
+    cancel: (provider: string) => ipcRenderer.invoke("accounts:cancel", String(provider)),
+    test: (provider: string) => ipcRenderer.invoke("accounts:test", String(provider)),
+    copy: (provider: string, kind: string) => ipcRenderer.invoke("accounts:copy", String(provider), String(kind)),
+    subscribe: (listener: (message: unknown) => void) => {
+      ipcRenderer.removeAllListeners("accounts:event");
+      ipcRenderer.on("accounts:event", (_event, message: unknown) => listener(message));
+    },
+  },
 });
 
 // Smoke-only diagnostic sent to the main process; nothing is exposed to the page.

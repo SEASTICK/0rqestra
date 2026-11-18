@@ -6,6 +6,7 @@ import { runSmoke } from "./smoke";
 import { registerUpdateIpc, startUpdater } from "./update";
 import { createAdapters, registerChatIpc } from "./chat-ipc";
 import { registerTeamIpc } from "./team/team-ipc";
+import { registerAccountsIpc } from "./accounts/accounts-ipc";
 import {
   createSmokeOutcome,
   errorMessage,
@@ -86,7 +87,8 @@ ipcMain.handle("app:get-info", (event) => {
 
 registerUpdateIpc(isFromMainWindow);
 const providerAdapters = createAdapters();
-registerChatIpc(isFromMainWindow, () => mainWindow, providerAdapters);
+const chatService = registerChatIpc(isFromMainWindow, () => mainWindow, providerAdapters);
+registerAccountsIpc(isFromMainWindow, () => mainWindow, providerAdapters, () => chatService.invalidate());
 registerTeamIpc(isFromMainWindow, () => mainWindow, providerAdapters);
 
 if (!smoke) {

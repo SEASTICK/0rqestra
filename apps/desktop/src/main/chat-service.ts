@@ -75,6 +75,11 @@ export class ChatService {
     return value;
   }
 
+  // Statuses are read again on the next request (AI accounts saw a change).
+  invalidate(): void {
+    this.statusCache = null;
+  }
+
   // Starts a reply. Throws (so the window gets the message) when the request is invalid, the same
   // project already has a reply running, or too many replies are running at once.
   start(raw: unknown, emit: Emit): string {

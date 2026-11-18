@@ -66,10 +66,10 @@ describe("provider environment", () => {
     const bin = path.join(dir, "bin");
     fs.mkdirSync(bin);
     fs.writeFileSync(path.join(bin, "claude"), "");
-    expect(findBinary("claude", { PATH: bin }, "linux")).toEqual({ path: path.join(bin, "claude"), viaCmd: false });
-    expect(findBinary("codex", { PATH: bin }, "linux")).toBeNull();
+    expect(findBinary("claude", { PATH: bin, HOME: dir }, "linux")).toEqual({ path: path.join(bin, "claude"), viaCmd: false, source: "path" });
+    expect(findBinary("codex", { PATH: bin, HOME: dir }, "linux")).toBeNull();
     fs.writeFileSync(path.join(bin, "codex.cmd"), "");
-    expect(findBinary("codex", { PATH: bin }, "win32")).toEqual({ path: path.join(bin, "codex.cmd"), viaCmd: true });
+    expect(findBinary("codex", { PATH: bin, USERPROFILE: dir, LOCALAPPDATA: dir, APPDATA: dir }, "win32")).toEqual({ path: path.join(bin, "codex.cmd"), viaCmd: true, source: "path" });
     expect(findBinary("codex", { PATH: "", ORQESTRA_CODEX_BIN: path.join(bin, "claude") }, "linux")?.path).toBe(path.join(bin, "claude"));
     for (const ok of ["--model", "mcp__*", "C:\\Users\\Sjöqvist\\AppData\\x.json", ""]) expect(SAFE_ARG.test(ok), ok).toBe(true);
     for (const bad of ["a&b", "%PATH%", "x|y", 'a"b', "^", "a!b", "<x>"]) expect(SAFE_ARG.test(bad), bad).toBe(false);
@@ -166,6 +166,14 @@ describe("Claude Code adapter", () => {
     expect(await claude({ FAKE_AUTH: "apikey" }).status()).toMatchObject({ subscription: false, problem: expect.stringContaining("API key") });
     expect(await new ClaudeCodeAdapter({ find: () => null }).status()).toMatchObject({ installed: false });
   });
+
+  it("tells signed out, subscription and API-key sign-ins apart, and reports a tool that does not start", async () => {
+    expect(await claude({ FAKE_AUTH: "signed-out" }).status()).toMatchObject({ installed: true, signedIn: false, authMethod: null, checkFailed: false });
+    expect(await claude({}).status()).toMatchObject({ signedIn: true, authMethod: "subscription", checkFailed: false });
+    expect(await claude({ FAKE_AUTH: "apikey" }).status()).toMatchObject({ signedIn: true, subscription: false, authMethod: "api_key" });
+    const broken = new ClaudeCodeAdapter({ find: () => ({ path: path.join(dir, "missing.exe"), viaCmd: false, source: "native" }), env: env({}), settingsDir: dir });
+    expect(await broken.status()).toMatchObject({ installed: true, checkFailed: true, binaryPath: path.join(dir, "missing.exe"), source: "native" });
+  });
 });
 
 describe("Codex adapter", () => {
@@ -220,5 +228,11 @@ describe("Codex adapter", () => {
       limits: [{ label: "5-hour limit", usedPercent: 18, windowMinutes: 300 }, { label: "7-day limit", usedPercent: 3, windowMinutes: 10080 }],
     });
     expect(await codex({ FAKE_AUTH: "apikey" }).status()).toMatchObject({ subscription: false, problem: expect.stringContaining("API key") });
+  });
+
+  it("tells signed out, ChatGPT and API-key sign-ins apart", async () => {
+    expect(await codex({ FAKE_AUTH: "none" }).status()).toMatchObject({ installed: true, signedIn: false, authMethod: null });
+    expect(await codex({}).status()).toMatchObject({ signedIn: true, authMethod: "subscription" });
+    expect(await codex({ FAKE_AUTH: "apikey" }).status()).toMatchObject({ signedIn: true, subscription: false, authMethod: "api_key" });
   });
 });

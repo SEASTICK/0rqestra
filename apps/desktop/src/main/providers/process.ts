@@ -30,31 +30,95 @@ export function providerEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.Pro
   return env;
 }
 
+export type ToolSource = "override" | "path" | "native" | "winget" | "npm" | "homebrew";
+
 export interface ToolBinary {
   path: string;
   // npm installs a .cmd launcher on Windows, which has to go through cmd.exe.
   viaCmd: boolean;
+  // Where it was found, shown in AI accounts. Absent for test doubles.
+  source?: ToolSource;
+}
+
+// Folders that belong to a desktop app's own copy of a tool (the Claude and Codex desktop apps, and
+// Store app aliases). Neither provider documents those copies for use by other programs, so they are
+// never used, even when they are on PATH. 0rqestra uses only the standalone CLI installs.
+const BUNDLED_DIRS = [
+  /[\\/]Microsoft[\\/]WindowsApps([\\/]|$)/i,
+  /[\\/]AnthropicClaude([\\/]|$)/i,
+  /[\\/]AppData[\\/]Roaming[\\/]Claude([\\/]|$)/i,
+  /[\\/]Claude\.app[\\/]/i,
+  /[\\/]Codex\.app[\\/]/i,
+];
+
+export function isBundledDir(dir: string): boolean {
+  return BUNDLED_DIRS.some((pattern) => pattern.test(dir));
+}
+
+interface Location {
+  dir: string;
+  source: ToolSource;
+}
+
+function wingetPackageDirs(localAppData: string, prefix: string): string[] {
+  const root = path.join(localAppData, "Microsoft", "WinGet", "Packages");
+  try {
+    return fs.readdirSync(root).filter((name) => name.toLowerCase().startsWith(prefix.toLowerCase())).map((name) => path.join(root, name));
+  } catch {
+    return [];
+  }
+}
+
+// The places the official installers put each tool, from the providers' install documentation
+// (checked 2026-11-18): Claude Code's native installer uses ~/.local/bin; Codex's install.ps1 uses
+// %LOCALAPPDATA%\Programs\OpenAI\Codex\bin (or CODEX_INSTALL_DIR); WinGet portable packages link
+// into %LOCALAPPDATA%\Microsoft\WinGet\Links; npm uses %APPDATA%\npm. A fresh install is often not
+// on the PATH that 0rqestra has, so these are searched too.
+export function officialLocations(name: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform): Location[] {
+  const home = env.USERPROFILE ?? env.HOME ?? "";
+  const out: Location[] = [];
+  if (home) out.push({ dir: path.join(home, ".local", "bin"), source: "native" });
+  if (name === "claude" && home) out.push({ dir: path.join(home, ".claude", "local"), source: "native" });
+  if (platform === "win32") {
+    const local = env.LOCALAPPDATA ?? (home ? path.join(home, "AppData", "Local") : "");
+    const roaming = env.APPDATA ?? (home ? path.join(home, "AppData", "Roaming") : "");
+    if (name === "codex" && env.CODEX_INSTALL_DIR) out.push({ dir: env.CODEX_INSTALL_DIR, source: "native" });
+    if (name === "codex" && local) out.push({ dir: path.join(local, "Programs", "OpenAI", "Codex", "bin"), source: "native" });
+    if (local) {
+      out.push({ dir: path.join(local, "Microsoft", "WinGet", "Links"), source: "winget" });
+      const pkg = name === "claude" ? "Anthropic.ClaudeCode_" : "OpenAI.Codex_";
+      for (const dir of wingetPackageDirs(local, pkg)) out.push({ dir, source: "winget" });
+    }
+    if (roaming) out.push({ dir: path.join(roaming, "npm"), source: "npm" });
+  }
+  if (platform === "darwin") {
+    out.push({ dir: "/opt/homebrew/bin", source: "homebrew" }, { dir: "/usr/local/bin", source: "homebrew" });
+  }
+  return out;
+}
+
+function pathOf(env: NodeJS.ProcessEnv): string {
+  const key = Object.keys(env).find((k) => k.toLowerCase() === "path");
+  return key ? env[key] ?? "" : "";
 }
 
 // Looks for the tool on PATH and in the places the official installers use. ORQESTRA_<NAME>_BIN
 // (read from the app's own environment) overrides the search, for unusual installs.
-export function findBinary(name: string, env: NodeJS.ProcessEnv = process.env, platform = process.platform): ToolBinary | null {
+export function findBinary(name: string, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): ToolBinary | null {
   const override = env[`ORQESTRA_${name.toUpperCase()}_BIN`];
-  if (override && fs.existsSync(override)) return { path: override, viaCmd: /\.(cmd|bat)$/i.test(override) };
-  const home = env.USERPROFILE ?? env.HOME ?? "";
-  const dirs = [
-    ...(env.PATH ?? env.Path ?? "").split(path.delimiter).filter(Boolean),
-    path.join(home, ".local", "bin"),
-    path.join(home, ".claude", "local"),
-    ...(platform === "win32" && env.APPDATA ? [path.join(env.APPDATA, "npm")] : []),
-    ...(platform === "darwin" ? ["/opt/homebrew/bin", "/usr/local/bin"] : []),
+  if (override && fs.existsSync(override)) return { path: override, viaCmd: /\.(cmd|bat)$/i.test(override), source: "override" };
+  const delimiter = platform === "win32" ? ";" : path.delimiter;
+  const locations: Location[] = [
+    ...pathOf(env).split(delimiter).filter(Boolean).map((dir) => ({ dir, source: "path" as const })),
+    ...officialLocations(name, env, platform),
   ];
   const names = platform === "win32" ? [`${name}.exe`, `${name}.cmd`] : [name];
-  for (const dir of dirs) {
+  for (const { dir, source } of locations) {
+    if (isBundledDir(dir)) continue;
     for (const candidate of names) {
       const full = path.join(dir, candidate);
       try {
-        if (fs.statSync(full).isFile()) return { path: full, viaCmd: /\.cmd$/i.test(candidate) };
+        if (fs.statSync(full).isFile()) return { path: full, viaCmd: /\.cmd$/i.test(candidate), source };
       } catch {
         // Not here.
       }
