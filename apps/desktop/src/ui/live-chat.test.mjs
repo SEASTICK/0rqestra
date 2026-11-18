@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyChatEvent, DEMO, effectiveTarget, historyFor, newAssistant, readTarget, readyProviders, saveTarget, settleInterrupted, TARGET_KEY, usageLine } from './live-chat.mjs';
+import { applyChatEvent, NO_TOOL, effectiveTarget, historyFor, newAssistant, readTarget, readyProviders, saveTarget, settleInterrupted, TARGET_KEY, usageLine } from './live-chat.mjs';
 
 const memory = (entries = {}) => ({ data: new Map(Object.entries(entries)), getItem(k) { return this.data.has(k) ? this.data.get(k) : null; }, setItem(k, v) { this.data.set(k, v); } });
 const claude = { provider: 'claude', name: 'Claude Code', installed: true, subscription: true, models: [{ id: 'default', label: 'Default', efforts: [], isDefault: true }, { id: 'opus', label: 'Opus', efforts: [], isDefault: false }] };
@@ -11,9 +11,9 @@ describe('chat target', () => {
     expect(readyProviders(undefined)).toEqual([]);
   });
 
-  it('falls back to the demo when the chosen tool is not ready', () => {
-    expect(effectiveTarget({ provider: 'codex', model: 'gpt-6.1-sol' }, [claude])).toBe(DEMO);
-    expect(effectiveTarget({ provider: 'demo' }, [claude])).toBe(DEMO);
+  it('has no tool (never a simulated answer) when the chosen tool is not ready, or was the old Demo', () => {
+    expect(effectiveTarget({ provider: 'codex', model: 'gpt-6.1-sol' }, [claude])).toBe(NO_TOOL);
+    expect(effectiveTarget({ provider: 'demo' }, [claude])).toBe(NO_TOOL);
   });
 
   it('keeps a model and effort that exist, and replaces ones that do not', () => {
@@ -27,13 +27,14 @@ describe('chat target', () => {
     const storage = memory();
     saveTarget(storage, { provider: 'codex', model: 'gpt-6-luna', effort: 'low', name: 'x' });
     expect(readTarget(storage)).toEqual({ provider: 'codex', model: 'gpt-6-luna', effort: 'low' });
-    expect(readTarget(memory({ [TARGET_KEY]: '{"provider":"bash"}' }))).toEqual({ provider: 'demo', model: null, effort: null });
-    expect(readTarget(memory({ [TARGET_KEY]: 'not json' })).provider).toBe('demo');
+    expect(readTarget(memory({ [TARGET_KEY]: '{"provider":"bash"}' }))).toEqual({ provider: 'none', model: null, effort: null });
+    expect(readTarget(memory({ [TARGET_KEY]: '{"provider":"demo"}' })).provider).toBe('none');
+    expect(readTarget(memory({ [TARGET_KEY]: 'not json' })).provider).toBe('none');
   });
 });
 
 describe('chat messages', () => {
-  it('sends the user turns and finished real replies, not demo replies', () => {
+  it('sends the user turns and finished real replies, not old preview replies', () => {
     const messages = [
       { kind: 'user', text: 'q1' }, { kind: 'manager', text: 'demo reply' },
       { kind: 'assistant', status: 'done', text: 'a1' }, { kind: 'assistant', status: 'failed', text: 'partial' }, { kind: 'user', text: 'q2' },
@@ -67,7 +68,7 @@ import { agentBadge, agentTarget, isRealAgent, isTerminal, nodeFieldsFor, testSt
 describe('agents in the tree', () => {
   const real = { provider: 'Codex', model: 'GPT-6.1 Sol', agent: { tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' } };
 
-  it('tells real agents from demo agents', () => {
+  it('tells agents with a tool from agents without one', () => {
     expect(isRealAgent(real)).toBe(true);
     expect(isRealAgent({ provider: 'OpenAI', model: 'Codex (demo)' })).toBe(false);
     expect(isRealAgent({ agent: { tool: 'bash' } })).toBe(false);
@@ -81,7 +82,7 @@ describe('agents in the tree', () => {
       agent: { tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' }, provider: 'Codex', model: 'GPT-6.1 Sol',
     });
     expect(nodeFieldsFor({ provider: 'claude', model: 'default', effort: null }, claude)).toMatchObject({ model: 'Default', agent: { tool: 'claude', effort: null } });
-    expect(nodeFieldsFor({ provider: 'demo' }, null)).toEqual({ agent: null });
+    expect(nodeFieldsFor({ provider: 'none' }, null)).toEqual({ agent: null, provider: undefined, model: undefined });
     expect(nodeFieldsFor({ provider: 'codex', model: 'x' }, undefined)).toEqual({ agent: null });
   });
 

@@ -1,4 +1,4 @@
-// What an agent runs on, in the agent editor: the tool (Demo, Claude Code or Codex), its model and
+// What an agent runs on, in the agent editor: the tool (Claude Code or Codex, or none yet), its model and
 // effort, and a button that sends one short real request to try the choice.
 import React, { useEffect, useRef, useState } from 'react';
 import { FAILURE_HELP, isTerminal, testState, usageLine } from './live-chat.mjs';
@@ -15,7 +15,7 @@ export function AgentRunsOn({ run, onChange, tools }) {
           const first = next?.models.find((m) => m.isDefault) || next?.models[0];
           onChange({ provider: e.target.value, model: first ? first.id : null, effort: null });
         }}>
-          <option value="demo">Demo (no model)</option>
+          <option value="none">No tool yet (cannot work)</option>
           {tools.map((t) => <option key={t.provider} value={t.provider}>{t.name}</option>)}
         </select>
         {tools.length === 0 && <small>Connect Claude Code or Codex under AI accounts to run an agent on a real model.</small>}

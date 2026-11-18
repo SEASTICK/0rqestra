@@ -12,6 +12,35 @@ What is stored where:
 
 Checkout paths and branches are never sent to Supabase.
 
+## The 0rqestra account
+
+Teams and the app share one account: the same Supabase Auth user and session.
+
+- **First launch** shows a welcome screen with **Create account**, **Sign in** and **Continue
+  without an account** (local projects work without one; Teams needs one). The choice to continue
+  without an account is remembered; the profile menu offers "Sign in or create account" later.
+- **Create account** asks for an email and a display name, emails a one-time code, and after the
+  code is entered saves the display name in the account's profile (Supabase user metadata
+  `display_name`). **Sign in** emails a code only to an existing account: it never creates one
+  (an unknown address gets "There is no 0rqestra account …").
+- A new code can be requested after 60 seconds (or after the wait Supabase reports). A wrong or
+  expired code, or a connection problem, keeps the email filled in.
+- The session stays in the main process, encrypted with the operating system's key store
+  (`<user data>/teams/session.bin`); the window never holds a token. It is restored at startup
+  (a short "Checking your account…" state, so a returning user never sees the welcome screen),
+  refreshed when needed, and kept through restarts and updates (updates keep the user-data folder).
+- **Offline at startup** the app opens signed in and local projects work; Teams says it cannot
+  connect and checks again when the connection is back. If Supabase refuses the session (expired
+  or revoked), the app asks to sign in again (and still allows continuing without an account).
+- **Sign out** (profile menu) deletes the saved session, stops Teams' live connection and clears
+  Teams data from the window; local projects and settings stay.
+- Claude Code and Codex keep their own sign-in under AI accounts, unrelated to this account.
+
+Email settings this needs (see also section 3): both the **Confirm signup** template (used for a
+new account's first code) and the **Magic Link** template (later sign-ins) must show `{{ .Token }}`;
+"Allow new users to sign up" must stay on for Create account; and for more than a few emails an
+hour, set up custom SMTP.
+
 ## 1. Create a Supabase project (Philip)
 
 Use a project made for this, not one that holds other data. The free plan is enough to test.

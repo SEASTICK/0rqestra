@@ -56,7 +56,8 @@ contextBridge.exposeInMainWorld("orqestra", {
   // folders are chosen in the system dialog and referred to by the id that comes back.
   teams: {
     status: (refresh?: boolean) => ipcRenderer.invoke("teams:status", refresh === true),
-    sendCode: (email: string) => ipcRenderer.invoke("teams:send-code", String(email)),
+    sendCode: (email: string, options?: { mode?: string; displayName?: string }) =>
+      ipcRenderer.invoke("teams:send-code", String(email), { mode: options?.mode === "register" ? "register" : "sign_in", displayName: String(options?.displayName ?? "").slice(0, 200) }),
     verifyCode: (code: string) => ipcRenderer.invoke("teams:verify-code", String(code)),
     cancelCode: () => ipcRenderer.invoke("teams:cancel-code"),
     signOut: () => ipcRenderer.invoke("teams:sign-out"),

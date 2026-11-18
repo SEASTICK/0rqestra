@@ -3,8 +3,9 @@
 // this module only keeps the window's state, so it is unit-tested without Electron.
 
 export const TARGET_KEY = 'orqestra-chat-target';
-export const DEMO = { provider: 'demo', model: null, effort: null, name: 'Demo', modelLabel: '' };
-const PROVIDERS = ['demo', 'claude', 'codex'];
+// No tool chosen or connected: nothing answers, and the window shows how to set one up.
+export const NO_TOOL = { provider: 'none', model: null, effort: null, name: '', modelLabel: '' };
+const PROVIDERS = ['claude', 'codex'];
 
 export function readyProviders(statuses) {
   return (Array.isArray(statuses) ? statuses : []).filter((s) => s && s.installed && s.subscription);
@@ -17,9 +18,9 @@ export function readTarget(storage) {
       return { provider: v.provider, model: typeof v.model === 'string' ? v.model : null, effort: typeof v.effort === 'string' ? v.effort : null };
     }
   } catch {
-    // Unreadable: the demo answers.
+    // Unreadable: no tool chosen.
   }
-  return { provider: 'demo', model: null, effort: null };
+  return { provider: 'none', model: null, effort: null };
 }
 
 export function saveTarget(storage, target) {
@@ -33,9 +34,9 @@ export function saveTarget(storage, target) {
 // What will actually answer: the chosen tool if it is ready, with the chosen model if it still
 // exists (otherwise the tool's default), and the chosen effort only if that model supports it.
 export function effectiveTarget(target, statuses) {
-  if (!target || target.provider === 'demo') return DEMO;
+  if (!target || !PROVIDERS.includes(target.provider)) return NO_TOOL;
   const status = readyProviders(statuses).find((s) => s.provider === target.provider);
-  if (!status) return DEMO;
+  if (!status) return NO_TOOL;
   const models = status.models || [];
   const model = models.find((m) => m.id === target.model) || models.find((m) => m.isDefault) || models[0] || null;
   const effort = model && (model.efforts || []).includes(target.effort) ? target.effort : null;
@@ -43,7 +44,8 @@ export function effectiveTarget(target, statuses) {
 }
 
 // Earlier turns sent with a new message: the user's messages and the finished real replies.
-// Demo replies are left out, since no model wrote them.
+// Old preview replies (kind 'manager', from before Demo mode was removed) are left out, since no
+// model wrote them.
 export function historyFor(messages, max = 40) {
   return (messages || [])
     .filter((m) => m.kind === 'user' || (m.kind === 'assistant' && m.status === 'done' && m.text) || (m.kind === 'team' && m.run && m.run.status !== 'running'))
@@ -96,9 +98,9 @@ export const FAILURE_HELP = {
 };
 
 // ---- Agents in the tree (phase 2) -------------------------------------------------------------
-// A node runs on a real tool when it has `agent: { tool, model, effort }`. Nodes without it keep
-// the demo provider and model they always had. `provider` and `model` on the node stay as display
-// text, so the tree and the task panels need no changes to show what an agent runs on.
+// A node runs on a tool when it has `agent: { tool, model, effort }`. A node without it has no tool
+// yet: it keeps its role and place in the tree, and cannot work until one is chosen. `provider` and
+// `model` on a node are display text for the chosen tool.
 
 export function isRealAgent(node) {
   return Boolean(node && node.agent && (node.agent.tool === 'claude' || node.agent.tool === 'codex'));
@@ -110,7 +112,7 @@ export function agentTarget(node) {
 
 // The fields a node gets for a chosen target. `status` is the tool's entry from AI accounts.
 export function nodeFieldsFor(target, status) {
-  if (!target || target.provider === 'demo' || !status) return { agent: null };
+  if (!target || !PROVIDERS.includes(target.provider) || !status) return { agent: null, provider: undefined, model: undefined };
   const model = (status.models || []).find((m) => m.id === target.model);
   return {
     agent: { tool: status.provider, model: target.model ?? null, effort: target.effort ?? null },

@@ -11,7 +11,7 @@ export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
   return (
     <span className="chat-target">
       <select aria-label="Who answers" className="chat-select" value={target.provider} onChange={(e) => set({ provider: e.target.value, model: null, effort: null })}>
-        <option value="demo">Demo (no model)</option>
+        {(!current || ready.length === 0) && <option value="none">{ready.length ? 'Choose a tool…' : 'No tool connected'}</option>}
         {ready.map((s) => <option key={s.provider} value={s.provider}>{s.name}</option>)}
       </select>
       {current && current.models.length > 0 && (

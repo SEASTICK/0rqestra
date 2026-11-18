@@ -44,6 +44,9 @@ class FakeSupabase {
   reservations: { id: string; project_id: string; run_id: string; reserved_by: string; reserved_by_name: string; summary: string; branch: string | null; paths: string[]; expires_at: string }[] = [];
   now = Date.now();
   requests: { method: string; url: string; headers: Record<string, string> }[] = [];
+  meta = new Map<string, string>(); // email -> display name
+  otpRequests: { email: string; createUser: boolean }[] = [];
+  rateLimited = false;
   offline = false;
 
   fetch: FetchLike = async (url, init) => {
@@ -55,14 +58,30 @@ class FakeSupabase {
     const pgError = (status: number, code: string, message: string) => reply(status, { code, message, details: null, hint: null });
     if (init.headers.apikey !== "sb_publishable_test") return reply(401, { message: "Invalid API key" });
     if (u.pathname === "/auth/v1/otp") {
-      this.codes.set(String(body.email), "123456");
+      const email = String(body.email);
+      // As Supabase: without create_user an unknown address is refused, and nothing is sent.
+      if (!this.users.has(email) && body.create_user !== true) return reply(422, { code: 422, error_code: "otp_disabled", msg: "Signups not allowed for otp" });
+      if (this.rateLimited) return reply(429, { code: 429, error_code: "over_email_send_rate_limit", msg: "For security purposes, you can only request this after 42 seconds." });
+      if (!this.users.has(email)) {
+        this.users.set(email, crypto.randomUUID());
+        const data = body.data as { display_name?: string } | undefined;
+        if (data?.display_name) this.meta.set(email, data.display_name);
+      }
+      this.otpRequests.push({ email, createUser: body.create_user === true });
+      this.codes.set(email, "123456");
       return reply(200, {});
+    }
+    if (u.pathname === "/auth/v1/user" && init.method === "PUT") {
+      const auth = this.tokens.get((init.headers.Authorization ?? "").replace(/^Bearer /, ""));
+      if (!auth) return reply(401, { code: 401, msg: "invalid JWT" });
+      const email = [...this.users].find(([, id]) => id === auth.userId)![0];
+      this.meta.set(email, String((body.data as { display_name?: string }).display_name ?? ""));
+      return reply(200, { id: auth.userId, email, user_metadata: { display_name: this.meta.get(email) } });
     }
     if (u.pathname === "/auth/v1/verify") {
       const email = String(body.email);
       if (body.type !== "email" || this.codes.get(email) !== body.token) return reply(403, { code: 403, error_code: "otp_expired", msg: "Token has expired or is invalid" });
       this.codes.delete(email);
-      if (!this.users.has(email)) this.users.set(email, crypto.randomUUID());
       return reply(200, this.issue(this.users.get(email)!, email));
     }
     if (u.pathname === "/auth/v1/token") {
@@ -174,7 +193,8 @@ class FakeSupabase {
     const refresh = crypto.randomUUID();
     this.tokens.set(access, { userId });
     this.refreshTokens.set(refresh, userId);
-    return { access_token: access, refresh_token: refresh, expires_in: 3600, token_type: "bearer", user: { id: userId, email } };
+    const name = this.meta.get(email);
+    return { access_token: access, refresh_token: refresh, expires_in: 3600, token_type: "bearer", user: { id: userId, email, user_metadata: name ? { display_name: name } : {} } };
   }
 }
 
@@ -206,8 +226,9 @@ function computer(name: string, server: FakeSupabase, now = () => server.now) {
   return { dir, ...make(), restart: make };
 }
 
+// Signs in, creating the account if needed (the tests' people are new to the stand-in server).
 async function signIn(service: TeamsService, email: string) {
-  await service.sendCode(email);
+  await service.sendCode(email, { mode: "register", displayName: email.split("@")[0] });
   return service.verifyCode("123 456");
 }
 
@@ -232,7 +253,7 @@ describe("Teams, phase 1", () => {
 
   it("signs in with an email code, sends the key as apikey only, and refuses a wrong code", async () => {
     const a = computer("a", server);
-    await a.service.sendCode("A@Example.test");
+    await a.service.sendCode("A@Example.test", { mode: "register", displayName: "Ann" });
     expect(a.service.view()).toMatchObject({ status: "code_sent", pendingEmail: "a@example.test" });
     await expect(a.service.verifyCode("999999")).rejects.toThrow(/wrong or has expired/);
     await expect(a.service.verifyCode("abc")).rejects.toThrow(/only digits/);
@@ -496,5 +517,80 @@ describe("Teams, phase 5", () => {
     await a.service.refreshBriefs(project.id);
     expect(a.service.view().teams[0]!.projects[0]!.reservations).toEqual([{ id: "r1", runId: "plan-1", userId: "philip", name: "philip", task: "Rework sign-in", branch: "feature/auth", paths: ["src/auth/"], expiresAt: later }]);
     await expect(a.service.reservationRpc("drop_everything", {})).rejects.toThrow(/Unknown reservation call/);
+  });
+});
+
+describe("0rqestra account", () => {
+  it("creates an account with a display name, and signing in never creates one", async () => {
+    const server = new FakeSupabase();
+    const a = computer("acct", server);
+    await expect(a.service.sendCode("new@example.test")).rejects.toThrow(/There is no 0rqestra account for new@example.test. Choose Create account/);
+    expect(server.users.has("new@example.test")).toBe(false);
+    expect(a.service.view()).toMatchObject({ status: "signed_out" });
+    await expect(a.service.sendCode("new@example.test", { mode: "register", displayName: "  " })).rejects.toThrow(/display name/);
+    await a.service.sendCode("new@example.test", { mode: "register", displayName: "Ann Persson" });
+    expect(a.service.view()).toMatchObject({ status: "code_sent", pendingEmail: "new@example.test", pendingMode: "register" });
+    await expect(a.service.verifyCode("000000")).rejects.toThrow(/wrong or has expired/);
+    // The email is kept after a wrong code, so the user can try again.
+    expect(a.service.view().pendingEmail).toBe("new@example.test");
+    const v = await a.service.verifyCode("123456");
+    expect(v).toMatchObject({ status: "signed_in", email: "new@example.test", displayName: "Ann Persson" });
+    expect(server.meta.get("new@example.test")).toBe("Ann Persson");
+    // Signed out, the same address signs in (no new account).
+    await a.service.signOut();
+    await a.service.sendCode("new@example.test");
+    expect(server.otpRequests.at(-1)).toEqual({ email: "new@example.test", createUser: false });
+    expect((await a.service.verifyCode("123456")).displayName).toBe("Ann Persson");
+    // The display name and session survive a restart, with the token only in the encrypted file.
+    const again = a.restart().service.view();
+    expect(again).toMatchObject({ status: "signed_in", displayName: "Ann Persson" });
+  });
+
+  it("enforces a resend cooldown, and takes Supabase's own wait when it gives one", async () => {
+    const server = new FakeSupabase();
+    let now = 1_000_000;
+    const a = computer("cool", server, () => now);
+    await a.service.sendCode("c@example.test", { mode: "register", displayName: "C" });
+    expect(a.service.view().resendAt).toBe(now + 60_000);
+    await expect(a.service.sendCode("c@example.test", { mode: "register" })).rejects.toThrow(/in 60 seconds/);
+    now += 61_000;
+    // A resend without the name keeps the name given first.
+    await a.service.sendCode("c@example.test", { mode: "register" });
+    server.rateLimited = true;
+    now += 61_000;
+    await expect(a.service.sendCode("c@example.test", { mode: "register" })).rejects.toThrow(/in 42 seconds/);
+    expect(a.service.view()).toMatchObject({ status: "code_sent", pendingEmail: "c@example.test", resendAt: now + 42_000 });
+    server.rateLimited = false;
+    expect((await a.service.verifyCode("123456")).displayName).toBe("C");
+  });
+
+  it("asks to sign in again when Supabase ends the session, and keeps working offline otherwise", async () => {
+    const server = new FakeSupabase();
+    let now = server.now;
+    const a = computer("end", server, () => now);
+    await signIn(a.service, "e@example.test");
+    // Offline at startup: the saved session still opens the app as signed in.
+    server.offline = true;
+    const offline = a.restart().service;
+    expect(offline.view()).toMatchObject({ status: "signed_in", sessionEnded: null });
+    now += 2 * 3600_000;
+    expect((await offline.refresh()).status).toBe("signed_in"); // a network failure does not end it
+    server.offline = false;
+    server.refreshTokens.clear(); // revoked on the server
+    const v = await offline.refresh();
+    expect(v.status).toBe("signed_out");
+    expect(v.sessionEnded).toMatch(/session has ended/);
+  });
+
+  it("switching accounts clears the previous account's teams from the view", async () => {
+    const server = new FakeSupabase();
+    const a = computer("switch", server);
+    await signIn(a.service, "first@example.test");
+    await a.service.createTeam("First's team");
+    expect(a.service.view().teams).toHaveLength(1);
+    await a.service.signOut();
+    expect(a.service.view()).toMatchObject({ status: "signed_out", teams: [], presence: {}, displayName: null });
+    const v = await signIn(a.service, "second@example.test");
+    expect(v).toMatchObject({ email: "second@example.test", teams: [] });
   });
 });

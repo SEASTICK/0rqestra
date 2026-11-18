@@ -120,7 +120,7 @@ function AccountCard({ account, api, now, notify, refresh, use }) {
   );
 }
 
-export function AccountsPage({ onBack, notify, onProvidersChanged, managerProvider, agents, onUseForManager, onUseForAgent, onUseDemo }) {
+export function AccountsPage({ onBack, notify, onProvidersChanged, managerProvider, agents, onUseForManager, onUseForAgent }) {
   const api = typeof window !== 'undefined' ? window.orqestra?.accounts : null;
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -168,11 +168,7 @@ export function AccountsPage({ onBack, notify, onProvidersChanged, managerProvid
       ) : (
         <div className="provider-grid">{accounts.map((a) => <AccountCard key={a.provider} account={a} api={api} now={now} notify={notify} refresh={refresh} use={use}/>)}</div>
       )}
-      <div className="setup-demo">
-        <strong>Demo mode stays available.</strong>
-        <span>Without a connected tool, the Manager answers in Demo mode: nothing is sent to a model. You can switch back to Demo in the box under the chat at any time.</span>
-        {managerProvider !== 'demo' && onUseDemo && <button type="button" className="button" onClick={onUseDemo}>Use Demo for the Manager</button>}
-      </div>
+      <p className="setup-demo">Without a connected tool your Manager does not answer, and nothing is sent anywhere. Your projects, chats and team trees are kept on this computer either way.</p>
     </section>
   );
 }

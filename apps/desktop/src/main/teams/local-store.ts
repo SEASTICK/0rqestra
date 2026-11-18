@@ -56,7 +56,10 @@ export class SessionStore {
       const v = JSON.parse(this.box.decrypt(data)) as { server?: unknown; session?: AuthSession };
       const s = v.session;
       if (v.server !== server || !s || typeof s.accessToken !== "string" || typeof s.refreshToken !== "string" || typeof s.expiresAt !== "number" || typeof s.user?.id !== "string") return null;
-      return { accessToken: s.accessToken, refreshToken: s.refreshToken, expiresAt: s.expiresAt, user: { id: s.user.id, email: typeof s.user.email === "string" ? s.user.email : "" } };
+      return {
+        accessToken: s.accessToken, refreshToken: s.refreshToken, expiresAt: s.expiresAt,
+        user: { id: s.user.id, email: typeof s.user.email === "string" ? s.user.email : "", displayName: typeof s.user.displayName === "string" ? s.user.displayName : null },
+      };
     } catch {
       return null;
     }

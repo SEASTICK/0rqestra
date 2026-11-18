@@ -118,9 +118,11 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
     guard(event);
     return refresh === true ? service.refresh() : service.view();
   });
-  ipcMain.handle("teams:send-code", (event, email: unknown) => {
+  // The 0rqestra account (also used by Teams): mode "register" creates an account with a display
+  // name; "sign_in" never creates one.
+  ipcMain.handle("teams:send-code", (event, email: unknown, options: unknown) => {
     guard(event);
-    return service.sendCode(email);
+    return service.sendCode(email, options);
   });
   ipcMain.handle("teams:verify-code", (event, code: unknown) => {
     guard(event);

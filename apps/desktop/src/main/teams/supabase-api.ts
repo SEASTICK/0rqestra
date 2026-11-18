@@ -17,7 +17,8 @@ export interface AuthSession {
   refreshToken: string;
   // Milliseconds since the epoch.
   expiresAt: number;
-  user: { id: string; email: string };
+  // displayName comes from the account's profile (user metadata), set when the account is created.
+  user: { id: string; email: string; displayName: string | null };
 }
 
 export class SupabaseError extends Error {
@@ -58,7 +59,9 @@ export function sessionFrom(body: unknown, now: number): AuthSession {
     throw new SupabaseError("Supabase did not return a session.", 500, "no_session");
   }
   const expiresAt = typeof b.expires_at === "number" ? b.expires_at * 1000 : now + (typeof b.expires_in === "number" ? b.expires_in : 3600) * 1000;
-  return { accessToken: b.access_token, refreshToken: b.refresh_token, expiresAt, user: { id: user.id, email: typeof user.email === "string" ? user.email : "" } };
+  const meta = (user.user_metadata && typeof user.user_metadata === "object" ? user.user_metadata : {}) as Record<string, unknown>;
+  const displayName = typeof meta.display_name === "string" && meta.display_name.trim() ? meta.display_name.trim().slice(0, 60) : null;
+  return { accessToken: b.access_token, refreshToken: b.refresh_token, expiresAt, user: { id: user.id, email: typeof user.email === "string" ? user.email : "", displayName } };
 }
 
 export class SupabaseApi {
@@ -89,9 +92,17 @@ export class SupabaseApi {
     return body;
   }
 
-  // Sends a one-time code to the address. A new address gets an account on first sign-in.
-  async sendCode(email: string): Promise<void> {
-    await this.request("POST", "/auth/v1/otp", { body: { email, create_user: true } });
+  // Sends a one-time code. Only createUser: true may create an account (with the display name in
+  // its profile); otherwise Supabase refuses an unknown address with otp_disabled.
+  async sendCode(email: string, opts: { createUser: boolean; displayName?: string } = { createUser: false }): Promise<void> {
+    await this.request("POST", "/auth/v1/otp", {
+      body: { email, create_user: opts.createUser, ...(opts.createUser && opts.displayName ? { data: { display_name: opts.displayName } } : {}) },
+    });
+  }
+
+  // Saves the display name in the signed-in account's profile.
+  async setDisplayName(token: string, displayName: string): Promise<void> {
+    await this.request("PUT", "/auth/v1/user", { token, body: { data: { display_name: displayName } } });
   }
 
   async verifyCode(email: string, token: string): Promise<AuthSession> {

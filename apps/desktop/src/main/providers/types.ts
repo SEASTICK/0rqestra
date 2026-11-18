@@ -26,7 +26,7 @@ export interface ChatRequest {
 export interface TeamMember {
   name: string;
   role: string;
-  // True when the agent runs on Claude Code or Codex; demo agents cannot work yet.
+  // True when the agent runs on Claude Code or Codex; an agent without a tool cannot work yet.
   ready: boolean;
 }
 

@@ -26,7 +26,12 @@ runs with the providers. Cloud execution is out of scope for the initial release
   on 2026-11-17. macOS CI currently fails intermittently in one smoke failure case; macOS
   verification is deferred.
 - A release pipeline and in-app updates exist (see `docs/release.md`).
-- The interface (Stage 2) is in place, with simulated agents.
+- The interface (Stage 2) is in place. Demo mode and every simulated feature (demo agents, simulated
+  runs, allowances and recovery stacks, the Manager inbox, the Build & review preview) were removed
+  on 2026-11-18: everything visible in the app works for real, and without a connected Claude Code
+  or Codex the app shows how to set one up. Saved projects, agents and chats are kept on upgrade.
+- An app-wide 0rqestra account (the same account Teams uses) and Teams phases 1–5 are built; see
+  `docs/teams-setup.md`.
 - **Phase 1 of [`docs/backend-plan.md`](docs/backend-plan.md) is built:** a real chat with your own
   Claude Code or Codex subscription (no API keys), with model and effort choice, streamed replies,
   and Stop. It is tested with fake tools only; the first run against the real tools is still to do.

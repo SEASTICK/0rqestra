@@ -3,6 +3,7 @@
 // (main/teams/teams-ipc.ts); this page never handles a token or a folder path it typed itself.
 // Solo projects work without any of this.
 import React, { useEffect, useState } from 'react';
+import { AccountForms } from './AccountWelcome.jsx';
 import { errorText, inviteLine, linkLine, localName, projectChoices, repoName, selectionMatches, signInTitle } from './teams-ui.mjs';
 
 function useAction(notify) {
@@ -14,31 +15,13 @@ function useAction(notify) {
   return [pending, run];
 }
 
-function SignIn({ api, view, notify, onView }) {
-  const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [pending, run] = useAction(notify);
-  if (view.status === 'code_sent') {
-    return (
-      <form className="provider-card teams-card" onSubmit={(e) => { e.preventDefault(); run(async () => { onView(await api.verifyCode(code)); setCode(''); }); }}>
-        <h2>Enter the code</h2>
-        <p className="provider-line">We sent a one-time code to <strong>{view.pendingEmail}</strong>. It can take a minute to arrive; check spam too.</p>
-        <label className="teams-field">Code<input inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" maxLength={12} required/></label>
-        <div className="setup-actions">
-          <button className="button primary-button" type="submit" disabled={pending || !code.trim()}>Sign in</button>
-          <button className="button" type="button" disabled={pending} onClick={() => run(async () => onView(await api.sendCode(view.pendingEmail)))}>Send a new code</button>
-          <button className="button" type="button" disabled={pending} onClick={() => run(async () => onView(await api.cancelCode()))}>Use another email</button>
-        </div>
-      </form>
-    );
-  }
+// Teams uses the 0rqestra account: signed out, the same create-account and sign-in forms show here.
+function SignIn({ api, view, onView }) {
   return (
-    <form className="provider-card teams-card" onSubmit={(e) => { e.preventDefault(); run(async () => onView(await api.sendCode(email))); }}>
-      <h2>Sign in to Teams</h2>
-      <p className="provider-line">Teams has its own account, separate from Claude Code and Codex. Enter your email and we send you a one-time code; there is no password.</p>
-      <label className="teams-field">Email<input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" maxLength={254} required/></label>
-      <div className="setup-actions"><button className="button primary-button" type="submit" disabled={pending || !email.trim()}>Send code</button></div>
-    </form>
+    <div className="provider-card teams-card">
+      <p className="provider-line">Teams needs your 0rqestra account. Sign in, or create one; there is no password, only a code by email.</p>
+      <AccountForms api={api} view={view} onView={onView} initialStep="sign_in"/>
+    </div>
   );
 }
 

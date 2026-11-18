@@ -26,7 +26,7 @@ export function PlanCard({ plan, assignments, startedRunId, busy, onStart, onTre
       </ol>
       <div className="plan-actions">
         {missing.length > 0 && <span className="plan-warning">Set an agent on Claude Code or Codex for: {missing.join(', ')}</span>}
-        {missing.length > 0 && <button type="button" className="shell-button" onClick={onTree}>Open worktree</button>}
+        {missing.length > 0 && <button type="button" className="shell-button" onClick={onTree}>Open team tree</button>}
         {startedRunId
           ? <span className="plan-started">Started — the team's progress is below.</span>
           : <button type="button" className="shell-button primary" disabled={busy || missing.length > 0} onClick={onStart}>Start</button>}

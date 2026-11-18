@@ -38,10 +38,10 @@ const PLANNING = [
 
 function teamSection(team: TeamMember[]): string {
   const working = team.filter((m) => m.ready);
-  const demo = team.filter((m) => !m.ready);
+  const notSetUp = team.filter((m) => !m.ready);
   const lines = ["Your team:"];
-  lines.push(working.length ? working.map((m) => `- ${m.role}: ${m.name} (can work)`).join("\n") : "- No agent can work yet; every agent in the tree is a demo agent.");
-  if (demo.length) lines.push(`Demo agents that cannot work yet: ${demo.map((m) => `${m.name} (${m.role})`).join(", ")}.`);
+  lines.push(working.length ? working.map((m) => `- ${m.role}: ${m.name} (can work)`).join("\n") : "- No agent can work yet; no agent in the tree runs on Claude Code or Codex.");
+  if (notSetUp.length) lines.push(`Agents without a tool, which cannot work yet: ${notSetUp.map((m) => `${m.name} (${m.role})`).join(", ")}.`);
   return lines.join("\n");
 }
 

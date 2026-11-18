@@ -207,3 +207,25 @@
 .team-ask-bar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
 .team-ask-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:5px 10px;border-radius:999px;border:1px solid var(--shell-line);background:var(--shell-card);color:var(--shell-text)}
 .team-ask-chip .status-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+/* 0rqestra account (AccountWelcome.jsx) */
+.account-screen{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;background:light-dark(#f7f7f7,#1f1f1f);overflow:auto}
+.account-card{width:min(460px,100%);background:var(--shell-card);border:1px solid var(--shell-line);border-radius:18px;padding:28px 28px 20px;display:flex;flex-direction:column;gap:14px;color:var(--shell-text);box-shadow:0 18px 50px #0000000f}
+.account-card-small{flex-direction:row;align-items:center;justify-content:center;gap:12px;width:auto;padding:18px 24px;font-size:13px;color:var(--shell-muted)}
+.account-brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px}
+.account-card h1{margin:4px 0 0;font-size:24px;font-weight:600;letter-spacing:-.4px}
+.account-card h2{margin:0;font-size:18px;font-weight:600}
+.account-lead{margin:0;font-size:13px;line-height:1.55;color:var(--shell-muted)}
+.account-choices,.account-actions{display:flex;flex-wrap:wrap;gap:8px}
+.account-choices .button{flex:1;justify-content:center;padding:10px 14px}
+.account-form{display:flex;flex-direction:column;gap:12px}
+.account-field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--shell-muted)}
+.account-field input{font-size:14px;padding:9px 11px;border-radius:9px;border:1px solid var(--shell-line);background:var(--shell-card);color:var(--shell-text)}
+.account-error{margin:0;padding:8px 10px;border-radius:8px;font-size:12.5px;line-height:1.5;background:light-dark(#fdf1f1,#2e1b1b);color:light-dark(#7a2121,#f2b8b8)}
+.account-notice{margin:0;padding:8px 10px;border-radius:8px;font-size:12.5px;line-height:1.5;background:light-dark(#fdf6ec,#33291a);color:light-dark(#8a5a12,#e8c27a)}
+.account-local{align-self:flex-start;padding:0;border:0;background:none;color:var(--shell-text);text-decoration:underline;font-size:12.5px}
+.account-footnote{margin:0;font-size:11px;line-height:1.5;color:var(--shell-muted)}
+.account-actions .primary-button,.account-choices .primary-button{color:light-dark(#ffffff,#303030)}
+/* No tool connected (Demo mode removed) */
+.node-no-tool-label{color:var(--shell-muted);font-size:10.5px;line-height:1.35}
+.node-no-tool{border-style:dashed}
+.composer-setup{display:flex;flex-wrap:wrap;align-items:center;gap:6px}

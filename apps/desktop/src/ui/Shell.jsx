@@ -46,7 +46,7 @@ function useDismiss(open, onClose, ref) {
   }, [open, onClose, ref]);
 }
 
-export function ProfileMenu({ name, version, updates, theme, onTheme, onSettings, onHelp }) {
+export function ProfileMenu({ name, version, updates, theme, onTheme, onSettings, onHelp, account = null, accountAvailable = false, onSignOut, onSignIn }) {
   const [open, setOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const ref = useRef(null);
@@ -59,7 +59,12 @@ export function ProfileMenu({ name, version, updates, theme, onTheme, onSettings
     <div className="profile" ref={ref}>
       {open && (
         <div className="profile-menu" role="menu" aria-label="Profile">
-          <div className="profile-menu-head"><strong>{name}</strong><span>Personal · on this device</span></div>
+          <div className="profile-menu-head">
+            {account ? <><strong>{account.name}</strong><span>{account.email}</span></> : <><strong>{name}</strong><span>{accountAvailable ? 'Not signed in · local projects only' : 'Personal · on this device'}</span></>}
+          </div>
+          {accountAvailable && (account
+            ? <button role="menuitem" className="profile-item" onClick={run(onSignOut)}><ShellIcon name="user"/> Sign out</button>
+            : <button role="menuitem" className="profile-item" onClick={run(onSignIn)}><ShellIcon name="user"/> Sign in or create account</button>)}
           <button role="menuitem" className="profile-item" onClick={run(() => onSettings('general'))}><ShellIcon name="settings"/> Settings</button>
           <div className="profile-separator"/>
           <button role="menuitem" className="profile-item" aria-expanded={themeOpen} onClick={() => setThemeOpen(!themeOpen)}><ShellIcon name={THEME_ICON[theme]}/> Appearance <span className="profile-value">{THEME_LABEL[theme]} <ShellIcon name="chevron" size={13}/></span></button>
@@ -77,8 +82,8 @@ export function ProfileMenu({ name, version, updates, theme, onTheme, onSettings
         </div>
       )}
       <button className={`profile-button ${open ? 'is-open' : ''}`} aria-haspopup="menu" aria-expanded={open} onClick={() => (open ? close() : setOpen(true))}>
-        <span className="profile-avatar">{(name.trim()[0] || '0').toUpperCase()}{ready && <i className="profile-dot" title="Update ready"/>}</span>
-        <span className="profile-text"><strong>{name}</strong><span>{ready ? 'Update ready' : 'Personal'}</span></span>
+        <span className="profile-avatar">{((account ? account.name : name).trim()[0] || '0').toUpperCase()}{ready && <i className="profile-dot" title="Update ready"/>}</span>
+        <span className="profile-text"><strong>{account ? account.name : name}</strong><span>{ready ? 'Update ready' : account ? account.email : 'Personal'}</span></span>
         <span className="profile-more" aria-hidden="true">···</span>
       </button>
     </div>
@@ -156,7 +161,8 @@ export function HelpDialog({ onClose }) {
           <ul>
             <li>Talk only to the <strong>Manager</strong> in the chat. It hands the work to the agents in your tree.</li>
             <li>Open the tree to shape your team. <strong>+</strong> beside an agent adds a connected agent below it.</li>
-            <li>Questions and approvals from the team arrive in the <strong>Manager inbox</strong>.</li>
+            <li>Connect <strong>Claude Code</strong> or <strong>Codex</strong> under AI accounts, then choose it for your Manager below the message box.</li>
+            <li>When the Manager proposes a plan, nothing runs until you press <strong>Start</strong>. The team's progress shows in the chat.</li>
           </ul>
           <h3>Keyboard</h3>
           <dl className="help-keys">

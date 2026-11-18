@@ -88,7 +88,7 @@ describe("prompt", () => {
     const prompt = buildPrompt([], "build me an app", [{ name: "Code builder", role: "Builder", ready: true }, { name: "The architect", role: "Planner", ready: false }]);
     expect(prompt).toContain("<orqestra-plan>");
     expect(prompt).toContain("- Builder: Code builder (can work)");
-    expect(prompt).toContain("Demo agents that cannot work yet: The architect (Planner).");
+    expect(prompt).toContain("Agents without a tool, which cannot work yet: The architect (Planner).");
   });
 
   it("drops the oldest turns when the history is too long", () => {

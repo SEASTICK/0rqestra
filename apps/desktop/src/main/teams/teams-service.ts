@@ -18,6 +18,9 @@ const REFRESH_MARGIN_MS = 60_000;
 const SELECTION_TTL_MS = 30 * 60_000;
 
 export type TeamsStatus = "unconfigured" | "signed_out" | "code_sent" | "signed_in";
+// The 0rqestra account flow: create an account, or sign in to an existing one (never creates one).
+export type CodeMode = "register" | "sign_in";
+export const RESEND_COOLDOWN_MS = 60_000;
 
 export interface MemberView { userId: string; email: string; role: "owner" | "member"; isYou: boolean }
 export interface InviteView { id: string; email: string; expiresAt: string; state: "pending" | "used" | "revoked" | "expired" }
@@ -50,7 +53,14 @@ export interface TeamsView {
   configProblem: string | null;
   server: string | null;
   email: string | null;
+  // The account's display name (from its profile), or null if it never set one.
+  displayName: string | null;
   pendingEmail: string | null;
+  pendingMode: CodeMode | null;
+  // When another code may be requested (ms since the epoch); 0 when it may be now.
+  resendAt: number;
+  // Set when Supabase ended the session (expired or revoked): the user is asked to sign in again.
+  sessionEnded: string | null;
   // False when this computer cannot encrypt the session: it then ends when the app quits.
   rememberSession: boolean;
   teams: TeamView[];
@@ -154,6 +164,10 @@ export interface TeamsDeps {
 export class TeamsService {
   private session: AuthSession | null = null;
   private pendingEmail: string | null = null;
+  private pendingMode: CodeMode | null = null;
+  private pendingName: string | null = null;
+  private resendAt = 0;
+  private sessionEnded: string | null = null;
   private teams: TeamView[] = [];
   private loadProblem: string | null = null;
   private refreshing: Promise<AuthSession> | null = null;
@@ -200,7 +214,11 @@ export class TeamsService {
       configProblem: c.ok ? null : c.problem,
       server: config?.url ?? null,
       email: this.session?.user.email ?? null,
+      displayName: this.session?.user.displayName ?? null,
       pendingEmail: this.pendingEmail,
+      pendingMode: this.pendingEmail ? this.pendingMode : null,
+      resendAt: this.resendAt > this.now() ? this.resendAt : 0,
+      sessionEnded: this.session ? null : this.sessionEnded,
       rememberSession: this.deps.sessions.canPersist(),
       teams: status === "signed_in" ? this.teams : [],
       loadProblem: status === "signed_in" ? this.loadProblem : null,
@@ -397,15 +415,35 @@ export class TeamsService {
 
   // ---- Sign-in ------------------------------------------------------------------------------
 
-  async sendCode(raw: unknown): Promise<TeamsView> {
+  // Sends a one-time code. "sign_in" (the default) never creates an account; "register" creates one
+  // with the display name in its profile.
+  async sendCode(raw: unknown, rawOptions?: unknown): Promise<TeamsView> {
     const email = typeof raw === "string" ? raw.trim().toLowerCase() : "";
     if (!EMAIL.test(email) || email.length > 254) throw new Error(MESSAGES.invalid_email);
+    const o = (rawOptions ?? {}) as Record<string, unknown>;
+    const mode: CodeMode = o.mode === "register" ? "register" : "sign_in";
+    // A resend for the same new account keeps the display name given the first time.
+    const given = typeof o.displayName === "string" ? o.displayName.replace(/\s+/g, " ").trim() : "";
+    const name = given || (mode === "register" && email === this.pendingEmail ? (this.pendingName ?? "") : "");
+    if (mode === "register" && (name.length < 1 || name.length > 60)) throw new Error("Enter a display name of 1 to 60 characters.");
+    if (email === this.pendingEmail && this.resendAt > this.now()) {
+      throw new Error(`You can ask for a new code in ${Math.ceil((this.resendAt - this.now()) / 1000)} seconds.`);
+    }
     try {
-      await this.api().sendCode(email);
+      await this.api().sendCode(email, { createUser: mode === "register", ...(mode === "register" ? { displayName: name } : {}) });
     } catch (error) {
-      throw new Error(friendlyError(error), { cause: error });
+      // Supabase's own wait ("…only request this after 42 seconds") becomes the cooldown.
+      const wait = error instanceof SupabaseError ? /after (\d+) seconds?/i.exec(error.message) : null;
+      if (wait) this.resendAt = this.now() + Number(wait[1]) * 1000;
+      if (error instanceof SupabaseError && (error.code === "otp_disabled" || /signups not allowed/i.test(error.message))) {
+        throw new Error(`There is no 0rqestra account for ${email}. Choose Create account to make one.`, { cause: error });
+      }
+      throw new Error(wait ? `You can ask for a new code in ${wait[1]} seconds.` : friendlyError(error), { cause: error });
     }
     this.pendingEmail = email;
+    this.pendingMode = mode;
+    this.pendingName = mode === "register" ? name : null;
+    this.resendAt = this.now() + RESEND_COOLDOWN_MS;
     return this.changed();
   }
 
@@ -419,15 +457,36 @@ export class TeamsService {
     } catch (error) {
       throw new Error(friendlyError(error), { cause: error });
     }
+    // A new account gets its display name in its profile (also when the address already existed).
+    if (this.pendingMode === "register" && this.pendingName) {
+      try {
+        await this.api().setDisplayName(session.accessToken, this.pendingName);
+        session = { ...session, user: { ...session.user, displayName: this.pendingName } };
+      } catch {
+        /* the account works without it; the name can be set again later */
+      }
+    }
+    // Another account's teams, presence and briefs must not remain in the view.
+    this.teams = [];
+    this.presence = {};
+    this.briefsAt = {};
+    this.loadProblem = null;
+    this.createdInvites.clear();
     this.setSession(session);
     this.pendingEmail = null;
-    this.teams = [];
+    this.pendingMode = null;
+    this.pendingName = null;
+    this.resendAt = 0;
+    this.sessionEnded = null;
     await this.load();
     return this.changed();
   }
 
   cancelCode(): TeamsView {
     this.pendingEmail = null;
+    this.pendingMode = null;
+    this.pendingName = null;
+    this.resendAt = 0;
     return this.changed();
   }
 
@@ -435,6 +494,7 @@ export class TeamsService {
     this.restore();
     const s = this.session;
     this.clearSession();
+    this.sessionEnded = null;
     if (s) {
       // The local session is gone either way; telling the server is best effort.
       try {
@@ -471,15 +531,17 @@ export class TeamsService {
       this.refreshing = this.api()
         .refresh(s.refreshToken)
         .then((next) => {
-          this.setSession(next);
-          return next;
+          const kept = next.user.displayName ? next : { ...next, user: { ...next.user, displayName: s.user.displayName } };
+          this.setSession(kept);
+          return kept;
         })
         .catch((error: unknown) => {
           // A refused refresh token means the session is over; a network problem does not.
           if (error instanceof SupabaseError && error.status >= 400 && error.status < 500) {
             this.clearSession();
+            this.sessionEnded = "Your 0rqestra session has ended. Sign in again to use your account and Teams.";
             this.changed();
-            throw new Error("Your Teams session has ended. Sign in again.", { cause: error });
+            throw new Error("Your 0rqestra session has ended. Sign in again.", { cause: error });
           }
           throw error;
         })

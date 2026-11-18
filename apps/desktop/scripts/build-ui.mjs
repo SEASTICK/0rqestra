@@ -41,8 +41,6 @@ for (const name of ['react', 'react-dom', 'react-dom-client', 'scheduler']) {
   modules[name] = fs.readFileSync(path.join(vendor, `${name}.js`), 'utf8');
 }
 modules.app = compile('App.jsx', jsx);
-modules.taskUI = compile('TaskPanels.jsx', jsx);
-modules.simulatedProviders = compile('SimulatedProviders.jsx', jsx);
 modules.updateUI = compile('UpdateDialog.jsx', jsx);
 modules.shell = compile('Shell.jsx', jsx);
 modules.theme = compile('theme.mjs', plain);
@@ -51,23 +49,22 @@ modules.liveChatUI = compile('LiveChat.jsx', jsx);
 modules.liveChat = compile('live-chat.mjs', plain);
 modules.agentRuntime = compile('AgentRuntime.jsx', jsx);
 modules.teamRun = compile('TeamRun.jsx', jsx);
-modules.allowance = compile('allowance.mjs', plain);
-modules.demo = compile('demo-run.mjs', plain);
 modules.camera = compile('camera.mjs', plain);
 modules.treeRules = compile('tree-rules.mjs', plain);
 modules.updateGate = compile('update-gate.mjs', plain);
 modules.storageKeys = compile('storage-keys.mjs', plain);
-modules.workflow = compile('task-workflow.mjs', plain);
 modules.accountsUI = compile('AccountsSetup.jsx', jsx);
 modules.accountSetup = compile('account-setup.mjs', plain);
 modules.teamsUI = compile('TeamsPage.jsx', jsx);
 modules.teamsText = compile('teams-ui.mjs', plain);
 modules.teamBridge = compile('TeamBridge.jsx', jsx);
 modules.teamCatchUp = compile('team-catchup.mjs', plain);
+modules.migrateDemo = compile('migrate-demo.mjs', plain);
+modules.accountWelcome = compile('AccountWelcome.jsx', jsx);
+modules.accountUI = compile('account-ui.mjs', plain);
 
 const aliases = {
-  './SimulatedProviders.jsx': 'simulatedProviders', './UpdateDialog.jsx': 'updateUI', './TaskPanels.jsx': 'taskUI', './task-workflow.mjs': 'workflow',
-  './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './storage-keys.mjs': 'storageKeys', './Shell.jsx': 'shell', './theme.mjs': 'theme', './launch.mjs': 'launch', './LiveChat.jsx': 'liveChatUI', './live-chat.mjs': 'liveChat', './AgentRuntime.jsx': 'agentRuntime', './TeamRun.jsx': 'teamRun', './demo-run.mjs': 'demo', './allowance.mjs': 'allowance', './AccountsSetup.jsx': 'accountsUI', './account-setup.mjs': 'accountSetup', './TeamsPage.jsx': 'teamsUI', './teams-ui.mjs': 'teamsText', './TeamBridge.jsx': 'teamBridge', './team-catchup.mjs': 'teamCatchUp', 'react-dom/client': 'react-dom-client',
+  './UpdateDialog.jsx': 'updateUI', './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './storage-keys.mjs': 'storageKeys', './Shell.jsx': 'shell', './theme.mjs': 'theme', './launch.mjs': 'launch', './LiveChat.jsx': 'liveChatUI', './live-chat.mjs': 'liveChat', './AgentRuntime.jsx': 'agentRuntime', './TeamRun.jsx': 'teamRun', './AccountsSetup.jsx': 'accountsUI', './account-setup.mjs': 'accountSetup', './TeamsPage.jsx': 'teamsUI', './teams-ui.mjs': 'teamsText', './TeamBridge.jsx': 'teamBridge', './team-catchup.mjs': 'teamCatchUp', './migrate-demo.mjs': 'migrateDemo', './AccountWelcome.jsx': 'accountWelcome', './account-ui.mjs': 'accountUI', 'react-dom/client': 'react-dom-client',
   'next/dist/compiled/react': 'react', 'next/dist/compiled/react-dom': 'react-dom', 'next/dist/compiled/scheduler': 'scheduler',
 };
 // Every local import must resolve inside the bundle. A missing entry above compiles fine but throws
