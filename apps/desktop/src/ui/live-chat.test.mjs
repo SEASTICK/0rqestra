@@ -195,3 +195,41 @@ describe('plans and team runs', () => {
     expect(settleTeamRun({ ...run, status: 'running' })).toMatchObject({ status: 'stopped', tasks: [{ status: 'done' }, { status: 'stopped' }] });
   });
 });
+
+import { autoTeam, teamNeedsSetup } from './live-chat.mjs';
+
+describe('setting up the team', () => {
+  const demoGraph = { nodes: [
+    { id: 'm', name: 'Project manager', role: 'Manager', provider: 'OpenAI', model: 'Codex (demo)' },
+    { id: 'p', name: 'The architect', role: 'Planner', provider: 'Anthropic', model: 'Claude (demo)' },
+    { id: 'b', name: 'Code builder', role: 'Builder', provider: 'OpenAI', model: 'Codex (demo)' },
+    { id: 'r', name: 'A fresh pair of eyes', role: 'Code Reviewer', provider: 'Google', model: 'Gemini (demo)' },
+  ], edges: [] };
+
+  it('puts builders on one tool and reviewers on the other, and the Manager on Claude Code', () => {
+    const { graph, changed } = autoTeam(demoGraph, [claude, codex]);
+    const tool = (id) => graph.nodes.find((n) => n.id === id).agent.tool;
+    expect([tool('m'), tool('p'), tool('b'), tool('r')]).toEqual(['claude', 'codex', 'codex', 'claude']);
+    expect(graph.nodes.find((n) => n.id === 'b')).toMatchObject({ provider: 'Codex', model: 'GPT-6.1 Sol', agent: { model: 'gpt-6.1-sol', effort: null } });
+    expect(changed.map((c) => c.id)).toEqual(['m', 'p', 'b', 'r']);
+  });
+
+  it('uses the one tool for everyone when only one is connected', () => {
+    const { graph } = autoTeam(demoGraph, [codex]);
+    expect(graph.nodes.every((n) => n.agent.tool === 'codex')).toBe(true);
+  });
+
+  it('keeps agents the user already set, and does nothing without a connected tool', () => {
+    const custom = { ...demoGraph, nodes: demoGraph.nodes.map((n) => (n.id === 'b' ? { ...n, provider: 'Claude Code', model: 'Opus', agent: { tool: 'claude', model: 'opus', effort: null } } : n)) };
+    const { graph, changed } = autoTeam(custom, [claude, codex]);
+    expect(graph.nodes.find((n) => n.id === 'b').agent).toEqual({ tool: 'claude', model: 'opus', effort: null });
+    expect(changed.map((c) => c.id)).not.toContain('b');
+    expect(autoTeam(demoGraph, [])).toEqual({ graph: demoGraph, changed: [] });
+  });
+
+  it('asks for setup only when tools are connected and no agent can work', () => {
+    expect(teamNeedsSetup(demoGraph, [codex])).toBe(true);
+    expect(teamNeedsSetup(demoGraph, [])).toBe(false);
+    expect(teamNeedsSetup(autoTeam(demoGraph, [codex]).graph, [codex])).toBe(false);
+  });
+});

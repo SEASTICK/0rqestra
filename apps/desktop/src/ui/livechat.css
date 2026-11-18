@@ -139,3 +139,7 @@
 .setup-demo strong{color:var(--shell-text);font-weight:500}
 .setup-demo span{flex:1;min-width:240px}
 .setup-actions .primary-button{color:light-dark(#ffffff,#303030)}
+
+/* Shown above the message box while every agent is still a demo agent. */
+.team-setup-banner{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 10px;padding:11px 14px;border:1px solid light-dark(#d9e3f7,#2b3a55);background:light-dark(#f3f7ff,#1b2433);border-radius:12px;font-size:13px;color:var(--shell-text)}
+.team-setup-banner strong{font-weight:600}

@@ -270,3 +270,36 @@ export function settleTeamRun(run) {
   if (!run || run.status !== 'running') return run;
   return { ...run, status: 'stopped', summary: 'The app closed while the team was working. Files already written stay in the project folder.', tasks: run.tasks.map((t) => (['waiting', 'working', 'reviewing'].includes(t.status) ? { ...t, status: 'stopped' } : t)) };
 }
+
+// ---- Setting up the team in one step -----------------------------------------------------------
+// Connects the agents that are still demo agents to the tools that are signed in with a subscription.
+// Builders and the Manager go on the first tool; reviewers go on another tool when there is one, so
+// work is checked by a different provider. Agents the user already set to a real tool are kept.
+
+const TOOL_ORDER = ['codex', 'claude', 'gemini'];
+const CHECKING_ROLES = ['Code Reviewer', 'Security Reviewer', 'Reviewer', 'Tester'];
+
+export function firstModel(status) {
+  const models = status?.models || [];
+  return (models.find((m) => m.isDefault) || models[0] || null)?.id ?? null;
+}
+
+export function autoTeam(graph, statuses) {
+  const ready = readyProviders(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
+  if (!ready.length) return { graph, changed: [] };
+  const main = ready[0];
+  const other = ready[1] || ready[0];
+  const changed = [];
+  const nodes = (graph?.nodes || []).map((n) => {
+    if (isRealAgent(n)) return n;
+    const status = n.role !== 'Manager' && CHECKING_ROLES.includes(n.role) ? other : n.role === 'Manager' ? (ready.find((t) => t.provider === 'claude') || main) : main;
+    changed.push({ id: n.id, name: n.name, tool: status.name });
+    return { ...n, ...nodeFieldsFor({ provider: status.provider, model: firstModel(status), effort: null }, status) };
+  });
+  return { graph: { ...graph, nodes }, changed };
+}
+
+// True when the Manager could answer but no agent in the tree can work yet.
+export function teamNeedsSetup(graph, statuses) {
+  return readyProviders(statuses).length > 0 && (graph?.nodes || []).some((n) => n.role !== 'Manager') && teamAgents(graph).length === 0;
+}
