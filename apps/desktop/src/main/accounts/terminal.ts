@@ -8,7 +8,8 @@ import type { TerminalRequest } from "./accounts-service";
 // command in it. The commands are constants from commands.ts; the window supplies only a provider id.
 
 export function windowsPowerShell(env: NodeJS.ProcessEnv = process.env): string {
-  return path.join(env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  // Always a Windows path, also when the tests run on macOS or Linux.
+  return path.win32.join(env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
 
 // PowerShell's -EncodedCommand: base64 of UTF-16LE. No quoting rules apply to it on any command line.
@@ -87,7 +88,7 @@ export function windowsTerminalArgs(request: TerminalRequest, env: NodeJS.Proces
 export function openTerminalWindow(request: TerminalRequest, env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform, tmpDir = os.tmpdir()): boolean {
   try {
     if (platform === "win32") {
-      const cmd = path.join(env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe");
+      const cmd = path.win32.join(env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe");
       const child = spawn(cmd, windowsTerminalArgs(request, env), { env, cwd: os.homedir(), stdio: "ignore", windowsHide: true, windowsVerbatimArguments: true, detached: true });
       child.on("error", () => undefined);
       child.unref();

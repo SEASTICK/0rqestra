@@ -26,7 +26,7 @@ export function expandWindowsVars(value: string, env: NodeJS.ProcessEnv): string
 // Reads one registry value with Windows' own reg.exe (by full path, so nothing on PATH can stand in).
 export const readRegistryPath: RegistryReader = (key) =>
   new Promise((resolve) => {
-    const reg = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "reg.exe");
+    const reg = path.win32.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "reg.exe");
     execFile(reg, ["query", key, "/v", "Path"], { windowsHide: true, timeout: 5000 }, (error, stdout) => {
       resolve(error ? null : parseRegQuery(String(stdout)));
     });
