@@ -218,7 +218,7 @@ export class TeamRun {
     const unverified = all.filter((s) => s === "unverified").length;
     const parts = [`${done + unverified} of ${plan.tasks.length} tasks finished`];
     if (unverified) parts.push(`${unverified} not reviewed`);
-    if (failure) parts.push(failure);
+    if (failure) parts.push(String(failure).replace(/[.\s]+$/, ""));
     return this.finish(ok ? "done" : "failed", `${parts.join(". ")}.`);
   }
 

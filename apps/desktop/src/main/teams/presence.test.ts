@@ -279,3 +279,23 @@ describe("brief changes over the private briefs channel", () => {
     expect(changed).toEqual([P, P, P]);
   });
 });
+
+describe("team membership changes", () => {
+  it("asks to read the team again when someone joins or leaves", async () => {
+    const changed: string[] = [];
+    const h = harness();
+    (h.hub as unknown as { deps: { onTeamChanged: (p: string) => void } }).deps.onTeamChanged = (p) => changed.push(p);
+    h.hub.setTargets([{ projectId: P, selfId: ME, memberIds: [ME] }]);
+    const s = h.sockets[0]!;
+    s.onopen?.();
+    await h.flush();
+    s.acceptJoins();
+    const topic = `realtime:teams:${P}:briefs`;
+    s.serverSends({ topic, event: "broadcast", payload: { type: "broadcast", event: "team_changed", payload: { team_id: "t" } }, ref: null });
+    expect(changed).toEqual([P]);
+    // A new member then gets their own presence channel as soon as the targets include them.
+    h.hub.setTargets([{ projectId: P, selfId: ME, memberIds: [ME, ANN] }]);
+    await h.flush();
+    expect(s.joins().some((j) => j.topic === `realtime:${presenceTopic(P, ANN)}`)).toBe(true);
+  });
+});

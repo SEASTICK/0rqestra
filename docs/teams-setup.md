@@ -33,7 +33,8 @@ supabase db push
 ```
 
 `db push` applies the files in `supabase/migrations/` in order (`…_teams_phase1.sql`,
-`…_teams_fk_indexes.sql`, `…_teams_presence.sql`, `…_teams_run_briefs.sql`, `…_teams_catch_up.sql`).
+`…_teams_fk_indexes.sql`, `…_teams_presence.sql`, `…_teams_run_briefs.sql`, `…_teams_catch_up.sql`,
+`…_teams_reservations.sql`, `…_teams_membership_changes.sql`).
 Without the CLI, paste each file into the dashboard's SQL Editor and run it once, in that order.
 
 The team's test project already has all of them applied (2026-11-18). The local file names carry

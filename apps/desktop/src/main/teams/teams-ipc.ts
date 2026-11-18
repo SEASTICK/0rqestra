@@ -7,6 +7,7 @@ import type { Plan } from "../team/plan";
 import type { TeamEvent } from "../team/runner";
 import { ActivityMonitor } from "./activity";
 import { BriefPublisher, fileOutbox } from "./briefs";
+import { CatchUpLog, parseKept } from "./catch-up-log";
 import { ReservationCoordinator, type Gate } from "./reservations";
 import { gitRunner } from "./git-checkout";
 import { PresenceHub, type PresenceTarget, type SocketLike } from "./presence";
@@ -69,6 +70,7 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
         if (Object.values(snapshot).some((p) => p.connection === "live")) void publisher.flush();
       },
       onBriefs: (projectId) => void service.refreshBriefs(projectId),
+      onTeamChanged: () => void service.refresh(),
     });
     hub.setActive(activity.isActive());
     return hub;
@@ -190,6 +192,17 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
     guard(event);
     return service.markSeen(projectId, items);
   });
+  // Catch-up messages are written to disk here before they are marked seen (see catch-up-log.ts).
+  const catchUps = new CatchUpLog(path.join(dir(), "catch-up.json"));
+  ipcMain.handle("teams:keep-catch-up", (event, localProjectId: unknown, message: unknown) => {
+    guard(event);
+    catchUps.keep(parseKept(localProjectId, message));
+    return true;
+  });
+  ipcMain.handle("teams:kept-catch-ups", (event) => {
+    guard(event);
+    return catchUps.all();
+  });
   ipcMain.handle("teams:teammate-work", (event, projectId: unknown, userId: unknown) => {
     guard(event);
     return service.teammateWork(projectId, userId);
@@ -211,9 +224,10 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
   });
   // Keep the Realtime channels authorized as the session token is renewed.
   const tokenTimer = setInterval(() => void hub?.refreshToken(), 4 * 60_000);
-  // A safety net for briefs: re-read them once a minute, in case a change broadcast was missed.
+  // A safety net: re-read the teams (members, briefs, reservations) once a minute, in case a change
+  // broadcast was missed.
   const briefsTimer = setInterval(() => {
-    if (service.currentUserId()) void service.refreshBriefs();
+    if (service.currentUserId()) void service.refresh();
   }, 60_000);
   app.on("before-quit", () => {
     clearInterval(tokenTimer);

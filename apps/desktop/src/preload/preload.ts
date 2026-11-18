@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld("orqestra", {
     openCheckout: (sharedProjectId: string) => ipcRenderer.invoke("teams:open-checkout", String(sharedProjectId)),
     catchUp: (sharedProjectId: string) => ipcRenderer.invoke("teams:catch-up", String(sharedProjectId)),
     markSeen: (sharedProjectId: string, items: unknown) => ipcRenderer.invoke("teams:mark-seen", String(sharedProjectId), items),
+    keepCatchUp: (localProjectId: string, message: unknown) => ipcRenderer.invoke("teams:keep-catch-up", String(localProjectId), message),
+    keptCatchUps: () => ipcRenderer.invoke("teams:kept-catch-ups"),
     teammateWork: (sharedProjectId: string, userId: string) => ipcRenderer.invoke("teams:teammate-work", String(sharedProjectId), String(userId)),
     subscribe: (listener: (message: unknown) => void) => {
       ipcRenderer.removeAllListeners("teams:event");

@@ -203,11 +203,17 @@ function App() {
       if(sp.link?.state!=='linked')continue;const local=projectsRef.current.find(p=>p.id===sp.link.localProjectId);if(!local)continue;
       const key=`${me}:${sp.id}`;if(!catchUpDue(c,key,teamsView.presence?.[sp.id]?.connection==='live'))continue;
       c.inflight.add(key);
-      api.catchUp(sp.id).then(r=>{if(!r?.ok)return;c.checked.add(key);if(!r.items.length)return;
+      (async()=>{
+        // Catch-ups kept on disk that this chat lost (for example after a crash) come back first.
+        if(typeof api.keptCatchUps==='function'&&!c.restored?.has(key)){(c.restored||(c.restored=new Set())).add(key);try{const kept=await api.keptCatchUps();for(const k of kept||[])if(k.localProjectId===local.id&&k.message?.sharedProjectId===sp.id)setProjects(ps=>ps.map(p=>p.id!==local.id?p:{...p,messages:withCatchUp(p.messages,k.message)}));}catch{/* nothing kept */}}
+        const r=await api.catchUp(sp.id);if(!r?.ok)return;c.checked.add(key);if(!r.items.length)return;
         const msg=catchUpMessage(sp.id,sp.name,r.items);
         setProjects(ps=>ps.map(p=>p.id!==local.id?p:{...p,messages:withCatchUp(p.messages,msg)}));
+        // Marked seen only once the message is safely on disk; otherwise it stays eligible.
+        let kept=typeof api.keepCatchUp!=='function';try{if(!kept)kept=await api.keepCatchUp(local.id,msg);}catch{kept=false;}
+        if(!kept)return;
         c.pending.set(msg.id,{userId:me,sharedProjectId:sp.id,localId:local.id,items:r.items.map(i=>({id:i.id,seq:i.seq}))});setCatchUpTick(t=>t+1);
-      }).catch(()=>{}).finally(()=>c.inflight.delete(key));
+      })().catch(()=>{}).finally(()=>c.inflight.delete(key));
     }
   },[teamsView]);
   useEffect(()=>{const api=window.orqestra?.teams;if(typeof api?.markSeen!=='function'||!saved||teamsView?.status!=='signed_in')return;const c=catchUp.current;

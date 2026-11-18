@@ -50,6 +50,8 @@ export interface PresenceDeps {
   // A project's briefs may have changed: a "brief_changed" broadcast arrived, or the briefs channel
   // was (re)joined after a connection loss, so missed changes must be read again (phase 3).
   onBriefs?: (projectId: string) => void;
+  // Someone joined or left the team: read the team again (new members' status and Managers).
+  onTeamChanged?: (projectId: string) => void;
   // A random id per app session; several sessions of one person each publish their own entry.
   sessionKey: string;
   setTimer?: (fn: () => void, ms: number) => Timer;
@@ -393,6 +395,7 @@ export class PresenceHub {
         break;
       case "broadcast":
         if (ch.kind === "briefs" && (payload.event === "brief_changed" || payload.event === "reservation_changed")) this.deps.onBriefs?.(ch.projectId);
+        if (ch.kind === "briefs" && payload.event === "team_changed") this.deps.onTeamChanged?.(ch.projectId);
         return;
       case "presence_diff": {
         if (ch.kind !== "presence") return;

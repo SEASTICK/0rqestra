@@ -219,6 +219,8 @@ describe("coordinated writes (Teams phase 5)", () => {
     expect(fs.existsSync(path.join(dir, "css", "style.css"))).toBe(false);
     expect(finished.status).toBe("failed");
     expect(finished.summary).toMatch(/ann reserves css/);
+    // One full stop at the end, even when the failure message already ends with one.
+    expect(finished.summary).not.toMatch(/\.\.$/);
   });
 
   it("never writes through a Windows junction or a link created inside the workspace", () => {
