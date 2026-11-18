@@ -7,6 +7,7 @@ import { registerUpdateIpc, startUpdater } from "./update";
 import { createAdapters, registerChatIpc } from "./chat-ipc";
 import { registerTeamIpc } from "./team/team-ipc";
 import { registerAccountsIpc } from "./accounts/accounts-ipc";
+import { handlePreviewScheme, isPreviewUrl, registerPreviewScheme } from "./preview/preview-protocol";
 import {
   createSmokeOutcome,
   errorMessage,
@@ -65,6 +66,7 @@ function onStartupFailure(error: unknown): void {
 }
 
 app.enableSandbox();
+registerPreviewScheme();
 
 app.on("web-contents-created", (_event, contents) => {
   contents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -72,6 +74,10 @@ app.on("web-contents-created", (_event, contents) => {
     if (!isRendererUrl(url)) event.preventDefault();
   });
   contents.on("will-attach-webview", (event) => event.preventDefault());
+  // A frame inside the window may only show a project's preview (see preview/products.ts).
+  contents.on("will-frame-navigate", (event) => {
+    if (!event.isMainFrame && !isPreviewUrl(event.url)) event.preventDefault();
+  });
 });
 
 ipcMain.handle("app:get-info", (event) => {
@@ -98,6 +104,7 @@ if (!smoke) {
 function createMainWindow(): void {
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
+  handlePreviewScheme();
 
   // No File/Edit/View menu bar on Windows and Linux. (macOS needs its system menu; see update/index.ts.)
   if (process.platform !== "darwin") Menu.setApplicationMenu(null);

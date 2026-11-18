@@ -29,11 +29,19 @@ export const PLAN_FORMAT = [
   "</orqestra-plan>",
 ].join("\n");
 
+// The app previews web products in an isolated frame that can load only the product's own files.
+export const WEB_RULES = [
+  "A web page or web app is a product the user can preview in the app: give it an index.html (in its own folder when the",
+  "project has several products), plain HTML, CSS and JavaScript with relative links, and no build step. It cannot load",
+  "anything from the internet (no CDNs, web fonts or APIs), so everything it needs must be in its own files.",
+].join("\n");
+
 export const PLAN_RULES = [
   "Rules for a plan: use only roles of agents that can work (listed below), never the Manager; 1 to 8 tasks; every file",
   "in deliverables belongs to exactly one task; use plain relative file names such as index.html or src/app.js; do not add",
   "review tasks, since reviews happen automatically; write each task's goal so an agent can do it without asking.",
   "To change a file that already exists, make it a deliverable and name it in the task's goal; the agent gets its content.",
+  WEB_RULES,
 ].join("\n");
 
 const PLANNING = [

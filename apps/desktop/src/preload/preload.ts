@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld("orqestra", {
     stopPlan: (requestId: string) => ipcRenderer.invoke("team:plan-stop", String(requestId)),
     stop: (runId: string) => ipcRenderer.invoke("team:stop", String(runId)),
     openFolder: (projectId: string) => ipcRenderer.invoke("team:open-folder", String(projectId)),
+    products: (projectId: string) => ipcRenderer.invoke("team:products", String(projectId)),
     subscribe: (listener: (message: unknown) => void) => {
       ipcRenderer.removeAllListeners("team:event");
       ipcRenderer.on("team:event", (_event, message: unknown) => listener(message));

@@ -1,4 +1,5 @@
 import type { Plan, PlanTask } from "./plan";
+import { WEB_RULES } from "../providers/history";
 
 // What the agents are asked, and how their answers are read. Agents have no tools, so they hand over
 // files as text in a fixed form, and the main process writes them.
@@ -31,6 +32,7 @@ export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, contex
       "the complete file content",
       "</orqestra-file>",
       "Use exactly the file names listed above, and no other files.",
+      WEB_RULES,
     ].join("\n"),
   );
   return parts.join("\n\n");

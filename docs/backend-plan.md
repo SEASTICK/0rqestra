@@ -236,7 +236,7 @@ The port of the Python engine's core, in TypeScript.
   for quality, usage, and time. If it does not win, we say so and keep it manual.
 - **Done when:** the evaluation exists and the result is written down, whichever way it goes.
 
-### Phase 5b — Products in the tree, with live previews (Claude, L; not a priority yet)
+### Phase 5b — Products in the tree, with live previews (Claude, L)
 The user's idea (2026-11-17), inspired by Lovable's preview window, but built for many products at once.
 - **A product is its own branch in the tree**: for example "Web app", "Landing page", "API". The agents
   that work on it (design, code, test) are connected to that product node, so it is visible which
@@ -251,6 +251,28 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   can only load the product's own local address.
 - **Done when:** a request for a small web app shows a product node with a preview, and the preview
   changes while a Builder agent works on it.
+
+**Status 2026-11-18: first release built, for web pages.** What exists:
+- The main process finds the products in the project's folder: each folder with an `index.html` (or
+  else the shallowest `.html` file) is a web product, named after the page's title.
+- Each product is a node in the tree, the same size as an agent, with a small live picture of the page.
+  It is linked with dotted lines to the agents that wrote or reviewed its files, and placed under them.
+  While the team works on it, it shows "Building".
+- Clicking the node opens the live preview beside the chat (desktop or phone size, reload, open folder,
+  back to the tree). The preview reloads when the team writes files, and when the window gets focus
+  after the files changed. A finished run card has an "Open preview" button.
+- Agents are told how to build a web product that the preview can show: an `index.html`, plain HTML,
+  CSS and JavaScript with relative links, and nothing from the internet.
+- Security: see docs/architecture.md §4. The agents' code runs only as web code in an isolated frame,
+  with no Node.js, no network and no keys. **No sandbox for server code yet** (phase 7): products that
+  need a server, a build step or packages are not previewed.
+- Verified: unit tests (finding products, serving files, refusing paths out of the folder and links),
+  and the real Electron app with its OS sandbox: the node, the links, the preview, the phone size,
+  storage in the page, a file change showing in the open preview, and that the page cannot read the
+  window, use `window.orqestra`, reach the network, or navigate away. **Not verified:** a real run with
+  Claude Code and Codex building a product while the preview updates.
+- Not yet: the Manager creating and naming product nodes itself, moving product nodes by hand,
+  several previews side by side, and products other than web pages.
 
 ### Phase 6 — Supabase (Claude builds, Philip creates the project, L)
 - **Accounts** (sign-in), and the tables for projects, messages, runs, tasks, events, and agent

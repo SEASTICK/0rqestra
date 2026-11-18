@@ -35,7 +35,7 @@ export function PlanCard({ plan, assignments, startedRunId, busy, onStart, onTre
   );
 }
 
-export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan }) {
+export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPreview }) {
   const running = run.status === 'running';
   const tokens = run.usage && (run.usage.inputTokens || run.usage.outputTokens) ? ` · ${run.usage.inputTokens} in · ${run.usage.outputTokens} out tokens` : '';
   return (
@@ -65,6 +65,7 @@ export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan }) {
         <span className="team-actions">
           {running && <button type="button" className="shell-button" onClick={onStop}>Stop</button>}
           {run.status === 'failed' && onReplan && <button type="button" className="shell-button primary" onClick={onReplan}>Ask the Manager to fix it</button>}
+          {onPreview ? <button type="button" className="shell-button primary" onClick={onPreview}>Open preview</button> : null}
           {run.files.length > 0 || run.tasks.some((t) => t.files.length) ? <button type="button" className="shell-button" onClick={onOpenFolder}>Open project folder</button> : null}
         </span>
       </div>

@@ -14,7 +14,7 @@ export function projectWorkspace(base: string, projectId: string): string {
   return dir;
 }
 
-function inside(root: string, rel: string): string {
+export function inside(root: string, rel: string): string {
   const safe = safeRelativePath(rel);
   if (!safe) throw new Error(`Refused file path: ${rel}`);
   const full = path.resolve(root, ...safe.split("/"));

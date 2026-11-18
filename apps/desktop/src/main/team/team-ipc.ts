@@ -4,6 +4,8 @@ import { app, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from
 import type { ProviderAdapter, ProviderId } from "../providers/types";
 import { TeamService } from "./team-service";
 import { projectWorkspace } from "./workspace";
+import { findProducts } from "../preview/products";
+import { rememberPreviewHost } from "../preview/preview-protocol";
 
 // Electron wiring for team runs: start, stop, and open the project's folder. Requests are accepted
 // only from the app's own window.
@@ -38,6 +40,13 @@ export function registerTeamIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
   ipcMain.handle("team:stop", (event, runId: unknown) => {
     guard(event);
     return service.stop(runId);
+  });
+  // The products in the project's folder, and the preview host that serves them.
+  ipcMain.handle("team:products", (event, projectId: unknown) => {
+    guard(event);
+    if (typeof projectId !== "string") throw new Error("Invalid project id.");
+    const workspace = projectWorkspace(base(), projectId);
+    return { host: rememberPreviewHost(projectId, workspace), products: findProducts(workspace) };
   });
   ipcMain.handle("team:open-folder", async (event, projectId: unknown) => {
     guard(event);

@@ -265,3 +265,43 @@ describe('the Planner and re-planning', () => {
     expect(text).toContain('Files already in the project folder: index.html.');
   });
 });
+
+import { placeProducts, previewUrl, productLinks } from './live-chat.mjs';
+
+describe('products in the tree', () => {
+  const graph = { nodes: [{ id: 'm', x: 300, y: 0 }, { id: 'b', x: 100, y: 230 }, { id: 'r', x: 500, y: 230 }, { id: 'p', x: 300, y: 230 }] };
+  const run = (status, tasks) => ({ kind: 'team', run: { status, tasks } });
+  const web = { id: 'web', folder: 'web', entry: 'web/index.html', name: 'Web', files: ['web/index.html', 'web/app.js'] };
+  const root = { id: 'root', folder: '', entry: 'index.html', name: 'Site', files: ['index.html'] };
+
+  it('links a product to the agents that wrote or reviewed its files', () => {
+    const messages = [
+      run('done', [{ deliverables: ['web/index.html'], agentId: 'b', review: { reviewerId: 'r' }, status: 'done' }, { deliverables: ['notes.md'], agentId: 'p', status: 'done' }]),
+      run('running', [{ deliverables: ['web/new.css'], plannedAgentId: 'p', status: 'working' }]),
+      { kind: 'user', text: 'hi' },
+    ];
+    expect(productLinks(web, messages, graph)).toEqual({ agents: ['b', 'r', 'p'], building: true });
+    expect(productLinks(root, messages, graph)).toEqual({ agents: [], building: false });
+  });
+
+  it('ignores agents that are no longer in the tree and finished runs', () => {
+    expect(productLinks(web, [run('running', [{ deliverables: ['web/app.js'], agentId: 'gone', status: 'done' }])], graph)).toEqual({ agents: [], building: false });
+  });
+
+  it('places a product under its agents, and never on top of another node', () => {
+    const messages = [run('done', [{ deliverables: ['web/index.html'], agentId: 'b', status: 'done' }])];
+    const [a, b] = placeProducts([web, { ...web, id: 'web2' }], messages, graph);
+    expect(a).toMatchObject({ id: 'web', x: 100, y: 470, agents: ['b'], building: false });
+    expect(b.y).toBe(470);
+    expect(b.x).toBeGreaterThanOrEqual(100 + 224);
+    const [alone] = placeProducts([root], [], graph);
+    expect(alone.y).toBe(470);
+    expect(placeProducts([], [], graph)).toEqual([]);
+  });
+
+  it('builds the preview address with the entry page and a version', () => {
+    expect(previewUrl('pabc', web, 3)).toBe('orqestra-preview://pabc/web/index.html?v=3');
+    expect(previewUrl('pabc', { ...root, entry: 'my page.html' })).toBe('orqestra-preview://pabc/my%20page.html?v=0');
+    expect(previewUrl(null, web)).toBeNull();
+  });
+});

@@ -340,3 +340,50 @@ export function replanMessage(run) {
     'Make a new plan for what is left. Build on the files that exist, and change them only where needed. Reply in the language I used earlier in this conversation.',
   ].join('\n');
 }
+
+// Products (web pages the team built) in the tree. The main process finds them in the project's folder;
+// here they are linked to the agents that wrote or reviewed their files, and placed under those agents.
+const ACTIVE = ['waiting', 'working', 'reviewing'];
+const inProduct = (file, product) => product.files.includes(file) || (product.folder !== '' && file.startsWith(`${product.folder}/`));
+
+export function productLinks(product, messages, graph) {
+  const known = new Set((graph?.nodes || []).map((n) => n.id));
+  const agents = [];
+  let building = false;
+  for (const m of messages || []) {
+    if (m.kind !== 'team' || !m.run) continue;
+    for (const t of m.run.tasks || []) {
+      const files = [...(t.deliverables || []), ...(t.files || []).map((f) => f.path)];
+      if (!files.some((f) => inProduct(f, product))) continue;
+      for (const id of [t.agentId || t.plannedAgentId, t.review?.reviewerId]) if (id && known.has(id) && !agents.includes(id)) agents.push(id);
+      if (m.run.status === 'running' && ACTIVE.includes(t.status)) building = true;
+    }
+  }
+  return { agents, building };
+}
+
+const NODE = { w: 224, h: 159 };
+const overlaps = (a, b) => Math.abs(a.x - b.x) < NODE.w + 20 && Math.abs(a.y - b.y) < NODE.h + 30;
+
+export function placeProducts(products, messages, graph) {
+  const nodes = graph?.nodes || [];
+  const placed = [];
+  const bottom = nodes.length ? Math.max(...nodes.map((n) => n.y)) : 0;
+  const left = nodes.length ? Math.min(...nodes.map((n) => n.x)) : 0;
+  for (const product of products || []) {
+    const links = productLinks(product, messages, graph);
+    const linked = nodes.filter((n) => links.agents.includes(n.id));
+    const spot = linked.length
+      ? { x: Math.round(linked.reduce((s, n) => s + n.x, 0) / linked.length), y: Math.max(...linked.map((n) => n.y)) + 240 }
+      : { x: left, y: bottom + 240 };
+    while ([...nodes, ...placed].some((other) => overlaps(spot, other))) spot.x += NODE.w + 30;
+    placed.push({ ...product, ...spot, agents: links.agents, building: links.building });
+  }
+  return placed;
+}
+
+// The preview address of a product: its own host, its entry page, and a version so it reloads after changes.
+export function previewUrl(host, product, version = 0) {
+  if (!host || !product) return null;
+  return `orqestra-preview://${host}/${product.entry.split('/').map(encodeURIComponent).join('/')}?v=${version}`;
+}
