@@ -199,3 +199,45 @@ describe("team run", () => {
     expect(reviewerFor(builder, [builder])).toBeNull();
   });
 });
+
+describe("coordinated writes (Teams phase 5)", () => {
+  const plan = parsePlan(planValue, roles);
+
+  it("writes nothing that the write guard refuses, and stops the run's writing", async () => {
+    const codex = new ScriptedTool("codex", deliverOwned);
+    const claude = new ScriptedTool("claude", () => approve);
+    const asked: string[][] = [];
+    const events: TeamEvent[] = [];
+    const team = new TeamRun({
+      plan, agents: [builder, reviewer], adapters: { codex, claude }, workspace: dir, cwd: dir, emit: (e) => void events.push(e),
+      writeGuard: { authorize: async (paths) => { asked.push(paths); if (paths.includes("css/style.css")) throw new Error("Not written: ann reserves css/."); } },
+    });
+    await team.start();
+    const finished = events.at(-1) as Extract<TeamEvent, { type: "run-finished" }>;
+    expect(asked).toEqual([["index.html"], ["css/style.css"]]);
+    expect(fs.existsSync(path.join(dir, "index.html"))).toBe(true);
+    expect(fs.existsSync(path.join(dir, "css", "style.css"))).toBe(false);
+    expect(finished.status).toBe("failed");
+    expect(finished.summary).toMatch(/ann reserves css/);
+  });
+
+  it("never writes through a Windows junction or a link created inside the workspace", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "orq-outside-"));
+    try {
+      let linked = false;
+      try {
+        // A junction needs no special privilege on Windows; elsewhere this is a symbolic link.
+        fs.symlinkSync(outside, path.join(dir, "jn"), process.platform === "win32" ? "junction" : "dir");
+        linked = true;
+      } catch {
+        /* no link support here */
+      }
+      if (linked) {
+        expect(() => writeFiles(dir, [{ path: "jn/x.txt", content: "x" }])).toThrow(/Refused/);
+        expect(fs.readdirSync(outside)).toEqual([]);
+      }
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});

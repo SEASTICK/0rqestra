@@ -41,6 +41,7 @@ class FakeSupabase {
   projects: { id: string; team_id: string; name: string; repo_owner: string; repo_name: string; repo_key: string }[] = [];
   briefs: { id: string; project_id: string; run_id: string; title: string; status: string; author_id: string; author_name: string; branch: string | null; paths: string[]; updated_at: string; seq: number; outcome: string | null; finished_at: string | null }[] = [];
   reads = new Map<string, number>();
+  reservations: { id: string; project_id: string; run_id: string; reserved_by: string; reserved_by_name: string; summary: string; branch: string | null; paths: string[]; expires_at: string }[] = [];
   now = Date.now();
   requests: { method: string; url: string; headers: Record<string, string> }[] = [];
   offline = false;
@@ -105,6 +106,10 @@ class FakeSupabase {
         if (b) this.reads.set(`${me}:${b.id}`, Math.max(this.reads.get(`${me}:${b.id}`) ?? 0, Math.min(i.seq, b.seq)));
       }
       return reply(200, 1);
+    }
+    if (init.method === "GET" && u.pathname === "/rest/v1/task_reservations") {
+      const memberOf = (projectId: string) => this.projects.some((p) => p.id === projectId && isMember(p.team_id));
+      return reply(200, this.reservations.filter((r) => memberOf(r.project_id)));
     }
     if (init.method === "GET" && u.pathname === "/rest/v1/work_briefs" && u.searchParams.get("author_id")) {
       const author = u.searchParams.get("author_id")!.replace(/^eq\./, "");
@@ -473,5 +478,23 @@ describe("Teams, phase 4", () => {
     // After signing out, nothing of the project is available.
     await b.service.signOut();
     expect(await b.service.catchUp(project.id)).toMatchObject({ ok: false });
+  });
+});
+
+describe("Teams, phase 5", () => {
+  it("shows active reservations of the project in the view, and nothing from projects I am not in", async () => {
+    const server = new FakeSupabase();
+    const a = computer("a", server);
+    await signIn(a.service, "a@example.test");
+    const teamId = (await a.service.createTeam("T")).teams[0]!.id;
+    const pick = await a.service.inspectFolder(checkout(`p5-${crypto.randomUUID().slice(0, 6)}`, { origin: `https://github.com/seastick/p5-${crypto.randomUUID().slice(0, 6)}.git` }));
+    const project = (await a.service.registerProject({ teamId, selectionId: pick.id, localProjectId: "la", name: "P" })).teams[0]!.projects[0]!;
+    expect(project.reservations).toEqual([]);
+    const later = new Date(server.now + 120_000).toISOString();
+    server.reservations.push({ id: "r1", project_id: project.id, run_id: "plan-1", reserved_by: "philip", reserved_by_name: "philip", summary: "Rework sign-in", branch: "feature/auth", paths: ["src/auth/"], expires_at: later });
+    server.reservations.push({ id: "r2", project_id: crypto.randomUUID(), run_id: "x", reserved_by: "z", reserved_by_name: "z", summary: "Elsewhere", branch: null, paths: ["a/"], expires_at: later });
+    await a.service.refreshBriefs(project.id);
+    expect(a.service.view().teams[0]!.projects[0]!.reservations).toEqual([{ id: "r1", runId: "plan-1", userId: "philip", name: "philip", task: "Rework sign-in", branch: "feature/auth", paths: ["src/auth/"], expiresAt: later }]);
+    await expect(a.service.reservationRpc("drop_everything", {})).rejects.toThrow(/Unknown reservation call/);
   });
 });

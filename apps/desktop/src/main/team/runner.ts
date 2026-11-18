@@ -40,6 +40,9 @@ export interface RunOptions {
   cwd: string;
   emit: (event: TeamEvent) => void;
   limits?: Partial<Limits>;
+  // Coordinated runs (Teams phase 5): every write is authorised against the run's reservation
+  // first. A refusal stops the run's writing; nothing is written without it.
+  writeGuard?: { authorize(paths: string[]): Promise<void> };
 }
 
 const byPriority = (a: TeamAgent, b: TeamAgent) => a.priority - b.priority || a.name.localeCompare(b.name);
@@ -131,7 +134,12 @@ export class TeamRun {
         problems = delivery;
         continue;
       }
-      const saved = writeFiles(workspace, files.map((f) => ({ path: task.deliverables.find((d) => d.toLowerCase() === f.path.replace(/\\/g, "/").toLowerCase())!, content: f.content })));
+      const outgoing = files.map((f) => ({ path: task.deliverables.find((d) => d.toLowerCase() === f.path.replace(/\\/g, "/").toLowerCase())!, content: f.content }));
+      if (this.o.writeGuard) {
+        await this.o.writeGuard.authorize(outgoing.map((f) => f.path));
+        if (this.stopped) throw new Stopped();
+      }
+      const saved = writeFiles(workspace, outgoing);
       for (const f of saved) this.written.set(f.path.toLowerCase(), f);
       this.o.emit({ type: "files", taskId: task.id, files: saved });
 

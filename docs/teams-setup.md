@@ -187,4 +187,36 @@ not repository-relative).
   plain summary. If Supabase cannot be reached, the last known briefs are labelled as such; with
   none known, the status is "unavailable".
 
-Not in phase 4: task reservations (phase 5) and the DigitalOcean worker.
+## Phase 5: path reservations
+
+Before an approved team run starts in a linked project, the app reserves the plan's
+repository-relative files in Supabase, and the run starts only if the whole set is granted.
+
+- **Overlap.** Two reservations overlap when they name the same path, or one is a folder of the
+  other, compared without case: `src/auth/` overlaps `src/auth/session.ts`, but not `src/auth-old/`.
+  Branches do not matter. A refused start shows who holds the overlapping paths, their task, and
+  which paths overlap; press Start on the plan to retry, or ask the Manager to change the files.
+  Without a connection to Supabase a coordinated run does not start.
+- **Atomic.** Migration `…_teams_reservations.sql` extends `task_reservations` and adds
+  `acquire_reservation`, `renew_reservation`, `expand_reservation` and `release_reservation`.
+  Acquisition locks the shared project's row, so of two simultaneous overlapping starts exactly one
+  is granted. The same run id (one per approved plan) returns the same reservation on a retry.
+- **Leases.** A reservation lasts 2 minutes (server time) and is renewed every 30 seconds while the
+  run is active. Renewing, expanding and releasing need the lease token and the holder's own
+  account; a token is never readable by others, and an old session cannot renew or release a
+  reservation that has since replaced it. After a crash the reservation expires by itself.
+- **Enforced at the write.** The runner asks the reservation before every file it writes. A file
+  outside the reservation needs an atomic expansion first; a refused expansion keeps the
+  reservation unchanged and the file is not written. If the lease can no longer be confirmed
+  (connection lost past its expiry), writing pauses until Supabase confirms it again, and the
+  run's writing stops if that does not happen within 90 seconds. The reservation is released once
+  the run has stopped writing (completed, failed or stopped).
+- **What can write.** Team-run agents cannot write files themselves: Claude Code runs with no tools
+  and Codex with a read-only sandbox, so the runner is the only writer. It writes into the app's
+  project folder (`<user data>/projects/<id>/workspace`), never into your checkout, and refuses
+  symbolic links and Windows junctions.
+- **Not covered.** Reservations cover writes through 0rqestra's team runs only. Edits made by hand
+  in an editor, or with other tools, are outside this coordination.
+- The Team Bridge lists active reservations under **Reserved files**, next to the work briefs.
+
+Not in phase 5: the DigitalOcean worker.

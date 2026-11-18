@@ -7,6 +7,7 @@ import type { Plan } from "../team/plan";
 import type { TeamEvent } from "../team/runner";
 import { ActivityMonitor } from "./activity";
 import { BriefPublisher, fileOutbox } from "./briefs";
+import { ReservationCoordinator, type Gate } from "./reservations";
 import { gitRunner } from "./git-checkout";
 import { PresenceHub, type PresenceTarget, type SocketLike } from "./presence";
 import { LinkStore, SessionStore } from "./local-store";
@@ -29,8 +30,10 @@ const readFile = (file: string): string | null => {
 
 export interface TeamsWiring {
   service: TeamsService;
-  // Team run events from main/team, for work briefs (phase 3).
+  // Team run events from main/team, for work briefs (phase 3) and releasing reservations (phase 5).
   onRunEvent: (info: { runId: string; localProjectId: string; plan: Plan }, event: TeamEvent) => Promise<void>;
+  // Before a team run starts: reserve its paths in a linked project (phase 5).
+  beforeStart: (info: { runId: string; localProjectId: string; plan: Plan }) => Promise<Gate>;
 }
 
 export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boolean, getWindow: () => BrowserWindow | null): TeamsWiring {
@@ -78,6 +81,12 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
     send: (state) => service.publishBrief(state),
     currentUserId: () => service.currentUserId(),
     onChange: () => service.notifyLocalBriefs(),
+  });
+  const coordinator = new ReservationCoordinator({
+    rpc: (fn, args) => service.reservationRpc(fn, args),
+    linkFor: (localProjectId) => service.linkFor(localProjectId),
+    branchOf: (folder) => service.branchOf(folder),
+    onChange: () => void service.refreshBriefs(),
   });
   const service = new TeamsService({
     localBriefs: (projectId) => publisher.forProject(projectId).map((b) => ({ runId: b.runId, title: b.title, status: b.status, outcome: b.outcome, updatedAt: b.updatedAt, sync: b.sync, error: b.error })),
@@ -212,6 +221,16 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
     activity.stop();
     // Closing the connection tells teammates right away that this session is gone.
     hub?.stop();
+    // Release what this app holds; anything not released in time expires by itself.
+    void coordinator.releaseAll();
   });
-  return { service, onRunEvent: (info, event) => publisher.onRunEvent(info, event) };
+  return {
+    service,
+    beforeStart: (info) => coordinator.beforeStart(info),
+    onRunEvent: async (info, event) => {
+      // The runner has stopped writing when it reports the run finished: release after that.
+      if (event.type === "run-finished") void coordinator.onRunFinished(info.runId);
+      await publisher.onRunEvent(info, event);
+    },
+  };
 }

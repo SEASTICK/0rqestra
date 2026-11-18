@@ -91,7 +91,7 @@ const providerAdapters = createAdapters();
 const chatService = registerChatIpc(isFromMainWindow, () => mainWindow, providerAdapters);
 registerAccountsIpc(isFromMainWindow, () => mainWindow, providerAdapters, () => chatService.invalidate());
 const teams = registerTeamsIpc(isFromMainWindow, () => mainWindow);
-registerTeamIpc(isFromMainWindow, () => mainWindow, providerAdapters, (info, event) => void teams.onRunEvent(info, event));
+registerTeamIpc(isFromMainWindow, () => mainWindow, providerAdapters, (info, event) => void teams.onRunEvent(info, event), (info) => teams.beforeStart(info));
 
 if (!smoke) {
   app.on("window-all-closed", () => app.quit());

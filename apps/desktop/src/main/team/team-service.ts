@@ -40,7 +40,8 @@ export class TeamService {
     private readonly observe?: (info: { runId: string; localProjectId: string; plan: Plan }, event: TeamEvent) => void,
   ) {}
 
-  start(raw: unknown, emit: TeamEmit): string {
+  // Validates a start request without starting anything (so a reservation can be made first).
+  prepare(raw: unknown): { runId: string; projectId: string; plan: Plan; agents: TeamAgent[] } {
     const v = (raw ?? {}) as Record<string, unknown>;
     if (typeof v.runId !== "string" || !ID.test(v.runId)) throw new Error("Invalid run id.");
     if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
@@ -50,7 +51,18 @@ export class TeamService {
     const projectId = v.projectId;
     if (this.runs.has(runId)) throw new Error("This run already exists.");
     if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
-    const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace: this.workspaceFor(projectId), cwd: this.cwd(), emit: (event) => {
+    return { runId, projectId, plan, agents };
+  }
+
+  start(raw: unknown, emit: TeamEmit, writeGuard?: { authorize(paths: string[]): Promise<void> }): string {
+    return this.launch(this.prepare(raw), emit, writeGuard);
+  }
+
+  launch(prepared: { runId: string; projectId: string; plan: Plan; agents: TeamAgent[] }, emit: TeamEmit, writeGuard?: { authorize(paths: string[]): Promise<void> }): string {
+    const { runId, projectId, plan, agents } = prepared;
+    if (this.runs.has(runId)) throw new Error("This run already exists.");
+    if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
+    const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace: this.workspaceFor(projectId), cwd: this.cwd(), ...(writeGuard ? { writeGuard } : {}), emit: (event) => {
       emit(runId, event);
       try {
         this.observe?.({ runId, localProjectId: projectId, plan }, event);

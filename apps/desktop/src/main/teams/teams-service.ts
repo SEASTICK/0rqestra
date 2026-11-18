@@ -39,7 +39,9 @@ export interface CatchUpItem {
 export type FetchResult<T> = { ok: true; items: T[]; at: number } | { ok: false; problem: string };
 // This computer's own briefs and whether the server has them (phase 3).
 export interface LocalBriefView { runId: string; title: string; status: string; outcome: string | null; updatedAt: number; sync: "pending" | "synced" | "failed"; error: string | null }
-export interface SharedProjectView { id: string; name: string; repo: { owner: string; name: string; key: string }; link: LinkView | null; briefs: BriefView[] }
+// An active path reservation (phase 5).
+export interface ReservationView { id: string; runId: string; userId: string; name: string; task: string; branch: string | null; paths: string[]; expiresAt: string }
+export interface SharedProjectView { id: string; name: string; repo: { owner: string; name: string; key: string }; link: LinkView | null; briefs: BriefView[]; reservations: ReservationView[] }
 export interface TeamView { id: string; name: string; isOwner: boolean; members: MemberView[]; invites: InviteView[]; projects: SharedProjectView[] }
 
 export interface TeamsView {
@@ -82,6 +84,8 @@ const catchUpItem = (r: CatchUpRow): CatchUpItem => ({
   id: r.brief_id, runId: r.run_id, authorId: r.author_id, authorName: r.author_name ?? "", title: r.title, status: r.status, branch: r.branch,
   paths: r.paths ?? [], outcome: r.outcome, seq: r.seq, seenSeq: r.seen_seq, updatedAt: r.updated_at, finishedAt: r.finished_at,
 });
+interface ReservationRow { id: string; project_id: string; run_id: string; reserved_by: string; reserved_by_name: string | null; summary: string; branch: string | null; paths: string[] | null; expires_at: string }
+const reservationView = (r: ReservationRow): ReservationView => ({ id: r.id, runId: r.run_id, userId: r.reserved_by, name: r.reserved_by_name ?? "", task: r.summary, branch: r.branch, paths: r.paths ?? [], expiresAt: r.expires_at });
 const BRIEF_COLUMNS = "id,project_id,run_id,title,status,author_id,author_name,branch,paths,updated_at";
 const briefView = (b: BriefRow): BriefView => ({ id: b.id, runId: b.run_id, title: b.title, status: b.status, authorId: b.author_id, authorName: b.author_name ?? "", branch: b.branch, paths: b.paths ?? [], updatedAt: b.updated_at });
 interface InviteRow { id: string; team_id: string; email: string; expires_at: string; redeemed_at: string | null; revoked_at: string | null }
@@ -238,6 +242,25 @@ export class TeamsService {
     return rows;
   }
 
+  // Active, unexpired reservations (the lease token is never readable).
+  private async fetchReservations(projectIds: string[]): Promise<ReservationRow[]> {
+    if (!projectIds.length) return [];
+    const rows = await this.call((api, token) =>
+      api.select<ReservationRow>(token, "task_reservations", `select=id,project_id,run_id,reserved_by,reserved_by_name,summary,branch,paths,expires_at&project_id=in.(${projectIds.join(",")})&status=eq.active&order=created_at.asc&limit=200`),
+    );
+    return rows.filter((r) => Date.parse(r.expires_at) > this.now() - 60_000);
+  }
+
+  // A reservation function call for the coordinator (phase 5), with the session's token.
+  async reservationRpc(fn: string, args: Record<string, unknown>): Promise<unknown> {
+    if (!["acquire_reservation", "renew_reservation", "expand_reservation", "release_reservation"].includes(fn)) throw new Error("Unknown reservation call.");
+    try {
+      return await this.call((api, token) => api.rpc(token, fn, args));
+    } catch (error) {
+      throw new Error(friendlyError(error), { cause: error });
+    }
+  }
+
   // Reads the active briefs again (a brief changed, or the connection came back) and updates the
   // view. A failure keeps the briefs shown and their time, so the bridge can say they may be old.
   async refreshBriefs(projectId?: string): Promise<void> {
@@ -245,9 +268,10 @@ export class TeamsService {
     const ids = this.teams.flatMap((t) => t.projects.map((p) => p.id)).filter((id) => !projectId || id === projectId);
     try {
       const rows = await this.fetchBriefs(ids);
+      const held = await this.fetchReservations(ids);
       this.teams = this.teams.map((t) => ({
         ...t,
-        projects: t.projects.map((p) => (ids.includes(p.id) ? { ...p, briefs: rows.filter((b) => b.project_id === p.id).map(briefView) } : p)),
+        projects: t.projects.map((p) => (ids.includes(p.id) ? { ...p, briefs: rows.filter((b) => b.project_id === p.id).map(briefView), reservations: held.filter((r) => r.project_id === p.id).map(reservationView) } : p)),
       }));
     } catch {
       /* keep what is shown; briefsAt tells how old it is */
@@ -504,6 +528,7 @@ export class TeamsService {
         : [];
       const projectIds = rows.flatMap((t) => t.shared_projects.map((p) => p.id));
       const briefs = await this.fetchBriefs(projectIds);
+      const reservations = await this.fetchReservations(projectIds);
       const now = this.now();
       this.teams = await Promise.all(
         rows.map(async (t) => ({
@@ -517,6 +542,7 @@ export class TeamsService {
           projects: await Promise.all(
             t.shared_projects.map(async (p) => ({ id: p.id, name: p.name, repo: { owner: p.repo_owner, name: p.repo_name, key: p.repo_key }, link: await this.linkView(p.id, p.repo_key),
               briefs: briefs.filter((b) => b.project_id === p.id).map(briefView),
+              reservations: reservations.filter((r) => r.project_id === p.id).map(reservationView),
             })),
           ),
         })),

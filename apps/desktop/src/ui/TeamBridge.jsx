@@ -84,6 +84,19 @@ export function BridgePanel({ linked, view, onClose, Icon }) {
           <p className="team-muted">Online means their 0rqestra is open, signed in and they have used their computer in the last 10 minutes. Going offline never changes their work.</p>
         </section>
         <section>
+          <h3>Reserved files</h3>
+          {project.reservations?.length
+            ? <ul className="team-briefs">{project.reservations.map((r) => (
+                <li key={r.id}>
+                  <div className="team-brief-head"><strong>{r.task || 'Team run'}</strong><span className="team-brief-status">until {new Date(r.expiresAt).toLocaleTimeString()}</span></div>
+                  <small>{r.name || nameOf(r.userId)}{r.userId === view.userId ? ' (you)' : ''}{r.branch ? ` · branch ${r.branch}` : ''}</small>
+                  <small className="team-brief-paths" title={r.paths.join('\n')}>{r.paths.slice(0, 5).join(', ')}{r.paths.length > 5 ? ` and ${r.paths.length - 5} more` : ''}</small>
+                </li>
+              ))}</ul>
+            : <p className="team-muted">No files are reserved right now.</p>}
+          <p className="team-muted">A team run reserves the files it will write before it starts; a run that overlaps them waits. This covers writes made through 0rqestra's team runs only: edits you make by hand or with other tools are not coordinated.</p>
+        </section>
+        <section>
           <h3>Active work</h3>
           {notice && <p className="team-muted team-stale" role="status">{notice}</p>}
           {unsynced.length > 0 && (

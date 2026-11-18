@@ -198,7 +198,7 @@ function App() {
   const teammateCache=useRef({});
   const projectsRef=useRef(projects);projectsRef.current=projects;
   const [catchUpTick,setCatchUpTick]=useState(0);
-  useEffect(()=>{const api=window.orqestra?.teams;if(!api||teamsView?.status!=='signed_in'||!teamsView.userId)return;const me=teamsView.userId;const c=catchUp.current;
+  useEffect(()=>{const api=window.orqestra?.teams;if(typeof api?.catchUp!=='function'||teamsView?.status!=='signed_in'||!teamsView.userId)return;const me=teamsView.userId;const c=catchUp.current;
     for(const team of teamsView.teams||[])for(const sp of team.projects||[]){
       if(sp.link?.state!=='linked')continue;const local=projectsRef.current.find(p=>p.id===sp.link.localProjectId);if(!local)continue;
       const key=`${me}:${sp.id}`;if(!catchUpDue(c,key,teamsView.presence?.[sp.id]?.connection==='live'))continue;
@@ -210,7 +210,7 @@ function App() {
       }).catch(()=>{}).finally(()=>c.inflight.delete(key));
     }
   },[teamsView]);
-  useEffect(()=>{const api=window.orqestra?.teams;if(!api||!saved||teamsView?.status!=='signed_in')return;const c=catchUp.current;
+  useEffect(()=>{const api=window.orqestra?.teams;if(typeof api?.markSeen!=='function'||!saved||teamsView?.status!=='signed_in')return;const c=catchUp.current;
     for(const [msgId,entry] of c.pending){
       if(entry.userId!==teamsView.userId||c.marking.has(msgId))continue;
       const shown=projects.find(p=>p.id===entry.localId)?.messages.some(m=>m.id===msgId);if(!shown)continue;
@@ -270,10 +270,14 @@ function App() {
   function startPlan(assistantId,plan){
     const team=window.orqestra?.team;if(!team){setToast('Team runs work in the installed app.');return;}
     if([...teamRuns.current.values()].some(r=>r.projectId===project.id)){setToast('The team is already working in this project.');return;}
-    const runId=id();const messageId=id();const projectId=project.id;
+    // A stable run id per approved plan: retrying a start that was refused reuses it, so a
+    // coordinated start can never hold two reservations for the same plan.
+    const runId=`plan-${String(assistantId).replace(/[^A-Za-z0-9_-]/g,'').slice(0,90)}`;const messageId=id();const projectId=project.id;
     patchProject({messages:[...project.messages.map(m=>m.id===assistantId?{...m,planStarted:runId}:m),{id:messageId,kind:'team',runId,run:newTeamRun(runId,plan)}]});
     teamRuns.current.set(runId,{projectId,messageId});
-    team.start({runId,projectId,plan,agents:teamAgents(graph)}).catch(error=>{teamRuns.current.delete(runId);updateTeamRun(projectId,messageId,run=>applyTeamEvent(run,{type:'run-finished',status:'failed',summary:String(error?.message||error).replace(/^Error invoking remote method '[^']+': (Error: )?/,''),files:[],calls:0,usage:null}));});
+    // A refused or failed start ran nothing: the plan can be started again (retry) or changed.
+    const notStarted=(summary)=>{teamRuns.current.delete(runId);updateTeamRun(projectId,messageId,run=>applyTeamEvent(run,{type:'run-finished',status:'failed',summary,files:[],calls:0,usage:null}));setProjects(ps=>ps.map(p=>p.id!==projectId?p:{...p,messages:p.messages.map(m=>m.id===assistantId?{...m,planStarted:undefined}:m)}));};
+    team.start({runId,projectId,plan,agents:teamAgents(graph)}).then(result=>{if(result&&result.ok===false)notStarted(`${result.message} (Nothing was started; press Start on the plan to try again.)`);}).catch(error=>notStarted(String(error?.message||error).replace(/^Error invoking remote method '[^']+': (Error: )?/,'')));
   }
   const runningTeam=[...project.messages].reverse().find(m=>m.kind==='team'&&m.run?.status==='running');
   const liveStates=runningTeam?nodeStates(runningTeam.run):null;

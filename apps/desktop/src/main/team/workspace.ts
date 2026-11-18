@@ -40,8 +40,14 @@ export function writeFiles(root: string, files: { path: string; content: string 
     if (bytes > MAX_FILE_BYTES) throw new Error(`${f.path} is larger than ${MAX_FILE_BYTES} bytes.`);
     return { full: inside(root, f.path), path: f.path, content: f.content, bytes };
   });
+  const realRoot = fs.realpathSync(path.resolve(root));
   for (const f of prepared) {
     fs.mkdirSync(path.dirname(f.full), { recursive: true });
+    // The folder actually written to must resolve inside the workspace, so neither a symbolic link
+    // nor a Windows junction (created at any time, even after the check above) can redirect it.
+    const realDir = fs.realpathSync(path.dirname(f.full));
+    if (realDir !== realRoot && !realDir.startsWith(realRoot + path.sep)) throw new Error(`Refused file path (outside the project folder): ${f.path}`);
+    if (fs.existsSync(f.full) && fs.lstatSync(f.full).isSymbolicLink()) throw new Error(`Refused file path (link): ${f.path}`);
     const temp = `${f.full}.orqestra-tmp`;
     fs.writeFileSync(temp, f.content, "utf8");
     fs.renameSync(temp, f.full);

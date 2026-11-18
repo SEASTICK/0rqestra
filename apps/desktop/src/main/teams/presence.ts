@@ -392,7 +392,7 @@ export class PresenceHub {
         this.markLiveIfReady();
         break;
       case "broadcast":
-        if (ch.kind === "briefs" && payload.event === "brief_changed") this.deps.onBriefs?.(ch.projectId);
+        if (ch.kind === "briefs" && (payload.event === "brief_changed" || payload.event === "reservation_changed")) this.deps.onBriefs?.(ch.projectId);
         return;
       case "presence_diff": {
         if (ch.kind !== "presence") return;

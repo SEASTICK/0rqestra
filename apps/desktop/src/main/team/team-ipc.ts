@@ -5,6 +5,11 @@ import type { ProviderAdapter, ProviderId } from "../providers/types";
 import type { Plan } from "./plan";
 import type { TeamEvent } from "./runner";
 import { TeamService } from "./team-service";
+
+export type StartGate =
+  | { kind: "solo" }
+  | { kind: "granted"; guard: { authorize(paths: string[]): Promise<void>; release(): Promise<void> } }
+  | { kind: "conflict" | "unavailable" | "no_scope"; message: string };
 import { projectWorkspace } from "./workspace";
 
 // Electron wiring for team runs: start, stop, and open the project's folder. Requests are accepted
@@ -15,6 +20,8 @@ export function registerTeamIpc(
   getWindow: () => BrowserWindow | null,
   adapters: Record<ProviderId, ProviderAdapter>,
   observe?: (info: { runId: string; localProjectId: string; plan: Plan }, event: TeamEvent) => void,
+  // Teams phase 5: a coordinated start reserves the run's paths first (solo projects pass).
+  gate?: (info: { runId: string; localProjectId: string; plan: Plan }) => Promise<StartGate>,
 ): void {
   const base = () => app.getPath("userData");
   const cwd = () => {
@@ -26,13 +33,24 @@ export function registerTeamIpc(
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
   };
-  ipcMain.handle("team:start", (event, payload: unknown) => {
+  // Returns { ok: true, runId } or { ok: false, reason, message } when coordination refuses or is
+  // unavailable; in that case nothing has started.
+  ipcMain.handle("team:start", async (event, payload: unknown) => {
     guard(event);
     const sender = event.sender;
-    return service.start(payload, (runId, teamEvent) => {
-      const window = getWindow();
-      if (window && !window.isDestroyed() && window.webContents === sender && !sender.isDestroyed()) sender.send("team:event", { runId, event: teamEvent });
-    });
+    const prepared = service.prepare(payload);
+    const decision = gate ? await gate({ runId: prepared.runId, localProjectId: prepared.projectId, plan: prepared.plan }) : { kind: "solo" as const };
+    if (decision.kind !== "solo" && decision.kind !== "granted") return { ok: false, reason: decision.kind, message: decision.message };
+    try {
+      const runId = service.launch(prepared, (id, teamEvent) => {
+        const window = getWindow();
+        if (window && !window.isDestroyed() && window.webContents === sender && !sender.isDestroyed()) sender.send("team:event", { runId: id, event: teamEvent });
+      }, decision.kind === "granted" ? decision.guard : undefined);
+      return { ok: true, runId };
+    } catch (error) {
+      if (decision.kind === "granted") await decision.guard.release();
+      throw error;
+    }
   });
   ipcMain.handle("team:stop", (event, runId: unknown) => {
     guard(event);
