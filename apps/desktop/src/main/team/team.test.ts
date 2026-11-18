@@ -199,3 +199,40 @@ describe("team run", () => {
     expect(reviewerFor(builder, [builder])).toBeNull();
   });
 });
+
+import { extractPlan, plannerPrompt } from "./planner.js";
+import { listFiles } from "./workspace.js";
+
+describe("the Planner", () => {
+  it("gets the brief, the team, the plan format, and the existing files", () => {
+    const prompt = plannerPrompt("A workout log for the gym", { id: "p1", name: "The architect", role: "Planner" }, [{ name: "Code builder", role: "Builder", ready: true }], ["index.html"]);
+    expect(prompt).toContain("The Manager's brief:\nA workout log for the gym");
+    expect(prompt).toContain("<orqestra-plan>");
+    expect(prompt).toContain("- Builder: Code builder (can work)");
+    expect(prompt).toContain("Files already in the project folder: index.html");
+  });
+
+  it("reads the plan at the end of its answer and refuses anything else", () => {
+    expect(extractPlan('Two tasks.\n<orqestra-plan>\n{"goal":"g","tasks":[]}\n</orqestra-plan>')).toEqual({ summary: "Two tasks.", value: { goal: "g", tasks: [] } });
+    expect(() => extractPlan("Here is my plan: build it.")).toThrow(/did not end with a plan/);
+    expect(() => extractPlan("<orqestra-plan>{nope}</orqestra-plan>")).toThrow(/could not be read/);
+  });
+});
+
+describe("existing files", () => {
+  it("are listed without links or temporary files", () => {
+    writeFiles(dir, [{ path: "index.html", content: "x" }, { path: "js/app.js", content: "y" }]);
+    fs.writeFileSync(path.join(dir, "half.orqestra-tmp"), "z");
+    expect(listFiles(dir)).toEqual(["index.html", "js/app.js"]);
+  });
+
+  it("are given to a task that names them or delivers them again", async () => {
+    writeFiles(dir, [{ path: "index.html", content: "<h1>Old</h1>" }, { path: "notes.txt", content: "keep tabs" }]);
+    const fixPlan = parsePlan({ goal: "Fix", tasks: [{ id: "f1", title: "Fix", role: "Builder", goal: "Fix the title in index.html; see notes.txt.", dependsOn: [], deliverables: ["index.html"] }] }, roles);
+    const codex = new ScriptedTool("codex", () => file("index.html", "<h1>New</h1>"));
+    await run(fixPlan, [builder], codex, new ScriptedTool("claude", () => approve));
+    expect(codex.prompts[0]).toContain("--- index.html ---\n<h1>Old</h1>");
+    expect(codex.prompts[0]).toContain("--- notes.txt ---\nkeep tabs");
+    expect(fs.readFileSync(path.join(dir, "index.html"), "utf8")).toBe("<h1>New</h1>");
+  });
+});

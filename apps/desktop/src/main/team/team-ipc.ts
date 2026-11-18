@@ -27,6 +27,14 @@ export function registerTeamIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
       if (window && !window.isDestroyed() && window.webContents === sender && !sender.isDestroyed()) sender.send("team:event", { runId, event: teamEvent });
     });
   });
+  ipcMain.handle("team:plan", (event, payload: unknown) => {
+    guard(event);
+    return service.plan(payload);
+  });
+  ipcMain.handle("team:plan-stop", (event, requestId: unknown) => {
+    guard(event);
+    return service.stopPlan(requestId);
+  });
   ipcMain.handle("team:stop", (event, runId: unknown) => {
     guard(event);
     return service.stop(runId);

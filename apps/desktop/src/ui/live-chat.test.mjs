@@ -233,3 +233,35 @@ describe('setting up the team', () => {
     expect(teamNeedsSetup(autoTeam(demoGraph, [codex]).graph, [codex])).toBe(false);
   });
 });
+
+import { parsePlanRequest, plannerOf, replanMessage } from './live-chat.mjs';
+
+describe('the Planner and re-planning', () => {
+  it('reads the brief for the Planner and hides it while it is written', () => {
+    expect(parsePlanRequest('Jag ber planeraren.\n<orqestra-plan-request>\n{"brief": "En träningslogg"}\n</orqestra-plan-request>')).toEqual({ body: 'Jag ber planeraren.', brief: 'En träningslogg' });
+    expect(parsePlanRequest('<orqestra-plan-request>{"brief": ""}</orqestra-plan-request>').brief).toBeNull();
+    expect(parsePlanRequest('<orqestra-plan-request>nope</orqestra-plan-request>').brief).toBeNull();
+    expect(visibleText('Jag ber planeraren. <orqestra-plan-req')).toBe('Jag ber planeraren. ');
+    expect(visibleText('Jag ber planeraren. <orqestra-plan-request>{"br')).toBe('Jag ber planeraren.');
+  });
+
+  it('picks the highest priority working Planner', () => {
+    const graph = { nodes: [
+      { id: 'p2', name: 'Second', role: 'Planner', priority: 2, agent: { tool: 'codex', model: 'x' } },
+      { id: 'p1', name: 'First', role: 'Planner', priority: 1, agent: { tool: 'claude', model: 'opus' } },
+      { id: 'p0', name: 'Demo', role: 'Planner', priority: 0 },
+    ] };
+    expect(plannerOf(graph).id).toBe('p1');
+    expect(plannerOf({ nodes: [{ id: 'p0', role: 'Planner', priority: 1 }] })).toBeNull();
+  });
+
+  it('describes a failed run so the Manager can plan what is left', () => {
+    const text = replanMessage({ goal: 'Log', summary: '1 of 2 tasks finished.', files: [{ path: 'index.html' }], tasks: [
+      { title: 'Page', role: 'Builder', status: 'done', note: 'Approved', files: [{ path: 'index.html' }] },
+      { title: 'Script', role: 'Builder', status: 'failed', note: 'Not approved', review: { approved: false, problems: ['Saving does not work'] }, files: [] },
+    ] });
+    expect(text).toContain('did not finish. 1 of 2 tasks finished.');
+    expect(text).toContain('- Script (Builder): failed — Not approved; review: Saving does not work');
+    expect(text).toContain('Files already in the project folder: index.html.');
+  });
+});

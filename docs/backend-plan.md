@@ -189,8 +189,19 @@ Phase 3 uses the same question card when the plan needs a decision.
 - Verified: unit tests for every part with scripted agents, and the whole flow in a browser with a
   stubbed bridge. **Not verified:** a run with the real Claude Code and Codex, and whether the
   models follow the plan and file formats reliably.
-- Not yet: the Planner role making the plan (decision A6; the Manager plans for now), the Manager
-  re-planning after a failure, and running or previewing what the agents built (phase 5b).
+- Not yet: running or previewing what the agents built (phase 5b).
+
+**Status 2026-11-18: the Planner plans, and the Manager re-plans.** What was added:
+- Decision A6: when the tree has a Planner on a working tool, the Manager no longer writes the plan
+  itself. It writes a short brief, and the Planner turns it into the plan. The chat shows "The
+  architect is planning" with Stop, and the plan card says who made it. Without a working Planner
+  the Manager plans as before. The plan is validated in the main process in the same way.
+- After a failed or stopped run, the run card offers "Ask the Manager to fix it". It sends the
+  Manager what failed, the review notes and the files that exist, and the Manager makes a new plan.
+- Agents see existing files: a task gets the files from the tasks it depends on, and also existing
+  files in the project folder that its goal names or that it is about to replace.
+- Verified: unit tests, and the flow in a browser with a stubbed bridge. **Not verified:** the
+  Planner and the re-plan with the real Claude Code and Codex.
 The port of the Python engine's core, in TypeScript.
 - **Manager** asks clarifying questions or makes a **plan**: tasks, order, difficulty, and a
   cost cap. It never does specialist work itself.

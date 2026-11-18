@@ -74,7 +74,8 @@ export function applyChatEvent(message, event) {
 // A reply that was still being written when the app closed cannot continue.
 export function settleInterrupted(messages) {
   return (messages || []).map((m) => (m.kind === 'assistant' && m.status === 'streaming' ? { ...m, status: 'stopped' }
-    : m.kind === 'team' && m.run ? { ...m, run: settleTeamRun(m.run) } : m));
+    : m.kind === 'team' && m.run ? { ...m, run: settleTeamRun(m.run) }
+      : m.planning && m.planning.status === 'running' ? { ...m, planning: { ...m.planning, status: 'failed', error: 'The app closed while the Planner was working.' } } : m));
 }
 
 export function usageLine(message) {
@@ -163,7 +164,7 @@ export function parseQuestion(raw) {
 }
 
 // While a reply is still being written, question and plan markup is hidden until it is complete.
-const OPEN_TAGS = [OPEN_TAG, '<orqestra-plan>'];
+const OPEN_TAGS = [OPEN_TAG, '<orqestra-plan>', '<orqestra-plan-request>'];
 export function visibleText(raw) {
   const source = String(raw ?? '');
   const starts = OPEN_TAGS.map((tag) => source.indexOf(tag)).filter((i) => i >= 0);
@@ -302,4 +303,40 @@ export function autoTeam(graph, statuses) {
 // True when the Manager could answer but no agent in the tree can work yet.
 export function teamNeedsSetup(graph, statuses) {
   return readyProviders(statuses).length > 0 && (graph?.nodes || []).some((n) => n.role !== 'Manager') && teamAgents(graph).length === 0;
+}
+
+// ---- The Planner (decision A6) and re-planning ------------------------------------------------
+// With a working Planner, the Manager ends a build request with a brief instead of a plan:
+// <orqestra-plan-request>{"brief": "..."}</orqestra-plan-request>. The window then asks the Planner.
+
+const PLAN_REQUEST = /<orqestra-plan-request>\s*([\s\S]*?)\s*<\/orqestra-plan-request>\s*$/;
+
+export function parsePlanRequest(raw) {
+  const source = String(raw ?? '');
+  const match = PLAN_REQUEST.exec(source);
+  if (!match) return { body: source, brief: null };
+  try {
+    const brief = text(JSON.parse(match[1])?.brief, 6000);
+    return brief ? { body: source.slice(0, match.index).trimEnd(), brief } : { body: source, brief: null };
+  } catch {
+    return { body: source, brief: null };
+  }
+}
+
+// The Planner that makes the plans: the highest priority Planner that runs on a real tool.
+export function plannerOf(graph) {
+  return teamAgents(graph).filter((a) => a.role === 'Planner').sort(byPriority)[0] || null;
+}
+
+// The message that asks the Manager to fix a run that did not finish. It says what happened and
+// which files exist, so the next plan can build on them.
+export function replanMessage(run) {
+  const tasks = run.tasks.map((t) => `- ${t.title} (${t.role}): ${t.status}${t.note ? ` — ${t.note}` : ''}${t.review && !t.review.approved ? `; review: ${t.review.problems.slice(0, 3).join('; ')}` : ''}`);
+  const files = [...new Set([...(run.files || []), ...run.tasks.flatMap((t) => t.files || [])].map((f) => f.path))];
+  return [
+    `The team run "${run.goal}" did not finish. ${run.summary || ''}`.trim(),
+    'Tasks:', ...tasks,
+    `Files already in the project folder: ${files.length ? files.join(', ') : 'none'}.`,
+    'Make a new plan for what is left. Build on the files that exist, and change them only where needed. Reply in the language I used earlier in this conversation.',
+  ].join('\n');
 }

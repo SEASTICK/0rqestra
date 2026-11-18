@@ -1,5 +1,6 @@
 import { MAX_MESSAGE_CHARS } from "./providers/history";
 import { EFFORT_NAME, MODEL_NAME } from "./providers/process";
+import { parseTeamMembers } from "./team/team-service";
 import { PROVIDER_IDS, type ChatEvent, type ChatHandle, type ChatTurn, type ProviderAdapter, type ProviderId, type ProviderStatus, type TeamMember } from "./providers/types";
 
 // The chat between the window and the provider tools, free of Electron so it is unit-tested.
@@ -41,15 +42,7 @@ export function parseSend(value: unknown): SendPayload {
     }
     return { role: t.role, text: t.text };
   });
-  const rawTeam = v.team ?? [];
-  if (!Array.isArray(rawTeam) || rawTeam.length > 40) throw new Error("Invalid team.");
-  const team: TeamMember[] = rawTeam.map((member: unknown) => {
-    const m = member as Record<string, unknown> | null;
-    if (!m || typeof m.name !== "string" || !m.name.trim() || m.name.length > 48 || typeof m.role !== "string" || !/^[A-Za-z][A-Za-z ]{0,39}$/.test(m.role)) {
-      throw new Error("Invalid team.");
-    }
-    return { name: m.name.trim(), role: m.role, ready: m.ready === true };
-  });
+  const team = parseTeamMembers(v.team);
   return { requestId: v.requestId, projectId: v.projectId, provider: v.provider as ProviderId, model, effort, history: turns, text: v.text, team };
 }
 

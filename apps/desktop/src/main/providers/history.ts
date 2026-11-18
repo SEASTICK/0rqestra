@@ -23,20 +23,44 @@ const PREAMBLE = [
   "index of the option you would choose. Ask at most one question per reply, and none when the request is already clear.",
 ].join("\n");
 
-const PLANNING = [
-  "When the user wants something built or written as files (an app, a page, code, a document) and you know enough,",
-  "reply with one or two sentences and end with a plan for your team, exactly in this form, with nothing after it:",
+export const PLAN_FORMAT = [
   "<orqestra-plan>",
   '{"goal": "A simple workout log in the browser", "tasks": [{"id": "t1", "title": "Build the page", "role": "Builder", "goal": "Concrete instructions for the agent.", "dependsOn": [], "deliverables": ["index.html"]}, {"id": "t2", "title": "Style it", "role": "Builder", "goal": "...", "dependsOn": ["t1"], "deliverables": ["style.css"]}]}',
   "</orqestra-plan>",
+].join("\n");
+
+export const PLAN_RULES = [
   "Rules for a plan: use only roles of agents that can work (listed below), never the Manager; 1 to 8 tasks; every file",
   "in deliverables belongs to exactly one task; use plain relative file names such as index.html or src/app.js; do not add",
   "review tasks, since reviews happen automatically; write each task's goal so an agent can do it without asking.",
+  "To change a file that already exists, make it a deliverable and name it in the task's goal; the agent gets its content.",
+].join("\n");
+
+const PLANNING = [
+  "When the user wants something built or written as files (an app, a page, code, a document) and you know enough,",
+  "reply with one or two sentences and end with a plan for your team, exactly in this form, with nothing after it:",
+  PLAN_FORMAT,
+  PLAN_RULES,
   "The user reads the plan and starts it; nothing runs before that. Never put a question and a plan in the same reply.",
   "If a role the work needs has no working agent, say which role to set up in the tree instead of planning.",
 ].join("\n");
 
-function teamSection(team: TeamMember[]): string {
+// Decision A6: when a Planner can work, planning is the Planner's job. The Manager hands over a brief.
+const HANDOFF = [
+  "Your team has a Planner who can work, and making plans is the Planner's job, not yours. When the user wants something",
+  "built or written as files and you know enough, do not write a plan: reply with one or two sentences and end with a",
+  "brief for the Planner, exactly in this form, with nothing after it:",
+  "<orqestra-plan-request>",
+  '{"brief": "What to build and for whom, the requirements, and every decision made with the user so far."}',
+  "</orqestra-plan-request>",
+  "The user reads the Planner's plan and starts it; nothing runs before that. Never put a question and a brief in the same reply.",
+].join("\n");
+
+export function hasWorkingPlanner(team: TeamMember[]): boolean {
+  return team.some((m) => m.ready && m.role === "Planner");
+}
+
+export function teamSection(team: TeamMember[]): string {
   const working = team.filter((m) => m.ready);
   const demo = team.filter((m) => !m.ready);
   const lines = ["Your team:"];
@@ -55,7 +79,7 @@ export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember
     used += line.length;
   }
   const parts = [PREAMBLE];
-  if (team && team.length) parts.push(PLANNING, teamSection(team));
+  if (team && team.length) parts.push(hasWorkingPlanner(team) ? HANDOFF : PLANNING, teamSection(team));
   if (kept.length) parts.push(`Conversation so far:\n${kept.join("\n\n")}`);
   parts.push(`User: ${text.trim()}`);
   return parts.join("\n\n");
