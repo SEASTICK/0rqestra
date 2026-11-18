@@ -36,8 +36,9 @@ export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPl
   const asked = m.status === 'done' ? parseQuestion(m.text) : { body: visibleText(m.text), question: null };
   const planned = m.status === 'done' && !asked.question ? parsePlan(m.text) : { body: asked.body, plan: null };
   const body = planned.plan ? planned.body : asked.body;
-  const { question } = asked;
-  const { plan } = planned;
+  // Teams answers (m.readOnly) are informational: any plan or question in them is never offered.
+  const question = m.readOnly ? null : asked.question;
+  const plan = m.readOnly ? null : planned.plan;
   return (
     <div className={`message message-manager message-live message-${m.status}`}>
       <div className="message-author"><span className="mini-avatar green"><Icon name="tree" size={14}/></span>Manager<span>{label}</span></div>
@@ -53,6 +54,7 @@ export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPl
           {['not_installed', 'not_signed_in', 'not_subscription'].includes(m.reason) && <button type="button" className="chat-connect" onClick={onAccounts}>Open AI accounts</button>}
         </div>
       )}
+      {m.status === 'failed' && m.fallback && <div className="message-body team-fallback">{m.fallback}</div>}
       {plan && renderPlan && renderPlan(plan, m)}
       {question && !m.answered && <QuestionCard q={question} disabled={busy} onAnswer={(choice) => onAnswer(m.id, answerFor(question, choice), choice)}/>}
       {question && m.answered && <div className="question-answered"><span>{question.question}</span><strong>{m.answered.kind === 'skip' ? 'Skipped — the Manager decides' : m.answered.label}</strong></div>}

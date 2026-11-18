@@ -29,4 +29,20 @@ describe("team service", () => {
     expect(service.stop("nope")).toBe(false);
     expect(service.stop("run-1")).toBe(true);
   });
+
+  it("lets an observer see each run's events with its project and plan, and never a rejected start", async () => {
+    const seen: { runId: string; localProjectId: string; goal: string; type: string }[] = [];
+    const service = new TeamService({ codex: new Hanging(), claude: new Hanging() as unknown as ProviderAdapter }, () => "/tmp/orq-never-written", () => "/tmp", (info, event) => {
+      seen.push({ runId: info.runId, localProjectId: info.localProjectId, goal: info.plan.goal, type: event.type });
+      throw new Error("an observer failure never affects the run");
+    });
+    expect(() => service.start({ runId: "bad", projectId: "p1", agents: [agent], plan: { ...plan, tasks: [] } }, () => {})).toThrow();
+    expect(seen).toEqual([]);
+    service.start({ runId: "run-9", projectId: "p9", agents: [agent], plan }, () => {});
+    await new Promise((r) => setTimeout(r, 20));
+    expect(seen[0]).toEqual({ runId: "run-9", localProjectId: "p9", goal: "g", type: "run-started" });
+    service.stop("run-9");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(seen.at(-1)?.type).toBe("run-finished");
+  });
 });

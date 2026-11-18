@@ -7,6 +7,7 @@ import { registerUpdateIpc, startUpdater } from "./update";
 import { createAdapters, registerChatIpc } from "./chat-ipc";
 import { registerTeamIpc } from "./team/team-ipc";
 import { registerAccountsIpc } from "./accounts/accounts-ipc";
+import { registerTeamsIpc } from "./teams/teams-ipc";
 import {
   createSmokeOutcome,
   errorMessage,
@@ -89,7 +90,8 @@ registerUpdateIpc(isFromMainWindow);
 const providerAdapters = createAdapters();
 const chatService = registerChatIpc(isFromMainWindow, () => mainWindow, providerAdapters);
 registerAccountsIpc(isFromMainWindow, () => mainWindow, providerAdapters, () => chatService.invalidate());
-registerTeamIpc(isFromMainWindow, () => mainWindow, providerAdapters);
+const teams = registerTeamsIpc(isFromMainWindow, () => mainWindow);
+registerTeamIpc(isFromMainWindow, () => mainWindow, providerAdapters, (info, event) => void teams.onRunEvent(info, event));
 
 if (!smoke) {
   app.on("window-all-closed", () => app.quit());

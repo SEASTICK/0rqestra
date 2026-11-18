@@ -139,3 +139,71 @@
 .setup-demo strong{color:var(--shell-text);font-weight:500}
 .setup-demo span{flex:1;min-width:240px}
 .setup-actions .primary-button{color:light-dark(#ffffff,#303030)}
+/* Teams (TeamsPage.jsx) */
+.teams-card h2{margin:0;font-size:15px;font-weight:600}
+.teams-card{max-width:760px}
+.teams-who{margin:0 0 12px}
+.teams-grid{display:flex;flex-direction:column;gap:16px;margin-bottom:16px}
+.teams-start{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;max-width:760px}
+.teams-field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--shell-muted)}
+.teams-field input,.teams-field select,.teams-inline input{font-size:12.5px;padding:8px 10px;border-radius:8px;border:1px solid var(--shell-line);background:var(--shell-card);color:var(--shell-text)}
+.teams-inline{display:flex;gap:8px}
+.teams-inline input{flex:1;min-width:0}
+.teams-section{display:flex;flex-direction:column;gap:8px;padding-top:10px;border-top:1px solid var(--shell-line)}
+.teams-section h3{margin:0;font-size:12.5px;font-weight:600}
+.teams-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12px}
+.teams-list li{display:flex;gap:10px;align-items:center}
+.teams-list li span{flex:1;min-width:0;overflow-wrap:anywhere}
+.teams-list small{color:var(--shell-muted)}
+.teams-projects{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.teams-project{border:1px solid var(--shell-line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.teams-project-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.teams-project-head strong{display:block;font-size:13px;font-weight:600}
+.teams-project-head small{font-size:11px;color:var(--shell-muted)}
+.teams-tone-good{color:light-dark(#1e6b3a,#9fd9b3)}
+.teams-tone-warn{color:light-dark(#8a5a12,#e8c27a)}
+.teams-subform{display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:10px;background:var(--shell-hover)}
+.teams-subform h4{margin:0;font-size:12.5px;font-weight:600}
+.teams-picker,.teams-selection{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.teams-selection{width:100%}
+.teams-invite-code{display:flex;flex-direction:column;gap:6px;font-size:12px}
+/* Team Bridge (TeamBridge.jsx) */
+.team-edges{pointer-events:none}
+.team-edge{stroke-dasharray:6 5}
+.team-node{cursor:pointer;height:auto;min-height:120px}
+.team-bridge-node{border-color:light-dark(#9a9a9a,#6c6c6c)}
+.team-remote-node{border-style:dashed;opacity:.92}
+.team-bridge-avatar{background:light-dark(#eef3fb,#253042);color:light-dark(#2f5b9a,#9fbde8)}
+.team-node .node-bottom{margin-top:8px}
+.team-dot-online{background:light-dark(#2f9a55,#5fcf8a)!important}
+.team-dot-offline,.team-dot-away{background:light-dark(#b9b9b9,#5a5a5a)!important}
+.team-dot-connecting,.team-dot-reconnecting{background:light-dark(#c99a2e,#e2bd64)!important}
+.team-dot-unavailable{background:light-dark(#c25b4a,#e48b7c)!important}
+.team-bridge-body section{padding:12px 0;border-bottom:1px solid var(--shell-line)}
+.team-bridge-body h3{margin:0 0 8px;font-size:12.5px;font-weight:600}
+.team-bridge-body p{margin:4px 0;font-size:12px;line-height:1.5}
+.team-muted{color:var(--shell-muted);font-size:11.5px}
+.team-people,.team-briefs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:12px}
+.team-people li{display:flex;align-items:center;gap:8px}
+.team-people li span:nth-child(2){flex:1;min-width:0;overflow-wrap:anywhere}
+.team-people small,.team-briefs small{color:var(--shell-muted)}
+.team-people .status-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.team-briefs li{display:flex;flex-direction:column;gap:2px}
+/* Work briefs in the Team Bridge (phase 3) */
+.team-brief-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.team-brief-status{font-size:10.5px;padding:2px 7px;border-radius:999px;background:var(--shell-hover);white-space:nowrap}
+.team-brief-in_progress{color:light-dark(#2f5b9a,#9fbde8)}
+.team-brief-blocked{color:light-dark(#8a5a12,#e8c27a)}
+.team-brief-paths{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;overflow-wrap:anywhere}
+.team-briefs li{padding:8px 0;border-top:1px solid var(--shell-line)}
+.team-briefs li:first-child{border-top:0}
+.team-stale{color:light-dark(#8a5a12,#e8c27a)}
+.team-sync-problem{padding:8px 10px;border-radius:8px;background:light-dark(#fdf6ec,#33291a);font-size:11.5px;line-height:1.5;margin-bottom:8px}
+.team-sync-problem p{margin:0 0 4px}
+/* Teams phase 4: catch-up and teammate status in the Manager chat */
+.team-info-body{white-space:pre-wrap;line-height:1.55}
+.team-info-message .message-body{border-left:3px solid light-dark(#9fbde8,#3d5a85);padding-left:10px}
+.team-fallback{white-space:pre-wrap;margin-top:8px;line-height:1.55}
+.team-ask-bar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.team-ask-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:5px 10px;border-radius:999px;border:1px solid var(--shell-line);background:var(--shell-card);color:var(--shell-text)}
+.team-ask-chip .status-dot{width:7px;height:7px;border-radius:50%;display:inline-block}

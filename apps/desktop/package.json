@@ -27,7 +27,8 @@
     "files": [
       "dist/**",
       "package.json",
-      "update-config.json"
+      "update-config.json",
+      "teams-config.json"
     ],
     "win": {
       "target": "nsis",

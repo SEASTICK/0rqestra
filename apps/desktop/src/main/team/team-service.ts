@@ -1,6 +1,6 @@
 import { EFFORT_NAME, MODEL_NAME } from "../providers/process";
 import { PROVIDER_IDS, type ProviderAdapter, type ProviderId } from "../providers/types";
-import { parsePlan } from "./plan";
+import { parsePlan, type Plan } from "./plan";
 import { TeamRun, type TeamAgent, type TeamEvent } from "./runner";
 
 // Team runs between the window and the runner, free of Electron so it is unit-tested. The plan came
@@ -36,6 +36,8 @@ export class TeamService {
     private readonly adapters: Record<ProviderId, ProviderAdapter>,
     private readonly workspaceFor: (projectId: string) => string,
     private readonly cwd: () => string,
+    // Sees every run's events, with the run's local project and plan (Teams briefs, phase 3).
+    private readonly observe?: (info: { runId: string; localProjectId: string; plan: Plan }, event: TeamEvent) => void,
   ) {}
 
   start(raw: unknown, emit: TeamEmit): string {
@@ -48,7 +50,14 @@ export class TeamService {
     const projectId = v.projectId;
     if (this.runs.has(runId)) throw new Error("This run already exists.");
     if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
-    const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace: this.workspaceFor(projectId), cwd: this.cwd(), emit: (event) => emit(runId, event) });
+    const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace: this.workspaceFor(projectId), cwd: this.cwd(), emit: (event) => {
+      emit(runId, event);
+      try {
+        this.observe?.({ runId, localProjectId: projectId, plan }, event);
+      } catch {
+        /* an observer never affects the run */
+      }
+    } });
     this.runs.set(runId, { projectId, run });
     void run.start().catch((error: unknown) => {
       emit(runId, { type: "run-finished", status: "failed", summary: error instanceof Error ? error.message : String(error), files: [], calls: 0, usage: { inputTokens: 0, outputTokens: 0 } });

@@ -2,20 +2,27 @@ import fs from "node:fs";
 import path from "node:path";
 import { app, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import type { ProviderAdapter, ProviderId } from "../providers/types";
+import type { Plan } from "./plan";
+import type { TeamEvent } from "./runner";
 import { TeamService } from "./team-service";
 import { projectWorkspace } from "./workspace";
 
 // Electron wiring for team runs: start, stop, and open the project's folder. Requests are accepted
 // only from the app's own window.
 
-export function registerTeamIpc(isTrusted: (event: IpcMainInvokeEvent) => boolean, getWindow: () => BrowserWindow | null, adapters: Record<ProviderId, ProviderAdapter>): void {
+export function registerTeamIpc(
+  isTrusted: (event: IpcMainInvokeEvent) => boolean,
+  getWindow: () => BrowserWindow | null,
+  adapters: Record<ProviderId, ProviderAdapter>,
+  observe?: (info: { runId: string; localProjectId: string; plan: Plan }, event: TeamEvent) => void,
+): void {
   const base = () => app.getPath("userData");
   const cwd = () => {
     const dir = path.join(base(), "chat-workspace");
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   };
-  const service = new TeamService(adapters, (projectId) => projectWorkspace(base(), projectId), cwd);
+  const service = new TeamService(adapters, (projectId) => projectWorkspace(base(), projectId), cwd, observe);
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
   };
