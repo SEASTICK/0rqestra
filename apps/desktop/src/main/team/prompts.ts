@@ -1,5 +1,6 @@
 import type { Plan, PlanTask } from "./plan";
 import { WEB_RULES } from "../providers/history";
+import { handoffText, type ResolvedHandoff } from "./handoff";
 
 // What the agents are asked, and how their answers are read. Agents have no tools, so they hand over
 // files as text in a fixed form, and the main process writes them.
@@ -10,22 +11,23 @@ export interface AgentRef {
   role: string;
 }
 
-export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, context: { path: string; content: string }[], problems: string[]): string {
+// Every role gets the same handoff format (handoff.ts); what is in it depends on the job. A worker
+// gets the requirements and the files it needs; a reviewer gets the requirements, the submitted
+// changes and the automatic checks.
+const fileBlocks = (files: { path: string; content: string }[]) => files.map((f) => `--- ${f.path} ---\n${f.content}`).join("\n\n");
+const list = (items: string[]) => items.map((i) => `- ${i}`).join("\n");
+
+export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, resolved: ResolvedHandoff, problems: string[]): string {
   const parts = [
     `You are ${agent.name}, the ${agent.role} in a team of AI agents led by a Manager in the app 0rqestra. You do one task.`,
     `Project goal: ${plan.goal}`,
-    `Your task (${task.id}): ${task.title}`,
-    `What to do: ${task.goal}`,
-    `Deliver exactly these files: ${task.deliverables.join(", ")}`,
+    handoffText(plan, task, resolved),
   ];
-  if (context.length) {
-    parts.push(`Files from earlier tasks you can build on:\n${context.map((f) => `--- ${f.path} ---\n${f.content}`).join("\n\n")}`);
-  }
-  if (problems.length) {
-    parts.push(`Your previous attempt was not approved. Fix these problems:\n${problems.map((p) => `- ${p}`).join("\n")}`);
-  }
+  if (resolved.attachments.length) parts.push(`Referenced files:\n${fileBlocks(resolved.attachments)}`);
+  if (problems.length) parts.push(`Your previous attempt was not approved. Fix these problems:\n${list(problems)}`);
   parts.push(
     [
+      "Work only from this handoff: do not redo research or reopen decisions it records. Meet every acceptance criterion.",
       "You cannot run tools or commands, and nothing you write is executed now. Write the complete content of every file.",
       "Answer with one short sentence about what you did, then every file in exactly this form:",
       '<orqestra-file path="the/file.name">',
@@ -38,16 +40,18 @@ export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, contex
   return parts.join("\n\n");
 }
 
-export function reviewPrompt(plan: Plan, task: PlanTask, reviewer: AgentRef, author: AgentRef, files: { path: string; content: string }[]): string {
+export function reviewPrompt(plan: Plan, task: PlanTask, reviewer: AgentRef, author: AgentRef, files: { path: string; content: string }[], resolved: ResolvedHandoff, checks: string[]): string {
   return [
     `You are ${reviewer.name}, the ${reviewer.role} in a team of AI agents in the app 0rqestra. Review another agent's work.`,
     `Project goal: ${plan.goal}`,
-    `Task (${task.id}) done by ${author.name} (${author.role}): ${task.title}`,
-    `What was asked: ${task.goal}`,
-    `Files delivered:\n${files.map((f) => `--- ${f.path} ---\n${f.content}`).join("\n\n")}`,
+    `The task was done by ${author.name} (${author.role}) from this handoff:`,
+    handoffText(plan, task, resolved, true),
+    `Submitted changes:\n${fileBlocks(files)}`,
+    `Verification results so far:\n${list(checks)}`,
     [
-      "Check that the files do what was asked, are complete (no placeholders or missing parts), and have no clear bugs.",
-      "Approve work that is good enough for a first version; list only problems that must be fixed.",
+      "Check the submitted files against each acceptance criterion, the decisions and the rules, and look for missing parts,",
+      "placeholders and clear bugs. Approve work that is good enough for a first version; list only problems that must be",
+      "fixed, naming the criterion or rule each one breaks.",
       "End your answer with exactly this, with nothing after it:",
       '<orqestra-review>{"approved": true, "problems": []}</orqestra-review>',
     ].join("\n"),

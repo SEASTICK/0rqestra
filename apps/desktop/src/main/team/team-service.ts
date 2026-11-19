@@ -3,7 +3,7 @@ import type { ChatEvent, ChatHandle, TeamMember } from "../providers/types";
 import { extractPlan, plannerPrompt } from "./planner";
 import { listFiles } from "./workspace";
 import { PROVIDER_IDS, type ProviderAdapter, type ProviderId } from "../providers/types";
-import { parsePlan, type Plan } from "./plan";
+import { missingProjectFiles, parsePlan, type Plan } from "./plan";
 import { TeamRun, type TeamAgent, type TeamEvent } from "./runner";
 
 // Team runs between the window and the runner, free of Electron so it is unit-tested. The plan came
@@ -63,6 +63,12 @@ export class TeamService {
     if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
     const agents = parseAgents(v.agents);
     const plan = parsePlan(v.plan, [...new Set(agents.map((a) => a.role))]);
+    // A handoff that refers to a project file that is not there is refused now, before anything
+    // starts, instead of sending the task without it.
+    const missing = missingProjectFiles(plan, listFiles(this.workspaceFor(v.projectId)));
+    if (missing.length) {
+      throw new Error(`The plan refers to files that are not in the project folder: ${missing.map((m) => `${m.file} (task ${m.taskId})`).join(", ")}. Add them, or ask the Manager for a new plan.`);
+    }
     const runId = v.runId;
     const projectId = v.projectId;
     if (this.runs.has(runId)) throw new Error("This run already exists.");

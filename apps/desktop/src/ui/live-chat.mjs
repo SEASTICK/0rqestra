@@ -207,9 +207,12 @@ export function parsePlan(raw) {
       id: typeof t?.id === 'string' ? t.id : '', title: text(t?.title, 160), role: text(t?.role, 40), goal: text(t?.goal, 3000),
       dependsOn: Array.isArray(t?.dependsOn) ? t.dependsOn.filter((d) => typeof d === 'string') : [],
       deliverables: Array.isArray(t?.deliverables) ? t.deliverables.filter((d) => typeof d === 'string') : [],
+      // The task's handoff goes to the main process as written; it is validated there.
+      ...(t?.handoff && typeof t.handoff === 'object' && !Array.isArray(t.handoff) ? { handoff: t.handoff } : {}),
     }));
     if (parsed.some((t) => !t.id || !t.title || !t.role || !t.goal || !t.deliverables.length)) return { body: source, plan: null };
-    return { body, plan: { goal, tasks: parsed } };
+    const rules = Array.isArray(value?.rules) ? value.rules.filter((r) => typeof r === 'string') : [];
+    return { body, plan: { goal, tasks: parsed, ...(rules.length ? { rules } : {}) } };
   } catch {
     return { body: source, plan: null };
   }

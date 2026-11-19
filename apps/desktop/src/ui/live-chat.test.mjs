@@ -306,3 +306,16 @@ describe('products in the tree', () => {
     expect(previewUrl(null, web)).toBeNull();
   });
 });
+
+describe('plans with handoffs', () => {
+  it('keeps the handoff fields and project rules for the main process to validate', () => {
+    const handoff = { deliverable: 'A page', decisions: ['Use localStorage'], rules: [], findings: [], references: [{ file: 'notes.md', why: 'list', full: true }], acceptance: ['Sets show'], verify: 'Read it' };
+    const raw = `Plan.\n<orqestra-plan>${JSON.stringify({ goal: 'g', rules: ['Swedish text'], tasks: [{ id: 't1', title: 'T', role: 'Builder', goal: 'Do', dependsOn: [], deliverables: ['index.html'], handoff }] })}</orqestra-plan>`;
+    const { plan } = parsePlan(raw);
+    expect(plan.rules).toEqual(['Swedish text']);
+    expect(plan.tasks[0].handoff).toEqual(handoff);
+    // An older plan stays exactly as it was.
+    const old = parsePlan(`x\n<orqestra-plan>{"goal":"g","tasks":[{"id":"t1","title":"T","role":"Builder","goal":"Do","dependsOn":[],"deliverables":["a.txt"]}]}</orqestra-plan>`).plan;
+    expect(old).toEqual({ goal: 'g', tasks: [{ id: 't1', title: 'T', role: 'Builder', goal: 'Do', dependsOn: [], deliverables: ['a.txt'] }] });
+  });
+});

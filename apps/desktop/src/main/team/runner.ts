@@ -1,7 +1,8 @@
 import type { ChatEvent, ProviderAdapter, ProviderId, Usage } from "../providers/types";
 import { REVIEW_ROLES, type Plan, type PlanTask } from "./plan";
 import { deliveryProblems, parseFiles, parseReview, reviewPrompt, workerPrompt, type AgentRef } from "./prompts";
-import { listFiles, readFiles, writeFiles } from "./workspace";
+import { resolveHandoff, type TaskOutput } from "./handoff";
+import { writeFiles } from "./workspace";
 
 // Runs an approved plan with the agents in the tree. Plain code, no AI: the order, the limits, the
 // retries and the choice of agent are decided here (docs/backend-plan.md, phase 3).
@@ -73,6 +74,8 @@ export class TeamRun {
   private readonly active = new Set<{ stop(): void }>();
   private readonly status = new Map<string, TaskStatus>();
   private readonly written = new Map<string, { path: string; bytes: number }>();
+  // What each finished task produced, for the handoffs of the tasks after it.
+  private readonly outputs = new Map<string, TaskOutput>();
 
   constructor(private readonly o: RunOptions) {
     this.limits = { ...DEFAULT_LIMITS, ...o.limits };
@@ -113,12 +116,13 @@ export class TeamRun {
   private async runTask(task: PlanTask): Promise<void> {
     const { plan, agents, workspace } = this.o;
     const workers = agentsFor(task.role, agents);
-    // What the agent gets to read: the files of the tasks it depends on, existing files its goal names,
-    // and its own files if they already exist (so a later plan can change them).
-    const existing = listFiles(workspace);
-    const mentioned = existing.filter((f) => task.goal.includes(f) || task.deliverables.some((d) => d.toLowerCase() === f.toLowerCase()));
-    const fromDeps = plan.tasks.filter((t) => task.dependsOn.includes(t.id)).flatMap((t) => t.deliverables);
-    const context = readFiles(workspace, [...new Set([...fromDeps, ...mentioned])], this.limits.contextChars);
+    // The handoff, with its references resolved now that the tasks before it have finished. A
+    // reference that cannot be resolved stops the task here: no agent is asked without it.
+    const resolved = resolveHandoff(plan, task, workspace, this.outputs, this.limits.contextChars);
+    if (resolved.problems.length) {
+      this.set(task, "blocked", null, 0, `Missing context: ${resolved.problems.join(" ")}`);
+      return;
+    }
     let problems: string[] = [];
     for (let attempt = 1; attempt <= this.limits.maxAttempts; attempt += 1) {
       // A retry goes to the next agent with the same role, if there is one (escalation by priority).
@@ -126,14 +130,14 @@ export class TeamRun {
       this.set(task, "working", worker.id, attempt, problems.length ? `Fixing: ${problems[0]}` : undefined);
       let text: string;
       try {
-        text = await this.ask(worker, workerPrompt(plan, task, worker, context, problems));
+        text = await this.ask(worker, workerPrompt(plan, task, worker, resolved, problems));
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
         problems = [(error as Error).message];
         continue;
       }
-      const { files } = parseFiles(text);
+      const { summary, files } = parseFiles(text);
       const delivery = deliveryProblems(task, files);
       if (delivery.length) {
         problems = delivery;
@@ -147,6 +151,7 @@ export class TeamRun {
       const saved = writeFiles(workspace, outgoing);
       for (const f of saved) this.written.set(f.path.toLowerCase(), f);
       this.o.emit({ type: "files", taskId: task.id, files: saved });
+      this.outputs.set(task.id, { title: task.title, role: task.role, summary, files: saved.map((f) => f.path) });
 
       const reviewer = REVIEW_ROLES.includes(task.role) ? null : reviewerFor(worker, agents);
       if (!reviewer) {
@@ -156,7 +161,12 @@ export class TeamRun {
       this.set(task, "reviewing", reviewer.id, attempt);
       let reviewText: string;
       try {
-        reviewText = await this.ask(reviewer, reviewPrompt(plan, task, reviewer, worker, files));
+        const checks = [
+          `Delivery check passed: ${task.deliverables.join(", ")} delivered, none empty, no other files.`,
+          ...(attempt > 1 ? [`This is attempt ${attempt}; the problems found last time were sent to the author.`] : []),
+          "No code was run: agents cannot run tools in this version.",
+        ];
+        reviewText = await this.ask(reviewer, reviewPrompt(plan, task, reviewer, worker, outgoing, resolved, checks));
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;

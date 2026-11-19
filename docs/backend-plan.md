@@ -200,6 +200,17 @@ Phase 3 uses the same question card when the plan needs a decision.
   Manager what failed, the review notes and the files that exist, and the Manager makes a new plan.
 - Agents see existing files: a task gets the files from the tasks it depends on, and also existing
   files in the project folder that its goal names or that it is about to replace.
+- **Task handoffs, stage 1 (2026-11-19).** The Manager (or the Planner) writes a handoff for every
+  task inside the plan, with no extra model call: the expected deliverable, decisions already made,
+  the task's rules (plus the plan's project `rules`), findings, references (a dependency's file, the
+  task's own file, a project file, or an earlier task's result; `full` only when the whole file is
+  needed), acceptance criteria and how to verify. Every role reads the same format
+  (`main/team/handoff.ts`): a worker gets the requirements and the referenced files; a reviewer gets
+  the requirements, the submitted changes and the automatic checks. References are checked against
+  the task's dependencies when the plan is read, project files before the run starts, and the rest
+  just before the task runs; a missing one blocks the task instead of being dropped. Agents never
+  get the chat. Plans made before handoffs get one built from the task's goal and dependencies.
+  Not yet: agents asking for more context, return briefs, token measurements, skills.
 - Verified: unit tests, and the flow in a browser with a stubbed bridge. **Not verified:** the
   Planner and the re-plan with the real Claude Code and Codex.
 The port of the Python engine's core, in TypeScript.

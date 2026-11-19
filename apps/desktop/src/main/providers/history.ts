@@ -25,8 +25,24 @@ const PREAMBLE = [
 
 export const PLAN_FORMAT = [
   "<orqestra-plan>",
-  '{"goal": "A simple workout log in the browser", "tasks": [{"id": "t1", "title": "Build the page", "role": "Builder", "goal": "Concrete instructions for the agent.", "dependsOn": [], "deliverables": ["index.html"]}, {"id": "t2", "title": "Style it", "role": "Builder", "goal": "...", "dependsOn": ["t1"], "deliverables": ["style.css"]}]}',
+  '{"goal": "A simple workout log in the browser", "rules": ["Swedish user interface text", "Works offline; no accounts"], "tasks": [' +
+    '{"id": "t1", "title": "Build the page", "role": "Builder", "goal": "Concrete instructions for the agent.", "dependsOn": [], "deliverables": ["index.html"], ' +
+    '"handoff": {"deliverable": "One page where sets are logged and listed.", "decisions": ["Save sets in localStorage, not on a server"], "rules": ["No frameworks"], ' +
+    '"findings": ["The user logs exercise, sets, reps and weight"], "references": [], ' +
+    '"acceptance": ["Adding a set shows it in the list", "The list survives a reload"], "verify": "Read the code path for adding and reloading."}}, ' +
+    '{"id": "t2", "title": "Style it", "role": "Builder", "goal": "...", "dependsOn": ["t1"], "deliverables": ["style.css"], ' +
+    '"handoff": {"deliverable": "...", "decisions": [], "rules": [], "findings": [], "references": [{"file": "index.html", "why": "Style its class names", "full": true}], "acceptance": ["..."], "verify": "..."}}]}',
   "</orqestra-plan>",
+].join("\n");
+
+// How the handoff fields are filled in: each task's agent gets only its task and its handoff.
+export const HANDOFF_RULES = [
+  "Each task's agent sees only its own task and handoff, never this conversation. Put in the handoff what that job needs:",
+  "deliverable (what the finished work is), decisions already made that affect it, rules and constraints for it, findings",
+  "(verified facts and requirements it needs, so nobody redoes research), references (files it must read: a file an",
+  "earlier task it depends on delivers, its own file, or a file already in the project; \"full\": true only when it needs the",
+  "whole file; or {\"task\": \"t1\"} for an earlier task's result), acceptance (how to tell the work is done) and verify (how",
+  "the reviewer should check it). Put rules that apply to every task in the plan's \"rules\". Keep every item short.",
 ].join("\n");
 
 // The app previews web products in an isolated frame that can load only the product's own files.
@@ -41,6 +57,7 @@ export const PLAN_RULES = [
   "in deliverables belongs to exactly one task; use plain relative file names such as index.html or src/app.js; do not add",
   "review tasks, since reviews happen automatically; write each task's goal so an agent can do it without asking.",
   "To change a file that already exists, make it a deliverable and name it in the task's goal; the agent gets its content.",
+  HANDOFF_RULES,
   WEB_RULES,
 ].join("\n");
 
