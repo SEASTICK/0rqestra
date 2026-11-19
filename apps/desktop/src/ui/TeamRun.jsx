@@ -12,6 +12,7 @@ export function PlanCard({ plan, assignments, startedRunId, busy, onStart, onTre
   return (
     <div className="plan-card" role="group" aria-label="Plan">
       <div className="plan-head"><span className="plan-eyebrow">{plannedBy ? `PLAN BY ${plannedBy.toUpperCase()}` : 'PLAN'}</span><strong>{plan.goal}</strong>{summary && <small className="plan-summary">{summary}</small>}</div>
+      {plan.products?.length > 0 && <div className="plan-products"><span>Products</span>{plan.products.map((p) => <span key={p.id} className="plan-product"><strong>{p.name}</strong>{p.folder ? <code>{p.folder}/</code> : null}</span>)}</div>}
       <ol className="plan-tasks">
         {assignments.map((t) => (
           <li key={t.id} className="plan-task">

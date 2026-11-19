@@ -271,8 +271,16 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   storage in the page, a file change showing in the open preview, and that the page cannot read the
   window, use `window.orqestra`, reach the network, or navigate away. **Not verified:** a real run with
   Claude Code and Codex building a product while the preview updates.
-- Not yet: the Manager creating and naming product nodes itself, several previews side by side, and
-  products other than web pages.
+- Not yet: several previews side by side, and products other than web pages.
+
+**Status 2026-11-19: the plan names the products.** The Manager and the Planner list what the user
+will see in the plan (`products`: an id, a name and a folder, at most 6) and mark the tasks that build
+each one. The plan card shows them, and each becomes a node in the tree, linked to the agents of its
+tasks, as soon as the run starts ("Planned", or "Building" while the team works on it). When its files
+arrive it becomes the live preview, in the same place and with the name from the plan. The main process
+validates the products like the rest of the plan. Verified with unit tests and in the real Electron app
+(two named products, then files for one of them). **Not verified:** whether the real models fill in
+`products` reliably; a plan without them still works as before (products then appear from the files).
 
 **Status 2026-11-19: the preview reports problems, and product nodes can be moved.**
 - The main process reads the console of previewed pages (only frames from a known preview host) and

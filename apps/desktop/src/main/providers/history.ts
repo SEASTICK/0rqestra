@@ -25,7 +25,7 @@ const PREAMBLE = [
 
 export const PLAN_FORMAT = [
   "<orqestra-plan>",
-  '{"goal": "A simple workout log in the browser", "tasks": [{"id": "t1", "title": "Build the page", "role": "Builder", "goal": "Concrete instructions for the agent.", "dependsOn": [], "deliverables": ["index.html"]}, {"id": "t2", "title": "Style it", "role": "Builder", "goal": "...", "dependsOn": ["t1"], "deliverables": ["style.css"]}]}',
+  '{"goal": "A simple workout log in the browser", "products": [{"id": "workout-log", "name": "Workout log", "folder": "workout-log"}], "tasks": [{"id": "t1", "title": "Build the page", "role": "Builder", "product": "workout-log", "goal": "Concrete instructions for the agent.", "dependsOn": [], "deliverables": ["workout-log/index.html"]}, {"id": "t2", "title": "Style it", "role": "Builder", "product": "workout-log", "goal": "...", "dependsOn": ["t1"], "deliverables": ["workout-log/style.css"]}]}',
   "</orqestra-plan>",
 ].join("\n");
 
@@ -42,6 +42,9 @@ export const PLAN_RULES = [
   "review tasks, since reviews happen automatically; write each task's goal so an agent can do it without asking.",
   "To change a file that already exists, make it a deliverable and name it in the task's goal; the agent gets its content.",
   WEB_RULES,
+  "Name what the user will see in \"products\" (at most 6; a short lowercase id, a name for the user, and the folder its files",
+  "go in) and set \"product\" on each task that builds it; the user sees each product in the tree while the team works.",
+  "A plan that only writes documents or code with nothing to look at has no products.",
 ].join("\n");
 
 const PLANNING = [

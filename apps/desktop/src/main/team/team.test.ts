@@ -22,6 +22,25 @@ const planValue = {
 };
 
 describe("plan", () => {
+  it("reads the products a plan names and the tasks that build them", () => {
+    const plan = parsePlan({ ...planValue, products: [{ id: "Workout-Log", name: "Workout log", folder: "web" }, { id: "docs", name: "Notes" }], tasks: [{ ...planValue.tasks[0], product: "workout-log" }, planValue.tasks[1]] }, roles);
+    expect(plan.products).toEqual([{ id: "workout-log", name: "Workout log", folder: "web" }, { id: "docs", name: "Notes", folder: "" }]);
+    expect(plan.tasks[0]!.product).toBe("workout-log");
+    expect("product" in plan.tasks[1]!).toBe(false);
+    expect(parsePlan(planValue, roles).products).toEqual([]);
+  });
+
+  it("refuses products that are unclear", () => {
+    const withProducts = (products: unknown, product?: string) => ({ ...planValue, products, tasks: [{ ...planValue.tasks[0], ...(product ? { product } : {}) }, planValue.tasks[1]] });
+    expect(() => parsePlan(withProducts([{ id: "a", name: "A" }], "b"), roles)).toThrow(/product b/);
+    expect(() => parsePlan(withProducts([{ id: "a", name: "A", folder: "x" }, { id: "a", name: "B", folder: "y" }]), roles)).toThrow(/same id/);
+    expect(() => parsePlan(withProducts([{ id: "a", name: "A", folder: "x" }, { id: "b", name: "B", folder: "X" }]), roles)).toThrow(/same folder/);
+    expect(() => parsePlan(withProducts([{ id: "a", name: "A", folder: "../out" }]), roles)).toThrow(/plain folder/);
+    expect(() => parsePlan(withProducts([{ id: "has space", name: "A" }]), roles)).toThrow(/needs an id/);
+    expect(() => parsePlan(withProducts(Array.from({ length: 7 }, (_, i) => ({ id: `p${i}`, name: "P", folder: `f${i}` }))), roles)).toThrow(/at most 6/);
+    expect(() => parsePlan(withProducts("nope"), roles)).toThrow(/at most 6/);
+  });
+
   it("accepts a valid plan", () => {
     expect(parsePlan(planValue, roles).tasks.map((t) => t.deliverables)).toEqual([["index.html"], ["css/style.css"]]);
   });

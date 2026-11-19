@@ -11,7 +11,7 @@ import {ProfileMenu,SettingsDialog,HelpDialog,UpdateIntro} from './Shell.jsx';
 import {readTheme,applyTheme} from './theme.mjs';
 import {readLaunch,dismissBoot} from './launch.mjs';
 import {ChatTargetPicker,AssistantMessage} from './LiveChat.jsx';
-import {readTarget,saveTarget,effectiveTarget,historyFor,newAssistant,applyChatEvent,settleInterrupted,parsePlanRequest,plannerOf,replanMessage,placeProducts,readProblem,addProblem,problemsFor,fixMessage,isRealAgent,autoTeam,teamNeedsSetup,readyProviders,teamMembers,teamAgents,planAssignments,newTeamRun,applyTeamEvent,nodeStates,agentTarget,nodeFieldsFor,agentBadge,TEST_PROMPT,isTerminal} from './live-chat.mjs';
+import {readTarget,saveTarget,effectiveTarget,historyFor,newAssistant,applyChatEvent,settleInterrupted,parsePlanRequest,plannerOf,replanMessage,placeProducts,mergeProducts,readProblem,addProblem,problemsFor,fixMessage,isRealAgent,autoTeam,teamNeedsSetup,readyProviders,teamMembers,teamAgents,planAssignments,newTeamRun,applyTeamEvent,nodeStates,agentTarget,nodeFieldsFor,agentBadge,TEST_PROMPT,isTerminal} from './live-chat.mjs';
 import {AgentRunsOn,TryAgent} from './AgentRuntime.jsx';
 import {PlanCard,TeamRunCard,PlannerCard} from './TeamRun.jsx';
 import {ProductNode,ProductPreview} from './Preview.jsx';
@@ -298,7 +298,7 @@ function App() {
   const liveStates=runningTeam||planningNow?{...(runningTeam?nodeStates(runningTeam.run):{}),...(planningNow?{[planningNow.planning.plannerId]:'planning'}:{})}:null;
   const nameOf=nodeId=>graph.nodes.find(n=>n.id===nodeId)?.name||'an agent no longer in the tree';
   const productInfo=productsByProject[project.id]||{host:null,products:[]};
-  const placedProducts=placeProducts(productInfo.products,project.messages,graph,project.productPos||{}).map(p=>({...p,problems:problemsFor(p,previewProblems[project.id])}));
+  const placedProducts=placeProducts(mergeProducts(productInfo.products,project.messages),project.messages,graph,project.productPos||{}).map(p=>({...p,problems:problemsFor(p,previewProblems[project.id])}));
   function moveProduct(productId,x,y){patchProject({productPos:{...(project.productPos||{}),[productId]:{x,y}}});}
   function clearProblems(product){setPreviewProblems(all=>({...all,[project.id]:(all[project.id]||[]).filter(p=>!problemsFor(product,[p]).length)}));}
   function askToFix(product){if(replying[project.id]){setToast('Wait for the Manager to finish its reply.');return;}if(!toolReady){setToast('Connect the Manager to Claude Code or Codex first.');return;}sendLive(fixMessage(product,product.problems));setToast('The Manager got the problems and will plan a fix.');}

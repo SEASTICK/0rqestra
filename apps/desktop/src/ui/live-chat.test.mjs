@@ -352,3 +352,49 @@ describe('preview problems', () => {
     expect(p).toMatchObject({ x: 900, y: 40 });
   });
 });
+
+import { mergeProducts, planProducts } from './live-chat.mjs';
+
+describe('products named in the plan', () => {
+  const planText = (extra) => `Plan.\n<orqestra-plan>\n${JSON.stringify({ goal: 'Log', tasks: [{ id: 't1', title: 'Page', role: 'Builder', goal: 'Write it', deliverables: ['web/index.html'], product: 'Log' }], ...extra })}\n</orqestra-plan>`;
+
+  it('reads products and the product of each task', () => {
+    const { plan } = parsePlan(planText({ products: [{ id: 'Log', name: 'Workout log', folder: 'web/' }, { id: 'bad id', name: 'x' }, { id: 'n', name: '' }] }));
+    expect(plan.products).toEqual([{ id: 'log', name: 'Workout log', folder: 'web' }]);
+    expect(plan.tasks[0].product).toBe('log');
+    expect(parsePlan(planText({})).plan.products).toEqual([]);
+    expect(planProducts('x')).toEqual([]);
+  });
+
+  it('keeps them on the run', () => {
+    const { plan } = parsePlan(planText({ products: [{ id: 'log', name: 'Workout log', folder: 'web' }] }));
+    const run = newTeamRun('r1', plan);
+    expect(run.products).toEqual([{ id: 'log', name: 'Workout log', folder: 'web' }]);
+    expect(run.tasks[0].product).toBe('log');
+  });
+
+  const graph = { nodes: [{ id: 'm', x: 300, y: 0 }, { id: 'b', x: 100, y: 230 }] };
+  const team = (status, products, tasks) => ({ kind: 'team', run: { status, products, tasks } });
+
+  it('shows a planned product before it has files, linked to the agent building it', () => {
+    const messages = [team('running', [{ id: 'log', name: 'Workout log', folder: 'web' }], [{ deliverables: ['web/index.html'], product: 'log', plannedAgentId: 'b', status: 'working' }])];
+    const [p] = mergeProducts([], messages);
+    expect(p).toMatchObject({ id: 'web', folder: 'web', entry: 'web/index.html', name: 'Workout log', files: [], planned: true, plannedIds: ['log'] });
+    expect(productLinks(p, messages, graph)).toEqual({ agents: ['b'], building: true });
+  });
+
+  it('gives a found product the name from the plan, and keeps its id', () => {
+    const found = [{ id: 'web', folder: 'web', entry: 'web/index.html', name: 'Page title', files: ['web/index.html'], updatedAt: 5 }];
+    const messages = [team('done', [{ id: 'log', name: 'Workout log', folder: 'web' }], [{ deliverables: ['web/x.js'], product: 'log', agentId: 'b', status: 'done' }])];
+    const [p, ...rest] = mergeProducts(found, messages);
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ id: 'web', name: 'Workout log', files: ['web/index.html'], plannedIds: ['log'] });
+    expect(p.planned).toBeUndefined();
+  });
+
+  it('forgets planned products of earlier runs that never got files', () => {
+    const messages = [team('failed', [{ id: 'old', name: 'Old', folder: 'old' }], []), team('running', [{ id: 'new', name: 'New', folder: 'new' }], [])];
+    expect(mergeProducts([], messages).map((p) => p.id)).toEqual(['new']);
+    expect(mergeProducts([], [])).toEqual([]);
+  });
+});

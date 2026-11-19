@@ -193,6 +193,16 @@ export function answerFor(question, choice) {
 
 const PLAN = /<orqestra-plan>\s*([\s\S]*?)\s*<\/orqestra-plan>\s*$/;
 
+// The products a plan names (the main process checks them again before a run starts).
+export function planProducts(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 6).map((p) => ({
+    id: typeof p?.id === 'string' ? p.id.trim().toLowerCase() : '',
+    name: text(p?.name, 60),
+    folder: typeof p?.folder === 'string' && p.folder !== '.' ? p.folder.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') : '',
+  })).filter((p) => /^[a-z0-9][a-z0-9-]{0,31}$/.test(p.id) && p.name);
+}
+
 export function parsePlan(raw) {
   const source = String(raw ?? '');
   const match = PLAN.exec(source);
@@ -207,9 +217,10 @@ export function parsePlan(raw) {
       id: typeof t?.id === 'string' ? t.id : '', title: text(t?.title, 160), role: text(t?.role, 40), goal: text(t?.goal, 3000),
       dependsOn: Array.isArray(t?.dependsOn) ? t.dependsOn.filter((d) => typeof d === 'string') : [],
       deliverables: Array.isArray(t?.deliverables) ? t.deliverables.filter((d) => typeof d === 'string') : [],
+      ...(typeof t?.product === 'string' && t.product.trim() ? { product: t.product.trim().toLowerCase() } : {}),
     }));
     if (parsed.some((t) => !t.id || !t.title || !t.role || !t.goal || !t.deliverables.length)) return { body: source, plan: null };
-    return { body, plan: { goal, tasks: parsed } };
+    return { body, plan: { goal, tasks: parsed, products: planProducts(value?.products) } };
   } catch {
     return { body: source, plan: null };
   }
@@ -237,7 +248,7 @@ export function planAssignments(plan, graph) {
 }
 
 export function newTeamRun(id, plan) {
-  return { id, status: 'running', goal: plan.goal, tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, role: t.role, deliverables: t.deliverables, status: 'waiting', agentId: null, attempt: 0, note: null, review: null, files: [] })), summary: null, files: [], calls: 0, usage: null };
+  return { id, status: 'running', goal: plan.goal, products: plan.products || [], tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, role: t.role, deliverables: t.deliverables, ...(t.product ? { product: t.product } : {}), status: 'waiting', agentId: null, attempt: 0, note: null, review: null, files: [] })), summary: null, files: [], calls: 0, usage: null };
 }
 
 export function applyTeamEvent(run, event) {
@@ -356,7 +367,8 @@ export function productLinks(product, messages, graph) {
     if (m.kind !== 'team' || !m.run) continue;
     for (const t of m.run.tasks || []) {
       const files = [...(t.deliverables || []), ...(t.files || []).map((f) => f.path)];
-      if (!files.some((f) => inProduct(f, product))) continue;
+      const named = t.product && (product.plannedIds || []).includes(t.product);
+      if (!named && !files.some((f) => inProduct(f, product))) continue;
       for (const id of [t.agentId || t.plannedAgentId, t.review?.reviewerId]) if (id && known.has(id) && !agents.includes(id)) agents.push(id);
       if (m.run.status === 'running' && ACTIVE.includes(t.status)) building = true;
     }
@@ -434,4 +446,26 @@ export function fixMessage(product, problems) {
     `Files of this product: ${product.files.slice(0, 40).join(', ')}.`,
     'Make a plan that fixes this. Change only the files that need it, and keep everything that already works. Reply in the language I used earlier in this conversation.',
   ].join('\n');
+}
+
+// The products in the tree: what the main process found in the folder, plus what the latest plans named.
+// A named product takes the found one with the same folder (and its name); one with no files yet is shown
+// as planned, so the user sees it in the tree from the moment the run starts.
+const productKey = (folder) => folder || 'root';
+export function mergeProducts(found, messages) {
+  const out = (found || []).map((p) => ({ ...p, plannedIds: [] }));
+  const runs = (messages || []).filter((m) => m.kind === 'team' && m.run).map((m) => m.run);
+  const latest = runs.at(-1);
+  for (const run of runs) {
+    for (const planned of run.products || []) {
+      const match = out.find((p) => p.folder.toLowerCase() === planned.folder.toLowerCase());
+      if (match) {
+        if (!match.plannedIds.includes(planned.id)) match.plannedIds.push(planned.id);
+        match.name = planned.name;
+      } else if (run === latest) {
+        out.push({ id: productKey(planned.folder), folder: planned.folder, entry: planned.folder ? `${planned.folder}/index.html` : 'index.html', name: planned.name, kind: 'web', files: [], updatedAt: 0, planned: true, plannedIds: [planned.id] });
+      }
+    }
+  }
+  return out;
 }

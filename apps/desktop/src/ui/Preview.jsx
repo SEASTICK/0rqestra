@@ -11,14 +11,15 @@ const problemCount = (n) => `${n} ${n === 1 ? 'problem' : 'problems'}`;
 export function ProductNode({ product, host, version, selected, dragging, Icon, onOpen, onPointerDown, onPointerMove, onPointerUp }) {
   const url = previewUrl(host, product, version);
   const problems = product.problems?.length || 0;
+  const empty = !product.files.length;
   return <div className={`agent-node product-node ${product.building ? 'product-building' : ''} ${problems ? 'product-has-problems' : ''} ${dragging ? 'product-dragging' : ''} ${selected ? 'node-selected' : ''}`} style={{ left: product.x, top: product.y }} role="button" tabIndex={0} aria-label={`Open the preview of ${product.name}${problems ? `, ${problemCount(problems)}` : ''}`} title="Click to preview · drag to move" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onClick={onOpen} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}>
     {product.building && <span className="working-halo" />}
     <span className="node-port top-port" />
     <div className="node-heading"><span className="node-avatar product-avatar"><Icon name="globe" size={18} /></span><div><span className="node-role">Product · Web</span><strong>{product.name}</strong></div></div>
-    <div className="product-thumb" aria-hidden="true">{url && <iframe src={url} title="" tabIndex={-1} sandbox={SANDBOX} referrerPolicy="no-referrer" loading="lazy" />}</div>
+    <div className={`product-thumb ${empty ? 'product-thumb-empty' : ''}`} aria-hidden="true">{empty ? <span>{product.building ? 'The team is writing the first files' : 'No files yet'}</span> : url && <iframe src={url} title="" tabIndex={-1} sandbox={SANDBOX} referrerPolicy="no-referrer" loading="lazy" />}</div>
     <div className="node-bottom">{problems > 0 && !product.building
       ? <span className="product-problems"><span className="status-dot" />{problemCount(problems)}</span>
-      : <span><span className={`status-dot ${product.building ? 'status-dot-live' : ''}`} />{product.building ? 'Building' : `${product.files.length} ${product.files.length === 1 ? 'file' : 'files'}`}</span>}
+      : <span><span className={`status-dot ${product.building ? 'status-dot-live' : ''}`} />{product.building ? 'Building' : empty ? 'Planned' : `${product.files.length} ${product.files.length === 1 ? 'file' : 'files'}`}</span>}
       <span>{product.building ? 'Live' : timeOf(product.updatedAt) && `Updated ${timeOf(product.updatedAt)}`}</span></div>
   </div>;
 }
@@ -63,7 +64,9 @@ export function ProductPreview({ product, host, version, nameOf, Icon, onTree, o
       </div>
     </div>
     <div className={`preview-stage preview-${device}`}>
-      <iframe key={url} className="preview-frame" src={url} title={`Preview of ${product.name}`} sandbox={SANDBOX} referrerPolicy="no-referrer" />
+      {product.files.length
+        ? <iframe key={url} className="preview-frame" src={url} title={`Preview of ${product.name}`} sandbox={SANDBOX} referrerPolicy="no-referrer" />
+        : <div className="preview-empty"><Icon name="globe" size={22} /><strong>{product.building ? 'The team is building this.' : 'Nothing to show yet.'}</strong><p>{product.building ? 'The preview appears here as soon as the first files are written, and updates while the team works.' : `The plan names this product, but ${product.entry} has not been written.`}</p></div>}
     </div>
     <ProblemsBar problems={product.problems || []} building={product.building} onFix={onFix} onDismiss={onClearProblems} />
     <div className="tree-footer"><span><span className="status-dot" />{product.agents.length ? `Built by ${product.agents.map(nameOf).join(', ')}` : 'Files in the project folder'}</span><span>Runs isolated · no internet · no keys</span></div>
