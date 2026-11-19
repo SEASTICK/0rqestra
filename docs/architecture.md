@@ -114,6 +114,14 @@ every IPC channel added later.
    - no loading of remote content;
    - navigation and `window.open` blocked;
    - strict Content-Security-Policy (no inline scripts, no remote origins).
+   - The one exception is the product preview (2026-11-18). Pages the agents built are shown in an
+     `<iframe>` from the `orqestra-preview://` scheme. The main process serves only files inside that
+     project's `workspace/`, never through a link. Each project gets its own host (a hash of the id),
+     so the frame has its own origin and cannot reach the window, `window.orqestra` or IPC. The page's
+     CSP allows only its own files (no network, no forms sent anywhere), the window's CSP allows only
+     that scheme as a frame, frames cannot navigate anywhere else, and downloads are refused. The
+     agents' code therefore runs only as web code in Chromium's sandbox, never in Node.js and never
+     with keys in its environment.
 2. **Narrow preload API.** `contextBridge` exposes a small, typed set of intent methods, for
    example `submitPrompt(text)`, `cancelTask(taskId)`, `answerQuestion(questionId, text)`,
    `respondToApproval(requestId, decision)`, `saveTree(tree)`. It never exposes `ipcRenderer`

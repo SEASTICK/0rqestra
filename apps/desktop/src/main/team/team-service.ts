@@ -1,4 +1,7 @@
 import { EFFORT_NAME, MODEL_NAME } from "../providers/process";
+import type { ChatEvent, ChatHandle, TeamMember } from "../providers/types";
+import { extractPlan, plannerPrompt } from "./planner";
+import { listFiles } from "./workspace";
 import { PROVIDER_IDS, type ProviderAdapter, type ProviderId } from "../providers/types";
 import { parsePlan, type Plan } from "./plan";
 import { TeamRun, type TeamAgent, type TeamEvent } from "./runner";
@@ -27,10 +30,21 @@ export function parseAgents(value: unknown): TeamAgent[] {
   });
 }
 
+export function parseTeamMembers(value: unknown): TeamMember[] {
+  const raw = value ?? [];
+  if (!Array.isArray(raw) || raw.length > MAX_AGENTS) throw new Error("Invalid team.");
+  return raw.map((member: unknown) => {
+    const m = member as Record<string, unknown> | null;
+    if (!m || typeof m.name !== "string" || !m.name.trim() || m.name.length > 48 || typeof m.role !== "string" || !ROLE.test(m.role)) throw new Error("Invalid team.");
+    return { name: m.name.trim(), role: m.role, ready: m.ready === true };
+  });
+}
+
 export type TeamEmit = (runId: string, event: TeamEvent) => void;
 
 export class TeamService {
   private runs = new Map<string, { projectId: string; run: TeamRun }>();
+  private planning = new Map<string, ChatHandle>();
 
   constructor(
     private readonly adapters: Record<ProviderId, ProviderAdapter>,
@@ -77,6 +91,43 @@ export class TeamService {
     return runId;
   }
 
+  // Asks the Planner for a plan from the Manager's brief. Resolves with a validated plan, or throws with a
+  // message the window can show.
+  async plan(raw: unknown): Promise<{ plan: Plan; summary: string }> {
+    const v = (raw ?? {}) as Record<string, unknown>;
+    if (typeof v.requestId !== "string" || !ID.test(v.requestId)) throw new Error("Invalid request id.");
+    if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
+    if (typeof v.brief !== "string" || !v.brief.trim() || v.brief.length > 6000) throw new Error("The brief is empty or too long.");
+    const [planner] = parseAgents([v.planner]);
+    if (planner!.role !== "Planner") throw new Error("The plan can only be made by a Planner.");
+    const agents = parseAgents(v.agents);
+    const team = parseTeamMembers(v.team);
+    if (this.planning.has(v.requestId)) throw new Error("This request is already running.");
+    const requestId = v.requestId;
+    const prompt = plannerPrompt(v.brief.trim(), planner!, team, listFiles(this.workspaceFor(v.projectId)));
+    const handle = this.adapters[planner!.tool].chat({ provider: planner!.tool, model: planner!.model, effort: planner!.effort, history: [], text: prompt, cwd: this.cwd(), raw: true });
+    this.planning.set(requestId, handle);
+    let last: ChatEvent | null = null;
+    try {
+      for await (const event of handle.events) last = event;
+    } finally {
+      this.planning.delete(requestId);
+    }
+    if (last?.type === "cancelled") throw new Error("Planning was stopped.");
+    if (last?.type === "failed") throw new Error(`${planner!.name}: ${last.message}`);
+    if (last?.type !== "completed") throw new Error(`${planner!.name} gave no answer.`);
+    const { summary, value } = extractPlan(last.text);
+    return { plan: parsePlan(value, [...new Set(agents.map((a) => a.role))]), summary };
+  }
+
+  stopPlan(requestId: unknown): boolean {
+    if (typeof requestId !== "string") return false;
+    const handle = this.planning.get(requestId);
+    if (!handle) return false;
+    handle.stop();
+    return true;
+  }
+
   stop(runId: unknown): boolean {
     if (typeof runId !== "string") return false;
     const entry = this.runs.get(runId);
@@ -87,5 +138,6 @@ export class TeamService {
 
   stopAll(): void {
     for (const entry of this.runs.values()) entry.run.stop();
+    for (const handle of this.planning.values()) handle.stop();
   }
 }

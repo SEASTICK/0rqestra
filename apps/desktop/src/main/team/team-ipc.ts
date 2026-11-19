@@ -11,6 +11,8 @@ export type StartGate =
   | { kind: "granted"; guard: { authorize(paths: string[]): Promise<void>; release(): Promise<void> } }
   | { kind: "conflict" | "unavailable" | "no_scope"; message: string };
 import { projectWorkspace } from "./workspace";
+import { findProducts } from "../preview/products";
+import { rememberPreviewHost } from "../preview/preview-protocol";
 
 // Electron wiring for team runs: start, stop, and open the project's folder. Requests are accepted
 // only from the app's own window.
@@ -52,9 +54,24 @@ export function registerTeamIpc(
       throw error;
     }
   });
+  ipcMain.handle("team:plan", (event, payload: unknown) => {
+    guard(event);
+    return service.plan(payload);
+  });
+  ipcMain.handle("team:plan-stop", (event, requestId: unknown) => {
+    guard(event);
+    return service.stopPlan(requestId);
+  });
   ipcMain.handle("team:stop", (event, runId: unknown) => {
     guard(event);
     return service.stop(runId);
+  });
+  // The products in the project's folder, and the preview host that serves them.
+  ipcMain.handle("team:products", (event, projectId: unknown) => {
+    guard(event);
+    if (typeof projectId !== "string") throw new Error("Invalid project id.");
+    const workspace = projectWorkspace(base(), projectId);
+    return { host: rememberPreviewHost(projectId, workspace), products: findProducts(workspace) };
   });
   ipcMain.handle("team:open-folder", async (event, projectId: unknown) => {
     guard(event);

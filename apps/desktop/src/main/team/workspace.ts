@@ -14,7 +14,7 @@ export function projectWorkspace(base: string, projectId: string): string {
   return dir;
 }
 
-function inside(root: string, rel: string): string {
+export function inside(root: string, rel: string): string {
   const safe = safeRelativePath(rel);
   if (!safe) throw new Error(`Refused file path: ${rel}`);
   const full = path.resolve(root, ...safe.split("/"));
@@ -69,5 +69,27 @@ export function readFiles(root: string, paths: string[], maxChars: number): { pa
       // A file a dependency did not deliver is simply not included.
     }
   }
+  return out;
+}
+
+// The files in the project folder, as plain relative paths (links are skipped).
+export function listFiles(root: string, max = 200): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, prefix: string, depth: number) => {
+    if (depth > 6 || out.length >= max) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (out.length >= max || e.isSymbolicLink() || e.name.endsWith(".orqestra-tmp")) continue;
+      const rel = prefix ? `${prefix}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(path.join(dir, e.name), rel, depth + 1);
+      else if (e.isFile() && safeRelativePath(rel)) out.push(rel);
+    }
+  };
+  walk(root, "", 0);
   return out;
 }

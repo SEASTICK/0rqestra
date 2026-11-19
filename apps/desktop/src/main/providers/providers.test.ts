@@ -91,6 +91,15 @@ describe("prompt", () => {
     expect(prompt).toContain("Agents without a tool, which cannot work yet: The architect (Planner).");
   });
 
+  it("hands planning to a working Planner instead of planning itself", () => {
+    const withPlanner = buildPrompt([], "build", [{ name: "The architect", role: "Planner", ready: true }, { name: "Code builder", role: "Builder", ready: true }]);
+    expect(withPlanner).toContain("<orqestra-plan-request>");
+    expect(withPlanner).not.toContain("<orqestra-plan>\n");
+    const demoPlanner = buildPrompt([], "build", [{ name: "The architect", role: "Planner", ready: false }, { name: "Code builder", role: "Builder", ready: true }]);
+    expect(demoPlanner).toContain("<orqestra-plan>");
+    expect(demoPlanner).not.toContain("<orqestra-plan-request>");
+  });
+
   it("drops the oldest turns when the history is too long", () => {
     const long = "x".repeat(MAX_HISTORY_CHARS / 2);
     const prompt = buildPrompt([{ role: "user", text: `OLD ${long}` }, { role: "assistant", text: `MID ${long}` }, { role: "user", text: "NEW" }], "now");

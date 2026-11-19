@@ -76,7 +76,8 @@ export function applyChatEvent(message, event) {
 // A reply that was still being written when the app closed cannot continue.
 export function settleInterrupted(messages) {
   return (messages || []).map((m) => (m.kind === 'assistant' && m.status === 'streaming' ? { ...m, status: 'stopped' }
-    : m.kind === 'team' && m.run ? { ...m, run: settleTeamRun(m.run) } : m));
+    : m.kind === 'team' && m.run ? { ...m, run: settleTeamRun(m.run) }
+      : m.planning && m.planning.status === 'running' ? { ...m, planning: { ...m.planning, status: 'failed', error: 'The app closed while the Planner was working.' } } : m));
 }
 
 export function usageLine(message) {
@@ -165,7 +166,7 @@ export function parseQuestion(raw) {
 }
 
 // While a reply is still being written, question and plan markup is hidden until it is complete.
-const OPEN_TAGS = [OPEN_TAG, '<orqestra-plan>'];
+const OPEN_TAGS = [OPEN_TAG, '<orqestra-plan>', '<orqestra-plan-request>'];
 export function visibleText(raw) {
   const source = String(raw ?? '');
   const starts = OPEN_TAGS.map((tag) => source.indexOf(tag)).filter((i) => i >= 0);
@@ -271,4 +272,120 @@ export function nodeStates(run) {
 export function settleTeamRun(run) {
   if (!run || run.status !== 'running') return run;
   return { ...run, status: 'stopped', summary: 'The app closed while the team was working. Files already written stay in the project folder.', tasks: run.tasks.map((t) => (['waiting', 'working', 'reviewing'].includes(t.status) ? { ...t, status: 'stopped' } : t)) };
+}
+
+// ---- Setting up the team in one step -----------------------------------------------------------
+// Connects the agents that have no tool yet to the tools that are signed in with a subscription.
+// Builders and the Manager go on the first tool; reviewers go on another tool when there is one, so
+// work is checked by a different provider. Agents the user already set to a real tool are kept.
+
+const TOOL_ORDER = ['codex', 'claude', 'gemini'];
+const CHECKING_ROLES = ['Code Reviewer', 'Security Reviewer', 'Reviewer', 'Tester'];
+
+export function firstModel(status) {
+  const models = status?.models || [];
+  return (models.find((m) => m.isDefault) || models[0] || null)?.id ?? null;
+}
+
+export function autoTeam(graph, statuses) {
+  const ready = readyProviders(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
+  if (!ready.length) return { graph, changed: [] };
+  const main = ready[0];
+  const other = ready[1] || ready[0];
+  const changed = [];
+  const nodes = (graph?.nodes || []).map((n) => {
+    if (isRealAgent(n)) return n;
+    const status = n.role !== 'Manager' && CHECKING_ROLES.includes(n.role) ? other : n.role === 'Manager' ? (ready.find((t) => t.provider === 'claude') || main) : main;
+    changed.push({ id: n.id, name: n.name, tool: status.name });
+    return { ...n, ...nodeFieldsFor({ provider: status.provider, model: firstModel(status), effort: null }, status) };
+  });
+  return { graph: { ...graph, nodes }, changed };
+}
+
+// True when the Manager could answer but no agent in the tree can work yet.
+export function teamNeedsSetup(graph, statuses) {
+  return readyProviders(statuses).length > 0 && (graph?.nodes || []).some((n) => n.role !== 'Manager') && teamAgents(graph).length === 0;
+}
+
+// ---- The Planner (decision A6) and re-planning ------------------------------------------------
+// With a working Planner, the Manager ends a build request with a brief instead of a plan:
+// <orqestra-plan-request>{"brief": "..."}</orqestra-plan-request>. The window then asks the Planner.
+
+const PLAN_REQUEST = /<orqestra-plan-request>\s*([\s\S]*?)\s*<\/orqestra-plan-request>\s*$/;
+
+export function parsePlanRequest(raw) {
+  const source = String(raw ?? '');
+  const match = PLAN_REQUEST.exec(source);
+  if (!match) return { body: source, brief: null };
+  try {
+    const brief = text(JSON.parse(match[1])?.brief, 6000);
+    return brief ? { body: source.slice(0, match.index).trimEnd(), brief } : { body: source, brief: null };
+  } catch {
+    return { body: source, brief: null };
+  }
+}
+
+// The Planner that makes the plans: the highest priority Planner that runs on a real tool.
+export function plannerOf(graph) {
+  return teamAgents(graph).filter((a) => a.role === 'Planner').sort(byPriority)[0] || null;
+}
+
+// The message that asks the Manager to fix a run that did not finish. It says what happened and
+// which files exist, so the next plan can build on them.
+export function replanMessage(run) {
+  const tasks = run.tasks.map((t) => `- ${t.title} (${t.role}): ${t.status}${t.note ? ` — ${t.note}` : ''}${t.review && !t.review.approved ? `; review: ${t.review.problems.slice(0, 3).join('; ')}` : ''}`);
+  const files = [...new Set([...(run.files || []), ...run.tasks.flatMap((t) => t.files || [])].map((f) => f.path))];
+  return [
+    `The team run "${run.goal}" did not finish. ${run.summary || ''}`.trim(),
+    'Tasks:', ...tasks,
+    `Files already in the project folder: ${files.length ? files.join(', ') : 'none'}.`,
+    'Make a new plan for what is left. Build on the files that exist, and change them only where needed. Reply in the language I used earlier in this conversation.',
+  ].join('\n');
+}
+
+// Products (web pages the team built) in the tree. The main process finds them in the project's folder;
+// here they are linked to the agents that wrote or reviewed their files, and placed under those agents.
+const ACTIVE = ['waiting', 'working', 'reviewing'];
+const inProduct = (file, product) => product.files.includes(file) || (product.folder !== '' && file.startsWith(`${product.folder}/`));
+
+export function productLinks(product, messages, graph) {
+  const known = new Set((graph?.nodes || []).map((n) => n.id));
+  const agents = [];
+  let building = false;
+  for (const m of messages || []) {
+    if (m.kind !== 'team' || !m.run) continue;
+    for (const t of m.run.tasks || []) {
+      const files = [...(t.deliverables || []), ...(t.files || []).map((f) => f.path)];
+      if (!files.some((f) => inProduct(f, product))) continue;
+      for (const id of [t.agentId || t.plannedAgentId, t.review?.reviewerId]) if (id && known.has(id) && !agents.includes(id)) agents.push(id);
+      if (m.run.status === 'running' && ACTIVE.includes(t.status)) building = true;
+    }
+  }
+  return { agents, building };
+}
+
+const NODE = { w: 224, h: 159 };
+const overlaps = (a, b) => Math.abs(a.x - b.x) < NODE.w + 20 && Math.abs(a.y - b.y) < NODE.h + 30;
+
+export function placeProducts(products, messages, graph) {
+  const nodes = graph?.nodes || [];
+  const placed = [];
+  const bottom = nodes.length ? Math.max(...nodes.map((n) => n.y)) : 0;
+  const left = nodes.length ? Math.min(...nodes.map((n) => n.x)) : 0;
+  for (const product of products || []) {
+    const links = productLinks(product, messages, graph);
+    const linked = nodes.filter((n) => links.agents.includes(n.id));
+    const spot = linked.length
+      ? { x: Math.round(linked.reduce((s, n) => s + n.x, 0) / linked.length), y: Math.max(...linked.map((n) => n.y)) + 240 }
+      : { x: left, y: bottom + 240 };
+    while ([...nodes, ...placed].some((other) => overlaps(spot, other))) spot.x += NODE.w + 30;
+    placed.push({ ...product, ...spot, agents: links.agents, building: links.building });
+  }
+  return placed;
+}
+
+// The preview address of a product: its own host, its entry page, and a version so it reloads after changes.
+export function previewUrl(host, product, version = 0) {
+  if (!host || !product) return null;
+  return `orqestra-preview://${host}/${product.entry.split('/').map(encodeURIComponent).join('/')}?v=${version}`;
 }

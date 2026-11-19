@@ -1,7 +1,7 @@
 // The parts of the real chat that are shown: the choice of tool, model and effort under the
 // message box, and a reply from a real model while it is written and after.
 import React, { useState } from 'react';
-import { answerFor, FAILURE_HELP, parsePlan, parseQuestion, readyProviders, usageLine, visibleText } from './live-chat.mjs';
+import { answerFor, FAILURE_HELP, parsePlan, parsePlanRequest, parseQuestion, readyProviders, usageLine, visibleText } from './live-chat.mjs';
 
 export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
   const ready = readyProviders(statuses);
@@ -30,15 +30,17 @@ export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
   );
 }
 
-export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPlan }) {
+export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPlan, renderPlanRequest }) {
   const label = [m.providerName, m.model && m.model !== 'default' ? m.model : null, m.effort].filter(Boolean).join(' · ');
   const usage = m.status === 'done' ? usageLine(m) : '';
   const asked = m.status === 'done' ? parseQuestion(m.text) : { body: visibleText(m.text), question: null };
   const planned = m.status === 'done' && !asked.question ? parsePlan(m.text) : { body: asked.body, plan: null };
-  const body = planned.plan ? planned.body : asked.body;
-  // Teams answers (m.readOnly) are informational: any plan or question in them is never offered.
+  const requested = m.status === 'done' && !asked.question && !planned.plan ? parsePlanRequest(m.text) : { body: planned.body, brief: null };
+  const body = requested.brief ? requested.body : planned.plan ? planned.body : asked.body;
+  // Teams answers (m.readOnly) are informational: no plan, plan request or question in them is offered.
   const question = m.readOnly ? null : asked.question;
   const plan = m.readOnly ? null : planned.plan;
+  const brief = m.readOnly ? null : requested.brief;
   return (
     <div className={`message message-manager message-live message-${m.status}`}>
       <div className="message-author"><span className="mini-avatar green"><Icon name="tree" size={14}/></span>Manager<span>{label}</span></div>
@@ -56,6 +58,7 @@ export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPl
       )}
       {m.status === 'failed' && m.fallback && <div className="message-body team-fallback">{m.fallback}</div>}
       {plan && renderPlan && renderPlan(plan, m)}
+      {brief && renderPlanRequest && renderPlanRequest(brief, m)}
       {question && !m.answered && <QuestionCard q={question} disabled={busy} onAnswer={(choice) => onAnswer(m.id, answerFor(question, choice), choice)}/>}
       {question && m.answered && <div className="question-answered"><span>{question.question}</span><strong>{m.answered.kind === 'skip' ? 'Skipped — the Manager decides' : m.answered.label}</strong></div>}
       {usage && <div className="live-note">{usage}</div>}

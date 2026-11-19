@@ -196,3 +196,113 @@ describe('plans and team runs', () => {
     expect(settleTeamRun({ ...run, status: 'running' })).toMatchObject({ status: 'stopped', tasks: [{ status: 'done' }, { status: 'stopped' }] });
   });
 });
+
+import { autoTeam, teamNeedsSetup } from './live-chat.mjs';
+
+describe('setting up the team', () => {
+  const demoGraph = { nodes: [
+    { id: 'm', name: 'Project manager', role: 'Manager', provider: 'OpenAI', model: 'Codex (demo)' },
+    { id: 'p', name: 'The architect', role: 'Planner', provider: 'Anthropic', model: 'Claude (demo)' },
+    { id: 'b', name: 'Code builder', role: 'Builder', provider: 'OpenAI', model: 'Codex (demo)' },
+    { id: 'r', name: 'A fresh pair of eyes', role: 'Code Reviewer', provider: 'Google', model: 'Gemini (demo)' },
+  ], edges: [] };
+
+  it('puts builders on one tool and reviewers on the other, and the Manager on Claude Code', () => {
+    const { graph, changed } = autoTeam(demoGraph, [claude, codex]);
+    const tool = (id) => graph.nodes.find((n) => n.id === id).agent.tool;
+    expect([tool('m'), tool('p'), tool('b'), tool('r')]).toEqual(['claude', 'codex', 'codex', 'claude']);
+    expect(graph.nodes.find((n) => n.id === 'b')).toMatchObject({ provider: 'Codex', model: 'GPT-6.1 Sol', agent: { model: 'gpt-6.1-sol', effort: null } });
+    expect(changed.map((c) => c.id)).toEqual(['m', 'p', 'b', 'r']);
+  });
+
+  it('uses the one tool for everyone when only one is connected', () => {
+    const { graph } = autoTeam(demoGraph, [codex]);
+    expect(graph.nodes.every((n) => n.agent.tool === 'codex')).toBe(true);
+  });
+
+  it('keeps agents the user already set, and does nothing without a connected tool', () => {
+    const custom = { ...demoGraph, nodes: demoGraph.nodes.map((n) => (n.id === 'b' ? { ...n, provider: 'Claude Code', model: 'Opus', agent: { tool: 'claude', model: 'opus', effort: null } } : n)) };
+    const { graph, changed } = autoTeam(custom, [claude, codex]);
+    expect(graph.nodes.find((n) => n.id === 'b').agent).toEqual({ tool: 'claude', model: 'opus', effort: null });
+    expect(changed.map((c) => c.id)).not.toContain('b');
+    expect(autoTeam(demoGraph, [])).toEqual({ graph: demoGraph, changed: [] });
+  });
+
+  it('asks for setup only when tools are connected and no agent can work', () => {
+    expect(teamNeedsSetup(demoGraph, [codex])).toBe(true);
+    expect(teamNeedsSetup(demoGraph, [])).toBe(false);
+    expect(teamNeedsSetup(autoTeam(demoGraph, [codex]).graph, [codex])).toBe(false);
+  });
+});
+
+import { parsePlanRequest, plannerOf, replanMessage } from './live-chat.mjs';
+
+describe('the Planner and re-planning', () => {
+  it('reads the brief for the Planner and hides it while it is written', () => {
+    expect(parsePlanRequest('Jag ber planeraren.\n<orqestra-plan-request>\n{"brief": "En träningslogg"}\n</orqestra-plan-request>')).toEqual({ body: 'Jag ber planeraren.', brief: 'En träningslogg' });
+    expect(parsePlanRequest('<orqestra-plan-request>{"brief": ""}</orqestra-plan-request>').brief).toBeNull();
+    expect(parsePlanRequest('<orqestra-plan-request>nope</orqestra-plan-request>').brief).toBeNull();
+    expect(visibleText('Jag ber planeraren. <orqestra-plan-req')).toBe('Jag ber planeraren. ');
+    expect(visibleText('Jag ber planeraren. <orqestra-plan-request>{"br')).toBe('Jag ber planeraren.');
+  });
+
+  it('picks the highest priority working Planner', () => {
+    const graph = { nodes: [
+      { id: 'p2', name: 'Second', role: 'Planner', priority: 2, agent: { tool: 'codex', model: 'x' } },
+      { id: 'p1', name: 'First', role: 'Planner', priority: 1, agent: { tool: 'claude', model: 'opus' } },
+      { id: 'p0', name: 'Demo', role: 'Planner', priority: 0 },
+    ] };
+    expect(plannerOf(graph).id).toBe('p1');
+    expect(plannerOf({ nodes: [{ id: 'p0', role: 'Planner', priority: 1 }] })).toBeNull();
+  });
+
+  it('describes a failed run so the Manager can plan what is left', () => {
+    const text = replanMessage({ goal: 'Log', summary: '1 of 2 tasks finished.', files: [{ path: 'index.html' }], tasks: [
+      { title: 'Page', role: 'Builder', status: 'done', note: 'Approved', files: [{ path: 'index.html' }] },
+      { title: 'Script', role: 'Builder', status: 'failed', note: 'Not approved', review: { approved: false, problems: ['Saving does not work'] }, files: [] },
+    ] });
+    expect(text).toContain('did not finish. 1 of 2 tasks finished.');
+    expect(text).toContain('- Script (Builder): failed — Not approved; review: Saving does not work');
+    expect(text).toContain('Files already in the project folder: index.html.');
+  });
+});
+
+import { placeProducts, previewUrl, productLinks } from './live-chat.mjs';
+
+describe('products in the tree', () => {
+  const graph = { nodes: [{ id: 'm', x: 300, y: 0 }, { id: 'b', x: 100, y: 230 }, { id: 'r', x: 500, y: 230 }, { id: 'p', x: 300, y: 230 }] };
+  const run = (status, tasks) => ({ kind: 'team', run: { status, tasks } });
+  const web = { id: 'web', folder: 'web', entry: 'web/index.html', name: 'Web', files: ['web/index.html', 'web/app.js'] };
+  const root = { id: 'root', folder: '', entry: 'index.html', name: 'Site', files: ['index.html'] };
+
+  it('links a product to the agents that wrote or reviewed its files', () => {
+    const messages = [
+      run('done', [{ deliverables: ['web/index.html'], agentId: 'b', review: { reviewerId: 'r' }, status: 'done' }, { deliverables: ['notes.md'], agentId: 'p', status: 'done' }]),
+      run('running', [{ deliverables: ['web/new.css'], plannedAgentId: 'p', status: 'working' }]),
+      { kind: 'user', text: 'hi' },
+    ];
+    expect(productLinks(web, messages, graph)).toEqual({ agents: ['b', 'r', 'p'], building: true });
+    expect(productLinks(root, messages, graph)).toEqual({ agents: [], building: false });
+  });
+
+  it('ignores agents that are no longer in the tree and finished runs', () => {
+    expect(productLinks(web, [run('running', [{ deliverables: ['web/app.js'], agentId: 'gone', status: 'done' }])], graph)).toEqual({ agents: [], building: false });
+  });
+
+  it('places a product under its agents, and never on top of another node', () => {
+    const messages = [run('done', [{ deliverables: ['web/index.html'], agentId: 'b', status: 'done' }])];
+    const [a, b] = placeProducts([web, { ...web, id: 'web2' }], messages, graph);
+    expect(a).toMatchObject({ id: 'web', x: 100, y: 470, agents: ['b'], building: false });
+    expect(b.y).toBe(470);
+    expect(b.x).toBeGreaterThanOrEqual(100 + 224);
+    const [alone] = placeProducts([root], [], graph);
+    expect(alone.y).toBe(470);
+    expect(placeProducts([], [], graph)).toEqual([]);
+  });
+
+  it('builds the preview address with the entry page and a version', () => {
+    expect(previewUrl('pabc', web, 3)).toBe('orqestra-preview://pabc/web/index.html?v=3');
+    expect(previewUrl('pabc', { ...root, entry: 'my page.html' })).toBe('orqestra-preview://pabc/my%20page.html?v=0');
+    expect(previewUrl(null, web)).toBeNull();
+  });
+});

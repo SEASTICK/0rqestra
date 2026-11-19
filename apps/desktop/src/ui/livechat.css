@@ -229,3 +229,34 @@
 .node-no-tool-label{color:var(--shell-muted);font-size:10.5px;line-height:1.35}
 .node-no-tool{border-style:dashed}
 .composer-setup{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+
+/* Shown above the message box while no agent has a tool yet. */
+.team-setup-banner{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 10px;padding:11px 14px;border:1px solid light-dark(#d9e3f7,#2b3a55);background:light-dark(#f3f7ff,#1b2433);border-radius:12px;font-size:13px;color:var(--shell-text)}
+.team-setup-banner strong{font-weight:600}
+.plan-summary{font-size:13px;color:var(--shell-muted);font-weight:400;line-height:1.5}
+.planner-card .plan-eyebrow{display:flex;align-items:center;gap:8px}
+
+/* Products in the tree, and the live preview beside the chat (Preview.jsx). */
+.product-node{cursor:pointer;display:flex;flex-direction:column}
+.product-node:focus-visible{outline:2px solid light-dark(#444444, #b6b6b6);outline-offset:3px}
+.product-node .node-heading{padding-bottom:8px}
+.product-avatar{background:light-dark(#f1f1f1, #3a3a3a);color:light-dark(#333333, #d0d0d0);border:1px solid light-dark(#e4e4e4, #474747)}
+.product-thumb{position:relative;height:56px;margin:0 12px 9px;border:1px solid light-dark(#e6e6e6, #444444);border-radius:7px;overflow:hidden;background:#ffffff}
+.product-thumb iframe{position:absolute;top:0;left:0;width:990px;height:280px;border:0;transform:scale(.2);transform-origin:0 0;pointer-events:none;background:#ffffff}
+.product-node .node-bottom{margin-top:auto}
+.product-building .status-dot{background:#4f9a63;animation:product-pulse 1.4s ease-in-out infinite}
+@keyframes product-pulse{50%{opacity:.35}}
+.edge-product .edge-line{stroke-dasharray:3 5}
+.preview-panel{display:flex;flex-direction:column;min-width:0}
+.preview-panel .tree-panel-title strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+.preview-live{color:#3f8f55;border-color:#bfdcc7}
+.preview-devices{display:flex;gap:2px;padding:2px;margin-right:4px;border:1px solid light-dark(#e6e6e6, #404040);border-radius:9px}
+.preview-devices .icon-button{width:28px;height:26px}
+.preview-devices .is-active{background:light-dark(#eeeeee, #3c3c3c);color:light-dark(#222222, #eeeeee)}
+.preview-stage{flex:1;min-height:0;display:flex;justify-content:center;align-items:stretch;background:light-dark(#f3f3f3, #262626)}
+.preview-frame{width:100%;height:100%;border:0;background:#ffffff}
+.preview-phone{padding:18px 0}
+.preview-phone .preview-frame{width:390px;max-width:calc(100% - 32px);border:1px solid light-dark(#dddddd, #444444);border-radius:22px;box-shadow:0 10px 30px #0000001a}
+.preview-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px;text-align:center;color:light-dark(#545454, #a5a5a5)}
+.preview-empty strong{color:light-dark(#222222, #e0e0e0);font-size:15px}
+.preview-empty p{margin:0 0 8px;font-size:13px}
