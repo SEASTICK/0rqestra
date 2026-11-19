@@ -306,3 +306,49 @@ describe('products in the tree', () => {
     expect(previewUrl(null, web)).toBeNull();
   });
 });
+
+import { addProblem, fixMessage, MAX_PROBLEMS, problemLine, problemsFor, readProblem } from './live-chat.mjs';
+
+describe('preview problems', () => {
+  const web = { id: 'web', folder: 'web', entry: 'web/index.html', name: 'Web', files: ['web/index.html', 'web/app.js'] };
+  const root = { id: 'root', folder: '', entry: 'index.html', name: 'Site', files: ['index.html'] };
+  const err = readProblem({ projectId: 'p1', kind: 'error', message: 'Uncaught ReferenceError: x is not defined', page: 'web/index.html', source: 'web/app.js', line: 4 });
+
+  it('reads only well-formed problems', () => {
+    expect(err).toEqual({ kind: 'error', message: 'Uncaught ReferenceError: x is not defined', page: 'web/index.html', source: 'web/app.js', line: 4 });
+    expect(readProblem({ kind: 'evil', message: 'x' })).toBeNull();
+    expect(readProblem({ kind: 'error', message: '  ' })).toBeNull();
+    expect(readProblem(null)).toBeNull();
+    expect(readProblem({ kind: 'missing', message: 'm', line: -2, page: 5 })).toEqual({ kind: 'missing', message: 'm', page: null, source: null, line: null });
+  });
+
+  it('keeps each problem once and only the latest ones', () => {
+    let list = addProblem([], err);
+    expect(addProblem(list, { ...err })).toBe(list);
+    for (let i = 0; i < 30; i++) list = addProblem(list, { ...err, message: `m${i}` });
+    expect(list).toHaveLength(MAX_PROBLEMS);
+    expect(list.at(-1).message).toBe('m29');
+    expect(addProblem(list, null)).toBe(list);
+  });
+
+  it('finds the problems of a product by its page or file', () => {
+    const missing = { kind: 'missing', message: 'gone', page: null, source: 'web/style.css', line: null };
+    const other = { ...err, page: 'landing/index.html', source: 'landing/a.js' };
+    expect(problemsFor(web, [err, missing, other])).toEqual([err, missing]);
+    expect(problemsFor(root, [err, other])).toHaveLength(2);
+    expect(problemsFor(null, [err])).toEqual([]);
+  });
+
+  it('writes a fix request for the Manager', () => {
+    expect(problemLine(err)).toBe('Script error: Uncaught ReferenceError: x is not defined (web/app.js, line 4)');
+    const text = fixMessage(web, [err]);
+    expect(text).toContain('The preview of "Web" (web/index.html) shows this problem:');
+    expect(text).toContain('- Script error: Uncaught ReferenceError');
+    expect(text).toContain('Files of this product: web/index.html, web/app.js.');
+  });
+
+  it('places a product where the user moved it', () => {
+    const [p] = placeProducts([web], [], { nodes: [{ id: 'm', x: 0, y: 0 }] }, { web: { x: 900, y: 40 } });
+    expect(p).toMatchObject({ x: 900, y: 40 });
+  });
+});

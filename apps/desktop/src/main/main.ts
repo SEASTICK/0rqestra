@@ -8,7 +8,7 @@ import { createAdapters, registerChatIpc } from "./chat-ipc";
 import { registerTeamIpc } from "./team/team-ipc";
 import { registerAccountsIpc } from "./accounts/accounts-ipc";
 import { registerTeamsIpc } from "./teams/teams-ipc";
-import { handlePreviewScheme, isPreviewUrl, registerPreviewScheme } from "./preview/preview-protocol";
+import { handlePreviewScheme, isPreviewUrl, registerPreviewScheme, watchPreviewProblems } from "./preview/preview-protocol";
 import {
   createSmokeOutcome,
   errorMessage,
@@ -112,6 +112,7 @@ function createMainWindow(): void {
   if (process.platform !== "darwin") Menu.setApplicationMenu(null);
   const window = new BrowserWindow(mainWindowOptions(preloadFile, smoke !== null, iconFile));
   mainWindow = window;
+  watchPreviewProblems(window);
   if (process.platform !== "darwin") {
     window.removeMenu();
     // The menu took the developer-tools shortcut with it, and it is still needed to see a problem.

@@ -260,3 +260,17 @@
 .preview-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px;text-align:center;color:light-dark(#545454, #a5a5a5)}
 .preview-empty strong{color:light-dark(#222222, #e0e0e0);font-size:15px}
 .preview-empty p{margin:0 0 8px;font-size:13px}
+/* Problems the preview found, and dragging products in the tree. */
+.product-node{cursor:grab}
+.product-dragging{cursor:grabbing;box-shadow:0 12px 26px #0000001f}
+.product-has-problems{border-color:light-dark(#e3b6a6, #7a4a3c)}
+.product-problems{color:light-dark(#a4472c, #e59a82)}
+.product-problems .status-dot,.problem-dot{background:#c9573a}
+.problem-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.preview-problems{border-top:1px solid light-dark(#efd5cc, #5b3a30);background:light-dark(#fdf6f3, #2f2522)}
+.preview-problems-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 14px}
+.preview-problems-toggle{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:550;color:light-dark(#8f3b22, #f0b4a2);padding:4px 0;background:none;border:0}
+.preview-problems-chevron{font-size:11px;opacity:.7}
+.preview-problems-actions{display:flex;gap:8px}
+.preview-problems-list{margin:0;padding:0 14px 12px 32px;max-height:160px;overflow:auto;font-size:12.5px;line-height:1.55;color:light-dark(#4a2a20, #e9cfc6);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.preview-problems-list li{margin:3px 0;overflow-wrap:anywhere}

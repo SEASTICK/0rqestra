@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld("orqestra", {
       ipcRenderer.removeAllListeners("team:event");
       ipcRenderer.on("team:event", (_event, message: unknown) => listener(message));
     },
+    // Errors from a previewed page (main/preview/problems.ts).
+    onPreviewProblem: (listener: (message: unknown) => void) => {
+      ipcRenderer.removeAllListeners("team:preview-problem");
+      ipcRenderer.on("team:preview-problem", (_event, message: unknown) => listener(message));
+    },
   },
   // AI accounts (main/accounts/accounts-ipc.ts): check the tools, run the official installer or
   // sign-in, test a connection. The page names a provider ("claude" or "codex") and a command kind

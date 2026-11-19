@@ -367,7 +367,7 @@ export function productLinks(product, messages, graph) {
 const NODE = { w: 224, h: 159 };
 const overlaps = (a, b) => Math.abs(a.x - b.x) < NODE.w + 20 && Math.abs(a.y - b.y) < NODE.h + 30;
 
-export function placeProducts(products, messages, graph) {
+export function placeProducts(products, messages, graph, positions = {}) {
   const nodes = graph?.nodes || [];
   const placed = [];
   const bottom = nodes.length ? Math.max(...nodes.map((n) => n.y)) : 0;
@@ -375,6 +375,11 @@ export function placeProducts(products, messages, graph) {
   for (const product of products || []) {
     const links = productLinks(product, messages, graph);
     const linked = nodes.filter((n) => links.agents.includes(n.id));
+    const saved = positions?.[product.id];
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+      placed.push({ ...product, x: saved.x, y: saved.y, agents: links.agents, building: links.building });
+      continue;
+    }
     const spot = linked.length
       ? { x: Math.round(linked.reduce((s, n) => s + n.x, 0) / linked.length), y: Math.max(...linked.map((n) => n.y)) + 240 }
       : { x: left, y: bottom + 240 };
@@ -388,4 +393,45 @@ export function placeProducts(products, messages, graph) {
 export function previewUrl(host, product, version = 0) {
   if (!host || !product) return null;
   return `orqestra-preview://${host}/${product.entry.split('/').map(encodeURIComponent).join('/')}?v=${version}`;
+}
+
+// Problems a previewed page showed (main/preview/problems.ts), per project. The same problem is kept once.
+export const MAX_PROBLEMS = 20;
+const KINDS = ['error', 'missing', 'blocked'];
+const shortText = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+
+export function readProblem(raw) {
+  if (!raw || typeof raw !== 'object' || !KINDS.includes(raw.kind)) return null;
+  const message = shortText(raw.message, 400);
+  if (!message) return null;
+  return { kind: raw.kind, message, page: shortText(raw.page, 200), source: shortText(raw.source, 200), line: Number.isInteger(raw.line) && raw.line > 0 ? raw.line : null };
+}
+
+export function addProblem(list, problem) {
+  if (!problem) return list || [];
+  const same = (p) => p.kind === problem.kind && p.message === problem.message && p.source === problem.source && p.line === problem.line;
+  if ((list || []).some(same)) return list;
+  return [...(list || []), problem].slice(-MAX_PROBLEMS);
+}
+
+const underProduct = (file, product) => Boolean(file) && (product.folder === '' || file.startsWith(`${product.folder}/`) || product.files.includes(file));
+export function problemsFor(product, list) {
+  if (!product) return [];
+  return (list || []).filter((p) => underProduct(p.page, product) || (!p.page && underProduct(p.source, product)));
+}
+
+const KIND_LABEL = { error: 'Script error', missing: 'Missing file', blocked: 'Blocked' };
+export function problemLine(p) {
+  const where = p.source && p.kind !== 'missing' ? ` (${p.source}${p.line ? `, line ${p.line}` : ''})` : '';
+  return `${KIND_LABEL[p.kind]}: ${p.message}${where}`;
+}
+
+// The message that asks the Manager to fix what the preview showed.
+export function fixMessage(product, problems) {
+  return [
+    `The preview of "${product.name}" (${product.entry}) shows ${problems.length === 1 ? 'this problem' : 'these problems'}:`,
+    ...problems.slice(0, 10).map((p) => `- ${problemLine(p)}`),
+    `Files of this product: ${product.files.slice(0, 40).join(', ')}.`,
+    'Make a plan that fixes this. Change only the files that need it, and keep everything that already works. Reply in the language I used earlier in this conversation.',
+  ].join('\n');
 }

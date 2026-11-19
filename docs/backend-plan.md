@@ -271,8 +271,22 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   storage in the page, a file change showing in the open preview, and that the page cannot read the
   window, use `window.orqestra`, reach the network, or navigate away. **Not verified:** a real run with
   Claude Code and Codex building a product while the preview updates.
-- Not yet: the Manager creating and naming product nodes itself, moving product nodes by hand,
-  several previews side by side, and products other than web pages.
+- Not yet: the Manager creating and naming product nodes itself, several previews side by side, and
+  products other than web pages.
+
+**Status 2026-11-19: the preview reports problems, and product nodes can be moved.**
+- The main process reads the console of previewed pages (only frames from a known preview host) and
+  sends three kinds of problems to the window: a script error (with file and line), a file the page
+  asks for that does not exist, and something it tried to load from the internet. The same problem is
+  sent once a minute at most, and at most 30 per project a minute; messages are cut short.
+- The product node shows "N problems", and the preview shows a list with **Ask the Manager to fix**,
+  which sends the problems and the product's files to the Manager as a message, so it can plan a fix.
+  Problems are cleared when the files change or the preview reloads, and come back if they remain.
+- Product nodes can be dragged in the tree; the place is saved with the project.
+- Verified: unit tests, and the real Electron app with a broken page (missing CSS file, a script from
+  a CDN, a script error): all three were shown, a drag did not open the preview, the place was kept
+  after a restart, and the problems went away after the page was fixed. **Not verified:** the fix
+  request with a real Manager on Claude Code or Codex (the test machine has none connected).
 
 ### Phase 6 — Supabase (Claude builds, Philip creates the project, L)
 - **Accounts** (sign-in), and the tables for projects, messages, runs, tasks, events, and agent
