@@ -273,6 +273,19 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-19: Arrange, a larger tree, and questions like a short form.**
+- **Arrange** in the tree's toolbar places the Manager on top, each agent one row below the agent it is
+  connected from (rows ordered so that lines cross as little as possible), and products under the
+  lowest of their agents. Only places change, so it also works while the team runs; Undo restores them.
+- The tree is easier to read: larger type in the nodes, tighter rows, a fit that uses more of the panel,
+  and less empty space above the chat and the tree.
+- Before the team builds something new, the Manager asks 2 to 4 multiple-choice questions at once, like
+  Lovable's form (who it is for, main features, look and feel). Each has the Manager's pick preselected,
+  your own answer, or "Let the Manager decide"; the answers go back as one message. It does not ask when
+  the request is clear, when you say to start, or for small changes.
+- Verified in the real Electron app (a messy tree arranged, Undo, the three-question form). **Not
+  verified:** how often the real models ask questions, and how good those questions are.
+
 **Status 2026-11-19: the plan names the products.** The Manager and the Planner list what the user
 will see in the plan (`products`: an id, a name and a folder, at most 6) and mark the tasks that build
 each one. The plan card shows them, and each becomes a node in the tree, linked to the agents of its

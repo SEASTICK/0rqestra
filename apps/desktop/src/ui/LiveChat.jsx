@@ -1,7 +1,7 @@
 // The parts of the real chat that are shown: the choice of tool, model and effort under the
 // message box, and a reply from a real model while it is written and after.
 import React, { useState } from 'react';
-import { answerFor, FAILURE_HELP, parsePlan, parsePlanRequest, parseQuestion, readyProviders, usageLine, visibleText } from './live-chat.mjs';
+import { answersFor, FAILURE_HELP, parsePlan, parsePlanRequest, parseQuestion, readyProviders, usageLine, visibleText } from './live-chat.mjs';
 
 export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
   const ready = readyProviders(statuses);
@@ -33,12 +33,13 @@ export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
 export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPlan, renderPlanRequest }) {
   const label = [m.providerName, m.model && m.model !== 'default' ? m.model : null, m.effort].filter(Boolean).join(' · ');
   const usage = m.status === 'done' ? usageLine(m) : '';
-  const asked = m.status === 'done' ? parseQuestion(m.text) : { body: visibleText(m.text), question: null };
+  const asked = m.status === 'done' ? parseQuestion(m.text) : { body: visibleText(m.text), question: null, questions: [] };
   const planned = m.status === 'done' && !asked.question ? parsePlan(m.text) : { body: asked.body, plan: null };
   const requested = m.status === 'done' && !asked.question && !planned.plan ? parsePlanRequest(m.text) : { body: planned.body, brief: null };
   const body = requested.brief ? requested.body : planned.plan ? planned.body : asked.body;
   // Teams answers (m.readOnly) are informational: no plan, plan request or question in them is offered.
   const question = m.readOnly ? null : asked.question;
+  const questions = question ? asked.questions : [];
   const plan = m.readOnly ? null : planned.plan;
   const brief = m.readOnly ? null : requested.brief;
   return (
@@ -59,47 +60,66 @@ export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPl
       {m.status === 'failed' && m.fallback && <div className="message-body team-fallback">{m.fallback}</div>}
       {plan && renderPlan && renderPlan(plan, m)}
       {brief && renderPlanRequest && renderPlanRequest(brief, m)}
-      {question && !m.answered && <QuestionCard q={question} disabled={busy} onAnswer={(choice) => onAnswer(m.id, answerFor(question, choice), choice)}/>}
-      {question && m.answered && <div className="question-answered"><span>{question.question}</span><strong>{m.answered.kind === 'skip' ? 'Skipped — the Manager decides' : m.answered.label}</strong></div>}
+      {question && !m.answered && <QuestionCard questions={questions} disabled={busy} onAnswer={(choices) => onAnswer(m.id, answersFor(questions, choices), answeredSummary(questions, choices))}/>}
+      {question && m.answered && <div className="question-answered-list">{(m.answered.items || [{ question: question.question, answer: m.answered.kind === 'skip' ? 'Skipped — the Manager decides' : m.answered.label }]).map((item, i) => <div key={i} className="question-answered"><span>{item.question}</span><strong>{item.answer}</strong></div>)}</div>}
       {usage && <div className="live-note">{usage}</div>}
     </div>
   );
 }
 
-// A question from the Manager with its options, like a form: the Manager's pick is preselected,
-// "Write your own" takes free text, Skip lets the Manager decide. The answer becomes the next message.
-export function QuestionCard({ q, onAnswer, disabled }) {
-  const [choice, setChoice] = useState(q.recommended ?? 0);
-  const [own, setOwn] = useState('');
-  const canSubmit = !disabled && (choice !== 'own' || own.trim().length > 0);
-  const submit = () => {
-    if (!canSubmit) return;
-    onAnswer(choice === 'own' ? { kind: 'own', text: own, label: own.trim() } : { kind: 'option', index: choice, label: q.options[choice].label });
-  };
+// What the chat shows after the questions were answered (kept on the message as `answered`).
+function answeredSummary(questions, choices) {
+  const answer = (c) => (c.kind === 'skip' ? 'Skipped — the Manager decides' : c.label);
+  return { kind: choices.every((c) => c.kind === 'skip') ? 'skip' : 'answers', label: answer(choices[0]), items: questions.map((q, i) => ({ question: q.question, answer: answer(choices[i]) })) };
+}
+
+function QuestionBlock({ q, index, total, value, onChange }) {
+  const name = `question-${index}`;
   return (
-    <div className="question-card" role="group" aria-label={q.question}>
-      <div className="question-title">{q.question}</div>
+    <fieldset className="question-block">
+      <legend className="question-title">{total > 1 && <span className="question-number">{index + 1}/{total}</span>}{q.question}</legend>
       <div className="question-options" role="radiogroup">
         {q.options.map((o, i) => (
-          <label key={i} className={`question-option ${choice === i ? 'is-selected' : ''}`}>
-            <input type="radio" name="question" checked={choice === i} onChange={() => setChoice(i)}/>
+          <label key={i} className={`question-option ${value.choice === i ? 'is-selected' : ''}`}>
+            <input type="radio" name={name} checked={value.choice === i} onChange={() => onChange({ ...value, choice: i })}/>
             <span className="question-text">
               <strong>{o.label}{i === q.recommended && <em className="question-pick">Manager's pick</em>}</strong>
               {o.description && <small>{o.description}</small>}
             </span>
           </label>
         ))}
-        <label className={`question-option question-own ${choice === 'own' ? 'is-selected' : ''}`}>
-          <input type="radio" name="question" checked={choice === 'own'} onChange={() => setChoice('own')}/>
-          <input className="question-own-input" type="text" maxLength={2000} placeholder="Write your own…" value={own}
-            onFocus={() => setChoice('own')} onChange={(e) => { setOwn(e.target.value); setChoice('own'); }}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}/>
+        <label className={`question-option question-own ${value.choice === 'own' ? 'is-selected' : ''}`}>
+          <input type="radio" name={name} checked={value.choice === 'own'} onChange={() => onChange({ ...value, choice: 'own' })}/>
+          <input className="question-own-input" type="text" maxLength={2000} placeholder="Write your own…" value={value.own}
+            onFocus={() => onChange({ ...value, choice: 'own' })} onChange={(e) => onChange({ choice: 'own', own: e.target.value })}/>
         </label>
+        {total > 1 && <label className={`question-option question-decide ${value.choice === 'skip' ? 'is-selected' : ''}`}>
+          <input type="radio" name={name} checked={value.choice === 'skip'} onChange={() => onChange({ ...value, choice: 'skip' })}/>
+          <span className="question-text"><strong>Let the Manager decide</strong></span>
+        </label>}
       </div>
+    </fieldset>
+  );
+}
+
+// Questions from the Manager, like a short form: each has the Manager's pick preselected, "Write your
+// own" takes free text, and skipping leaves the choice to the Manager. The answers become one message.
+export function QuestionCard({ questions, onAnswer, disabled }) {
+  const [values, setValues] = useState(() => questions.map((q) => ({ choice: q.recommended ?? 0, own: '' })));
+  const ready = values.every((v) => v.choice !== 'own' || v.own.trim().length > 0);
+  const choices = () => values.map((v, i) => (v.choice === 'skip'
+    ? { kind: 'skip', label: 'Skipped' }
+    : v.choice === 'own' ? { kind: 'own', text: v.own, label: v.own.trim() } : { kind: 'option', index: v.choice, label: questions[i].options[v.choice].label }));
+  const submit = () => { if (!disabled && ready) onAnswer(choices()); };
+  return (
+    <form className={`question-card ${questions.length > 1 ? 'question-form' : ''}`} aria-label={questions.length > 1 ? 'Questions from the Manager' : questions[0].question}
+      onSubmit={(e) => { e.preventDefault(); submit(); }}>
+      {questions.length > 1 && <div className="question-intro">A few questions before the team starts</div>}
+      {questions.map((q, i) => <QuestionBlock key={i} q={q} index={i} total={questions.length} value={values[i]} onChange={(v) => setValues((all) => all.map((x, j) => (j === i ? v : x)))}/>)}
       <div className="question-actions">
-        <button type="button" className="shell-button" disabled={disabled} onClick={() => onAnswer({ kind: 'skip', label: 'Skipped' })}>Skip</button>
-        <button type="button" className="shell-button primary" disabled={!canSubmit} onClick={submit}>Submit</button>
+        <button type="button" className="shell-button" disabled={disabled} onClick={() => onAnswer(questions.map(() => ({ kind: 'skip', label: 'Skipped' })))}>{questions.length > 1 ? 'Skip all' : 'Skip'}</button>
+        <button type="submit" className="shell-button primary" disabled={disabled || !ready}>{questions.length > 1 ? 'Send answers' : 'Submit'}</button>
       </div>
-    </div>
+    </form>
   );
 }

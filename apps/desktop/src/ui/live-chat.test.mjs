@@ -127,7 +127,7 @@ describe('questions from the Manager', () => {
       '{"question":"x","options":[{"label":"a"},{}]}', JSON.stringify({ question: 'x', options: Array(7).fill({ label: 'a' }) })]) {
       expect(parseQuestion(block(bad)).question, bad).toBeNull();
     }
-    expect(parseQuestion('Just an answer.')).toEqual({ body: 'Just an answer.', question: null });
+    expect(parseQuestion('Just an answer.')).toEqual({ body: 'Just an answer.', question: null, questions: [] });
     expect(parseQuestion(`${block(good)} and more text after`).question).toBeNull();
   });
 
@@ -292,12 +292,18 @@ describe('products in the tree', () => {
   it('places a product under its agents, and never on top of another node', () => {
     const messages = [run('done', [{ deliverables: ['web/index.html'], agentId: 'b', status: 'done' }])];
     const [a, b] = placeProducts([web, { ...web, id: 'web2' }], messages, graph);
-    expect(a).toMatchObject({ id: 'web', x: 100, y: 470, agents: ['b'], building: false });
-    expect(b.y).toBe(470);
+    expect(a).toMatchObject({ id: 'web', x: 100, y: 445, agents: ['b'], building: false });
+    expect(b.y).toBe(445);
     expect(b.x).toBeGreaterThanOrEqual(100 + 224);
     const [alone] = placeProducts([root], [], graph);
-    expect(alone.y).toBe(470);
+    expect(alone.y).toBe(445);
     expect(placeProducts([], [], graph)).toEqual([]);
+  });
+
+  it('places a product under the lowest of its agents', () => {
+    const tree = { nodes: [{ id: 'm', x: 300, y: 0 }, { id: 'b', x: 100, y: 230 }, { id: 'r', x: 300, y: 460 }] };
+    const messages = [run('done', [{ deliverables: ['web/index.html'], agentId: 'b', review: { reviewerId: 'r' }, status: 'done' }])];
+    expect(placeProducts([web], messages, tree)[0]).toMatchObject({ x: 300, y: 460 + 159 + 56 });
   });
 
   it('builds the preview address with the entry page and a version', () => {
@@ -396,5 +402,38 @@ describe('products named in the plan', () => {
     const messages = [team('failed', [{ id: 'old', name: 'Old', folder: 'old' }], []), team('running', [{ id: 'new', name: 'New', folder: 'new' }], [])];
     expect(mergeProducts([], messages).map((p) => p.id)).toEqual(['new']);
     expect(mergeProducts([], [])).toEqual([]);
+  });
+});
+
+import { answersFor } from './live-chat.mjs';
+
+describe('a form of questions', () => {
+  const q = (question, recommended = 0) => ({ question, options: [{ label: 'A', description: 'first' }, { label: 'B' }], recommended });
+  const block = (value) => `Några frågor först.\n<orqestra-question>\n${JSON.stringify(value)}\n</orqestra-question>`;
+
+  it('reads up to four questions', () => {
+    const { body, question, questions } = parseQuestion(block({ questions: [q('Vem?'), q('Hur?', 1)] }));
+    expect(body).toBe('Några frågor först.');
+    expect(questions.map((x) => x.question)).toEqual(['Vem?', 'Hur?']);
+    expect(question.question).toBe('Vem?');
+    expect(questions[1].recommended).toBe(1);
+  });
+
+  it('refuses a form with a broken question or too many', () => {
+    expect(parseQuestion(block({ questions: [q('Vem?'), { question: 'x', options: [] }] })).question).toBeNull();
+    expect(parseQuestion(block({ questions: [q('1'), q('2'), q('3'), q('4'), q('5')] })).question).toBeNull();
+    expect(parseQuestion(block({ questions: [] })).question).toBeNull();
+  });
+
+  it('still reads one question', () => {
+    expect(parseQuestion(block(q('Vem?'))).questions).toHaveLength(1);
+  });
+
+  it('writes the answers as one message', () => {
+    const questions = [q('Vem?'), q('Hur?')];
+    expect(answersFor(questions, [{ kind: 'option', index: 0 }, { kind: 'own', text: 'Snabbt' }])).toBe('1. Vem?\n   A (first)\n2. Hur?\n   Snabbt');
+    expect(answersFor(questions, [{ kind: 'skip' }, { kind: 'option', index: 1 }])).toBe('1. Vem?\n   You decide.\n2. Hur?\n   B');
+    expect(answersFor(questions, [{ kind: 'skip' }, { kind: 'skip' }])).toMatch(/^I skip these questions/);
+    expect(answersFor([questions[0]], [{ kind: 'option', index: 1 }])).toBe('B');
   });
 });

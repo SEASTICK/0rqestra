@@ -146,22 +146,36 @@ const QUESTION = /<orqestra-question>\s*([\s\S]*?)\s*<\/orqestra-question>\s*$/;
 
 const text = (value, max) => (typeof value === 'string' && value.trim() && value.length <= max ? value.trim() : null);
 
+// One question: 2 to 6 options, and the option the Manager would pick.
+function readQuestion(value) {
+  const question = text(value?.question, 300);
+  const options = Array.isArray(value?.options) ? value.options : [];
+  if (!question || options.length < 2 || options.length > 6) return null;
+  const parsed = options.map((o) => ({ label: text(o?.label, 120), description: text(o?.description, 240) }));
+  if (parsed.some((o) => !o.label)) return null;
+  const recommended = Number.isInteger(value.recommended) && value.recommended >= 0 && value.recommended < parsed.length ? value.recommended : null;
+  return { question, options: parsed, recommended };
+}
+
+export const MAX_QUESTIONS = 4;
+
+// The Manager may ask one question, or a short form of up to four ({"questions": [...]}), like Lovable
+// does before it builds. `question` is the first one, `questions` all of them.
 export function parseQuestion(raw) {
   const source = String(raw ?? '');
   const match = QUESTION.exec(source);
-  if (!match) return { body: source, question: null };
+  const none = { body: source, question: null, questions: [] };
+  if (!match) return none;
   const body = source.slice(0, match.index).trimEnd();
   try {
     const value = JSON.parse(match[1]);
-    const question = text(value?.question, 300);
-    const options = Array.isArray(value?.options) ? value.options : [];
-    if (!question || options.length < 2 || options.length > 6) return { body: source, question: null };
-    const parsed = options.map((o) => ({ label: text(o?.label, 120), description: text(o?.description, 240) }));
-    if (parsed.some((o) => !o.label)) return { body: source, question: null };
-    const recommended = Number.isInteger(value.recommended) && value.recommended >= 0 && value.recommended < parsed.length ? value.recommended : null;
-    return { body, question: { question, options: parsed, recommended } };
+    const list = Array.isArray(value?.questions) ? value.questions : [value];
+    if (list.length < 1 || list.length > MAX_QUESTIONS) return none;
+    const questions = list.map(readQuestion);
+    if (questions.some((q) => !q)) return none;
+    return { body, question: questions[0], questions };
   } catch {
-    return { body: source, question: null };
+    return none;
   }
 }
 
@@ -184,6 +198,13 @@ export function answerFor(question, choice) {
   if (choice.kind === 'own') return choice.text.trim();
   const option = question.options[choice.index];
   return option.description ? `${option.label} (${option.description})` : option.label;
+}
+
+// The answers to a form of questions, as one message. A skipped question is left to the Manager.
+export function answersFor(questions, choices) {
+  if (choices.every((c) => c.kind === 'skip')) return 'I skip these questions. Decide yourself and tell me briefly what you chose.';
+  if (questions.length === 1) return answerFor(questions[0], choices[0]);
+  return questions.map((q, i) => `${i + 1}. ${q.question}\n   ${choices[i].kind === 'skip' ? 'You decide.' : answerFor(q, choices[i])}`).join('\n');
 }
 
 // ---- Plans and team runs (phase 3) ------------------------------------------------------------
@@ -392,9 +413,12 @@ export function placeProducts(products, messages, graph, positions = {}) {
       placed.push({ ...product, x: saved.x, y: saved.y, agents: links.agents, building: links.building });
       continue;
     }
+    // Under the lowest of its agents (the last to work on it), one row down.
+    const lowest = linked.length ? Math.max(...linked.map((n) => n.y)) : 0;
+    const under = linked.filter((n) => n.y >= lowest - NODE.h / 2);
     const spot = linked.length
-      ? { x: Math.round(linked.reduce((s, n) => s + n.x, 0) / linked.length), y: Math.max(...linked.map((n) => n.y)) + 240 }
-      : { x: left, y: bottom + 240 };
+      ? { x: Math.round(under.reduce((s, n) => s + n.x, 0) / under.length), y: lowest + NODE.h + 56 }
+      : { x: left, y: bottom + NODE.h + 56 };
     while ([...nodes, ...placed].some((other) => overlaps(spot, other))) spot.x += NODE.w + 30;
     placed.push({ ...product, ...spot, agents: links.agents, building: links.building });
   }

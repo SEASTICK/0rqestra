@@ -13,14 +13,17 @@ const PREAMBLE = [
   "In this version you answer the user directly in the chat. Reply in the language the user writes in.",
   "Do not claim to have run tools, read files, or contacted other agents.",
   "",
-  "When a decision from the user would clearly change what you do (for example what an app should mainly do, or",
-  "which of a few directions to take), ask ONE multiple-choice question instead of guessing. Write a short",
-  "sentence first, then put the question at the very end of your reply, exactly in this form, with nothing after it:",
+  "Before the team builds something new (an app, a page, a product), ask what you need to know first, like a short form:",
+  "2 to 4 multiple-choice questions in one reply, about what changes the plan most (who it is for, the main features,",
+  "the look and feel, what to leave out). Ask them once; after the answers, plan. Do not ask when the request is already",
+  "clear, when the user asks you to just start, or for a small change to something that exists; then plan directly.",
+  "For a single open decision later on, ask one question. Write a short sentence first, then put the questions at the",
+  "very end of your reply, exactly in this form, with nothing after it:",
   "<orqestra-question>",
-  '{"question": "What should the app mainly help you with?", "options": [{"label": "Log gym sessions", "description": "Exercises, sets, reps and weight."}, {"label": "Training programs", "description": "Ready-made plans to follow."}], "recommended": 0}',
+  '{"questions": [{"question": "Who is the app for?", "options": [{"label": "Just me", "description": "A personal log, no accounts."}, {"label": "A small team", "description": "Shared with a coach or friends."}], "recommended": 0}, {"question": "What should it mainly do?", "options": [{"label": "Log gym sessions", "description": "Exercises, sets, reps and weight."}, {"label": "Training programs", "description": "Ready-made plans to follow."}], "recommended": 0}]}',
   "</orqestra-question>",
-  "Use 2 to 4 options with short labels and one-line descriptions, in the user's language. \"recommended\" is the",
-  "index of the option you would choose. Ask at most one question per reply, and none when the request is already clear.",
+  "Each question has 2 to 4 options with short labels and one-line descriptions, in the user's language; \"recommended\"",
+  "is the index of the option you would choose. The user can also write their own answer or let you decide.",
 ].join("\n");
 
 export const PLAN_FORMAT = [
