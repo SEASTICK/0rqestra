@@ -437,3 +437,23 @@ describe('a form of questions', () => {
     expect(answersFor([questions[0]], [{ kind: 'option', index: 1 }])).toBe('B');
   });
 });
+
+import { editMessage, pickedLabel, readPicked } from './live-chat.mjs';
+
+describe('selecting a part of the preview', () => {
+  const picked = readPicked({ type: 'orqestra-picked', tag: 'H1', path: 'body > h1', text: '  Träningslogg\n idag ', html: '<h1>Träningslogg</h1>' });
+  it('reads what the page says was clicked, cut short', () => {
+    expect(picked).toEqual({ tag: 'h1', path: 'body > h1', text: 'Träningslogg idag', html: '<h1>Träningslogg</h1>' });
+    expect(readPicked({ type: 'other', tag: 'h1' })).toBeNull();
+    expect(readPicked({ type: 'orqestra-picked', tag: '<script>' })).toBeNull();
+    expect(readPicked(null)).toBeNull();
+    expect(readPicked({ type: 'orqestra-picked', tag: 'p', text: 'x'.repeat(500), html: 'y'.repeat(900) })).toMatchObject({ text: 'x'.repeat(200), html: 'y'.repeat(600) });
+  });
+  it('labels it and writes the change request for the Manager', () => {
+    expect(pickedLabel(picked)).toBe('<h1> “Träningslogg idag”');
+    const text = editMessage({ name: 'Logg', entry: 'web/index.html', files: ['web/index.html'] }, picked, ' Gör rubriken större ');
+    expect(text).toContain('Change one part of "Logg" (web/index.html).');
+    expect(text).toContain('the <h1> element at body > h1, with the text "Träningslogg idag".');
+    expect(text).toContain('What I want: Gör rubriken större');
+  });
+});

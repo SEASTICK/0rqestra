@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { previewUrl, problemLine } from './live-chat.mjs';
+import React, { useEffect, useRef, useState } from 'react';
+import { pickedLabel, previewUrl, problemLine, readPicked } from './live-chat.mjs';
 
 // A product the team builds, as a node in the tree and as a live preview beside the chat. The page runs
 // in a frame on its own origin (orqestra-preview://), with no access to the app, the network or keys.
@@ -39,9 +39,38 @@ function ProblemsBar({ problems, building, onFix, onDismiss }) {
   </div>;
 }
 
-export function ProductPreview({ product, host, version, nameOf, Icon, onTree, onClose, onOpenFolder, onFix, onClearProblems }) {
+// After a part was selected: what should change about it. Sent to the Manager as one message.
+function EditBar({ picked, busy, onSend, onCancel }) {
+  const [request, setRequest] = useState('');
+  const send = () => { if (request.trim() && !busy) onSend(request); };
+  return <form className="preview-edit" onSubmit={(e) => { e.preventDefault(); send(); }}>
+    <div className="preview-edit-target"><span>Selected</span><code>{pickedLabel(picked)}</code></div>
+    <div className="preview-edit-row">
+      <input autoFocus type="text" maxLength={2000} aria-label="What should change?" placeholder="What should change? For example: make it bigger and blue" value={request} onChange={(e) => setRequest(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') onCancel(); }}/>
+      <button type="button" className="shell-button" onClick={onCancel}>Cancel</button>
+      <button type="submit" className="shell-button primary" disabled={busy || !request.trim()}>Ask the Manager</button>
+    </div>
+  </form>;
+}
+
+export function ProductPreview({ product, host, version, nameOf, Icon, onTree, onClose, onOpenFolder, onFix, onClearProblems, onEdit, busy }) {
   const [device, setDevice] = useState('desktop');
   const [reloads, setReloads] = useState(0);
+  // Select: the page's own script (main/preview/picker.ts) outlines what the mouse is over and reports a click.
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState(null);
+  const frame = useRef(null);
+  const tell = (on) => { try { frame.current?.contentWindow?.postMessage({ type: 'orqestra-pick', on }, `orqestra-preview://${host}`); } catch { /* the page is gone */ } };
+  useEffect(() => {
+    const onMessage = (e) => {
+      if (!frame.current || e.source !== frame.current.contentWindow) return;
+      const next = readPicked(e.data);
+      if (next) { setPicked(next); setPicking(false); tell(false); }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [host]);
+  useEffect(() => { tell(picking); }, [picking]);
   if (!product) {
     return <section className="tree-panel preview-panel" aria-label="Preview"><div className="panel-header"><div className="tree-panel-title"><Icon name="globe" size={17} /><strong>Preview</strong></div><div className="inline-actions"><button className="icon-button" title="Close preview" aria-label="Close preview" onClick={onClose}><Icon name="close" size={16} /></button></div></div>
       <div className="preview-empty"><Icon name="globe" size={22} /><strong>This product is gone.</strong><p>Its files are no longer in the project folder.</p><button className="shell-button" onClick={onTree}>Back to the team tree</button></div></section>;
@@ -57,6 +86,7 @@ export function ProductPreview({ product, host, version, nameOf, Icon, onTree, o
           <button className={`icon-button ${device === 'desktop' ? 'is-active' : ''}`} title="Desktop size" aria-label="Desktop size" aria-pressed={device === 'desktop'} onClick={() => setDevice('desktop')}><Icon name="desktop" size={15} /></button>
           <button className={`icon-button ${device === 'phone' ? 'is-active' : ''}`} title="Phone size" aria-label="Phone size" aria-pressed={device === 'phone'} onClick={() => setDevice('phone')}><Icon name="phone" size={15} /></button>
         </div>
+        <button className={`preview-select ${picking ? 'is-active' : ''}`} title="Click a part of the page to change it" aria-pressed={picking} disabled={!product.files.length} onClick={() => { setPicked(null); setPicking(!picking); }}><Icon name="cursor" size={14} />{picking ? 'Click a part…' : 'Select'}</button>
         <button className="icon-button" title="Reload" aria-label="Reload the preview" onClick={reload}><Icon name="refresh" size={15} /></button>
         <button className="icon-button" title="Open project folder" aria-label="Open project folder" onClick={onOpenFolder}><Icon name="folder" size={15} /></button>
         <button className="icon-button" title="Back to the team tree" aria-label="Back to the team tree" onClick={onTree}><Icon name="tree" size={15} /></button>
@@ -65,9 +95,10 @@ export function ProductPreview({ product, host, version, nameOf, Icon, onTree, o
     </div>
     <div className={`preview-stage preview-${device}`}>
       {product.files.length
-        ? <iframe key={url} className="preview-frame" src={url} title={`Preview of ${product.name}`} sandbox={SANDBOX} referrerPolicy="no-referrer" />
+        ? <iframe key={url} ref={frame} className="preview-frame" src={url} title={`Preview of ${product.name}`} sandbox={SANDBOX} referrerPolicy="no-referrer" onLoad={() => tell(picking)} />
         : <div className="preview-empty"><Icon name="globe" size={22} /><strong>{product.building ? 'The team is building this.' : 'Nothing to show yet.'}</strong><p>{product.building ? 'The preview appears here as soon as the first files are written, and updates while the team works.' : `The plan names this product, but ${product.entry} has not been written.`}</p></div>}
     </div>
+    {picked && <EditBar key={picked.path + picked.text} picked={picked} busy={busy} onCancel={() => setPicked(null)} onSend={(request) => { onEdit?.(picked, request); setPicked(null); }} />}
     <ProblemsBar problems={product.problems || []} building={product.building} onFix={onFix} onDismiss={onClearProblems} />
     <div className="tree-footer"><span><span className="status-dot" />{product.agents.length ? `Built by ${product.agents.map(nameOf).join(', ')}` : 'Files in the project folder'}</span><span>Runs isolated · no internet · no keys</span></div>
   </section>;

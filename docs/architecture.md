@@ -122,6 +122,11 @@ every IPC channel added later.
      that scheme as a frame, frames cannot navigate anywhere else, and downloads are refused. The
      agents' code therefore runs only as web code in Chromium's sandbox, never in Node.js and never
      with keys in its environment.
+   - For **Select** in the preview, the preview adds one small script (`main/preview/picker.ts`, served
+     at `/__orqestra/picker.js` of the project's host) to each HTML page. It does nothing until the window
+     asks, accepts messages only from the window around it, and only posts back which element was
+     clicked (tag, a short CSS path, its text and the start of its HTML). The window reads that message
+     only from the preview frame, cuts it short and uses it as quoted text in a message to the Manager.
 2. **Narrow preload API.** `contextBridge` exposes a small, typed set of intent methods, for
    example `submitPrompt(text)`, `cancelTask(taskId)`, `answerQuestion(questionId, text)`,
    `respondToApproval(requestId, decision)`, `saveTree(tree)`. It never exposes `ipcRenderer`

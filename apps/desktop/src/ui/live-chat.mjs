@@ -493,3 +493,30 @@ export function mergeProducts(found, messages) {
   }
   return out;
 }
+
+// "Select" in the preview: what the page said was clicked (main/preview/picker.ts). It comes from the
+// page, so it is cut short and only ever used as quoted text.
+const oneLine = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+export function readPicked(data) {
+  if (!data || typeof data !== 'object' || data.type !== 'orqestra-picked') return null;
+  const tag = oneLine(data.tag, 30).toLowerCase();
+  if (!/^[a-z][a-z0-9-]*$/.test(tag)) return null;
+  return { tag, path: oneLine(data.path, 200), text: oneLine(data.text, 200), html: typeof data.html === 'string' ? data.html.slice(0, 600) : '' };
+}
+
+export function pickedLabel(picked) {
+  const text = picked.text ? ` “${picked.text.length > 60 ? `${picked.text.slice(0, 60)}…` : picked.text}”` : '';
+  return `<${picked.tag}>${text}`;
+}
+
+// The message that asks the Manager to change one part of a product.
+export function editMessage(product, picked, request) {
+  return [
+    `Change one part of "${product.name}" (${product.entry}).`,
+    `The part I selected in the preview: the <${picked.tag}> element${picked.path ? ` at ${picked.path}` : ''}${picked.text ? `, with the text "${picked.text}"` : ''}.`,
+    picked.html ? `Its HTML starts like this:\n${picked.html}` : null,
+    `What I want: ${request.trim()}`,
+    `Files of this product: ${product.files.slice(0, 40).join(', ')}.`,
+    'Make a plan that changes only this, and keeps everything else as it is. Reply in the language I used earlier in this conversation.',
+  ].filter(Boolean).join('\n');
+}

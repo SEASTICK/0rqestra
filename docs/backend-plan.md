@@ -273,6 +273,13 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-19: Select a part of the preview and ask for a change.** Like Lovable's visual edit:
+**Select** in the preview's toolbar outlines what the mouse is over; a click picks that part (and does
+not follow links or press buttons). A bar shows what was picked ("<h1> "Träningslogg"") and asks what
+should change; **Ask the Manager** sends the part (tag, CSS path, text, the start of its HTML), the
+request and the product's files, so the Manager plans a change to just that. Verified in the real
+Electron app. **Not verified:** the change made by real models from such a request.
+
 **Status 2026-11-19: Arrange, a larger tree, and questions like a short form.**
 - **Arrange** in the tree's toolbar places the Manager on top, each agent one row below the agent it is
   connected from (rows ordered so that lines cross as little as possible), and products under the
