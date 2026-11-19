@@ -303,7 +303,7 @@ export function nodeStates(run) {
 // A run that was going on when the app closed cannot continue.
 export function settleTeamRun(run) {
   if (!run || run.status !== 'running') return run;
-  return { ...run, status: 'stopped', summary: 'The app closed while the team was working. Files already written stay in the project folder.', tasks: run.tasks.map((t) => (['waiting', 'working', 'reviewing'].includes(t.status) ? { ...t, status: 'stopped' } : t)) };
+  return { ...run, outputs: (run.outputs || []).map((o) => (o.done ? o : { ...o, done: true, failed: 'The app closed while this agent was writing.' })), status: 'stopped', summary: 'The app closed while the team was working. Files already written stay in the project folder.', tasks: run.tasks.map((t) => (['waiting', 'working', 'reviewing'].includes(t.status) ? { ...t, status: 'stopped' } : t)) };
 }
 
 // ---- Setting up the team in one step -----------------------------------------------------------
@@ -535,6 +535,7 @@ function logEntry(event) {
 }
 
 export function applyTeamEvent(run, event, now = Date.now()) {
+  if (event && event.type === 'output') return { ...run, outputs: addOutput(run.outputs, event, now) };
   const next = applyTeamEventCore(run, event);
   const entry = logEntry(event);
   if (!entry) return next;
@@ -586,4 +587,70 @@ export function usageRows(statuses, now = Date.now()) {
       return { name: WINDOW_NAME(l), left, resets };
     }).sort((a, b) => (a.name === '5 hours' ? -1 : b.name === '5 hours' ? 1 : 0)),
   }));
+}
+
+// ---- What each agent wrote (main/team/runner.ts "output" events), for the agent's panel ----------
+export const MAX_OUTPUTS = 16;
+export const OUTPUT_KEEP = 6000;
+export function addOutput(list, event, now = Date.now()) {
+  const text = typeof event.text === 'string' ? event.text : '';
+  const entry = {
+    taskId: String(event.taskId), agentId: String(event.agentId), kind: event.kind === 'review' ? 'review' : 'work', attempt: Number(event.attempt) || 1,
+    text: event.done ? text.slice(0, OUTPUT_KEEP) : text.slice(-OUTPUT_KEEP), done: Boolean(event.done),
+    ...(event.failed ? { failed: String(event.failed).slice(0, 500) } : {}), at: now,
+  };
+  const same = (o) => o.taskId === entry.taskId && o.agentId === entry.agentId && o.kind === entry.kind && o.attempt === entry.attempt;
+  const old = (list || []).find(same);
+  const rest = (list || []).filter((o) => !same(o));
+  const next = [...rest, { ...entry, startedAt: old?.startedAt ?? now }];
+  while (next.length > MAX_OUTPUTS) next.splice(next.findIndex((o) => o.done) >= 0 ? next.findIndex((o) => o.done) : 0, 1);
+  return next;
+}
+
+// Everything one agent did in the project's team runs: what it is writing now, earlier answers (newest
+// first) with their task, and the files it wrote.
+export function agentWork(messages, agentId) {
+  const runs = (messages || []).filter((m) => m.kind === 'team' && m.run).map((m) => m.run);
+  const history = [];
+  const files = new Map();
+  let live = null;
+  for (const run of runs) {
+    for (const o of run.outputs || []) {
+      if (o.agentId !== agentId) continue;
+      const task = run.tasks.find((t) => t.id === o.taskId);
+      const item = { ...o, taskTitle: task ? task.title : 'A task', goal: run.goal, running: run.status === 'running' };
+      if (!o.done && run.status === 'running') live = item;
+      else history.push(item);
+    }
+    for (const t of run.tasks) if (t.agentId === agentId) for (const f of t.files || []) files.set(f.path, f);
+  }
+  history.sort((a, b) => b.at - a.at);
+  return { live, history, files: [...files.values()] };
+}
+
+// An agent's answer split into readable parts: text, the files it delivered (shown as one line each,
+// also while a file is still being written), and a review's verdict.
+export function textParts(text) {
+  const parts = [];
+  const source = String(text ?? '');
+  const tag = /<orqestra-file path="([^"]{1,200})">\r?\n?([\s\S]*?)(<\/orqestra-file>|$)|<orqestra-review>([\s\S]*?)(<\/orqestra-review>|$)/g;
+  let at = 0;
+  for (const m of source.matchAll(tag)) {
+    const before = source.slice(at, m.index).trim();
+    if (before) parts.push({ type: 'text', text: before });
+    if (m[1] !== undefined) {
+      const body = (m[2] || '').replace(/\r?\n$/, '');
+      parts.push({ type: 'file', path: m[1], lines: body ? body.split('\n').length : 0, done: Boolean(m[3]) });
+    } else {
+      let verdict;
+      try { verdict = JSON.parse(m[4]); } catch { verdict = null; }
+      parts.push(verdict && typeof verdict.approved === 'boolean'
+        ? { type: 'review', approved: verdict.approved, problems: Array.isArray(verdict.problems) ? verdict.problems.map(String).slice(0, 10) : [] }
+        : { type: 'text', text: m[0] });
+    }
+    at = m.index + m[0].length;
+  }
+  const after = source.slice(at).trim();
+  if (after) parts.push({ type: 'text', text: after });
+  return parts;
 }

@@ -20,6 +20,9 @@ export type TeamEvent =
   | { type: "task"; taskId: string; status: TaskStatus; agentId: string | null; attempt: number; note?: string }
   | { type: "review"; taskId: string; reviewerId: string; approved: boolean; problems: string[] }
   | { type: "files"; taskId: string; files: { path: string; bytes: number }[] }
+  // What an agent writes, while it writes (done: false, the latest part) and when it is done (the whole
+  // answer, cut to OUTPUT_CHARS). Shown when the user opens the agent in the tree.
+  | { type: "output"; taskId: string; agentId: string; kind: "work" | "review"; attempt: number; text: string; done: boolean; failed?: string }
   | { type: "run-finished"; status: "done" | "failed" | "stopped"; summary: string; files: { path: string; bytes: number }[]; calls: number; usage: { inputTokens: number; outputTokens: number } };
 
 export interface Limits {
@@ -30,6 +33,9 @@ export interface Limits {
 }
 
 // Decision A5: 25 launches per request (retries and reviews count) and 2 retries per task.
+export const OUTPUT_CHARS = 12_000;
+export const OUTPUT_EVERY_MS = 400;
+
 export const DEFAULT_LIMITS: Limits = { maxCalls: 25, maxAttempts: 3, maxParallel: 2, contextChars: 60_000 };
 
 export interface RunOptions {
@@ -89,18 +95,32 @@ export class TeamRun {
   }
 
   // One request to one agent. Returns the full text, or throws with a message for the next attempt.
-  private async ask(agent: TeamAgent, prompt: string): Promise<string> {
+  private async ask(agent: TeamAgent, prompt: string, about: { taskId: string; kind: "work" | "review"; attempt: number }): Promise<string> {
     if (this.stopped) throw new Stopped();
     if (this.calls >= this.limits.maxCalls) throw new Error(`The limit of ${this.limits.maxCalls} agent requests for this run is reached.`);
     this.calls += 1;
     const handle = this.o.adapters[agent.tool].chat({ provider: agent.tool, model: agent.model, effort: agent.effort, history: [], text: prompt, cwd: this.o.cwd, raw: true });
     this.active.add(handle);
     let last: ChatEvent | null = null;
+    let text = "";
+    let sentAt = 0;
+    const output = (done: boolean, failed?: string) => this.o.emit({ type: "output", taskId: about.taskId, agentId: agent.id, kind: about.kind, attempt: about.attempt, done,
+      text: done ? text.slice(0, OUTPUT_CHARS) : text.slice(-OUTPUT_CHARS), ...(failed ? { failed: failed.slice(0, 500) } : {}) });
+    // At once, so the window shows the agent as thinking from the moment it got the task.
+    output(false);
     try {
-      for await (const event of handle.events) last = event;
+      for await (const event of handle.events) {
+        last = event;
+        if (event.type === "delta") {
+          text += event.text;
+          if (Date.now() - sentAt >= OUTPUT_EVERY_MS) { sentAt = Date.now(); output(false); }
+        }
+      }
     } finally {
       this.active.delete(handle);
     }
+    if (last?.type === "completed") text = last.text || text;
+    output(true, last?.type === "failed" ? last.message : last?.type === "completed" ? undefined : this.stopped || last?.type === "cancelled" ? "Stopped." : "No answer.");
     if (this.stopped || last?.type === "cancelled") throw new Stopped();
     if (last?.type === "failed") throw new Error(`${agent.name}: ${last.message}`);
     if (last?.type !== "completed") throw new Error(`${agent.name} gave no answer.`);
@@ -126,7 +146,7 @@ export class TeamRun {
       this.set(task, "working", worker.id, attempt, problems.length ? `Fixing: ${problems[0]}` : undefined);
       let text: string;
       try {
-        text = await this.ask(worker, workerPrompt(plan, task, worker, context, problems));
+        text = await this.ask(worker, workerPrompt(plan, task, worker, context, problems), { taskId: task.id, kind: "work", attempt });
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
@@ -156,7 +176,7 @@ export class TeamRun {
       this.set(task, "reviewing", reviewer.id, attempt);
       let reviewText: string;
       try {
-        reviewText = await this.ask(reviewer, reviewPrompt(plan, task, reviewer, worker, files));
+        reviewText = await this.ask(reviewer, reviewPrompt(plan, task, reviewer, worker, files), { taskId: task.id, kind: "review", attempt });
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;

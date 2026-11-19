@@ -512,3 +512,47 @@ describe('usage left', () => {
     ]);
   });
 });
+
+import { addOutput, agentWork, MAX_OUTPUTS, textParts } from './live-chat.mjs';
+
+describe("an agent's work", () => {
+  const plan = { goal: 'Logg', tasks: [{ id: 't1', title: 'Bygg sidan', role: 'Builder', goal: 'g', dependsOn: [], deliverables: ['index.html'] }] };
+  it('keeps what an agent writes, live and when done, without filling the activity log', () => {
+    let run = newTeamRun('r1', plan, 0);
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'working', agentId: 'b', attempt: 1 }, 1);
+    run = applyTeamEvent(run, { type: 'output', taskId: 't1', agentId: 'b', kind: 'work', attempt: 1, text: 'Jag bygger', done: false }, 2);
+    let work = agentWork([{ kind: 'team', run }], 'b');
+    expect(work.live).toMatchObject({ text: 'Jag bygger', taskTitle: 'Bygg sidan', startedAt: 2 });
+    run = applyTeamEvent(run, { type: 'output', taskId: 't1', agentId: 'b', kind: 'work', attempt: 1, text: 'Jag byggde sidan.', done: true }, 5);
+    run = applyTeamEvent(run, { type: 'files', taskId: 't1', files: [{ path: 'index.html', bytes: 9 }] }, 6);
+    run = applyTeamEvent(run, { type: 'output', taskId: 't1', agentId: 'r', kind: 'review', attempt: 1, text: 'x', done: true, failed: 'Overloaded' }, 7);
+    expect(run.outputs).toHaveLength(2);
+    expect(run.log.some((e) => e.type === 'output')).toBe(false);
+    work = agentWork([{ kind: 'team', run }], 'b');
+    expect(work.live).toBeNull();
+    expect(work.history).toMatchObject([{ text: 'Jag byggde sidan.', done: true, startedAt: 2, at: 5 }]);
+    expect(work.files).toEqual([{ path: 'index.html', bytes: 9 }]);
+    expect(agentWork([{ kind: 'team', run }], 'r').history[0]).toMatchObject({ kind: 'review', failed: 'Overloaded' });
+    expect(agentWork([], 'b')).toEqual({ live: null, history: [], files: [] });
+  });
+  it('keeps a bounded number of answers, dropping the oldest finished ones', () => {
+    let list = [];
+    for (let i = 0; i < 20; i++) list = addOutput(list, { taskId: `t${i}`, agentId: 'b', kind: 'work', attempt: 1, text: 'x'.repeat(9000), done: true }, i);
+    expect(list).toHaveLength(MAX_OUTPUTS);
+    expect(list[0].taskId).toBe('t4');
+    expect(list[0].text).toHaveLength(6000);
+  });
+  it('marks unfinished writing as stopped when the app closed', () => {
+    let run = newTeamRun('r1', plan, 0);
+    run = applyTeamEvent(run, { type: 'output', taskId: 't1', agentId: 'b', kind: 'work', attempt: 1, text: 'hal', done: false }, 1);
+    expect(settleTeamRun(run).outputs[0]).toMatchObject({ done: true, failed: 'The app closed while this agent was writing.' });
+  });
+  it('splits an answer into text, files and a verdict, also mid-file', () => {
+    expect(textParts('Klart.\n<orqestra-file path="index.html">\n<h1>a</h1>\n<p>b</p>\n</orqestra-file>\nSlut.')).toEqual([
+      { type: 'text', text: 'Klart.' }, { type: 'file', path: 'index.html', lines: 2, done: true }, { type: 'text', text: 'Slut.' }]);
+    expect(textParts('Bygger\n<orqestra-file path="a.js">\nconst x')).toEqual([{ type: 'text', text: 'Bygger' }, { type: 'file', path: 'a.js', lines: 1, done: false }]);
+    expect(textParts('Bra.\n<orqestra-review>{"approved": false, "problems": ["Ingen rubrik"]}</orqestra-review>')).toEqual([
+      { type: 'text', text: 'Bra.' }, { type: 'review', approved: false, problems: ['Ingen rubrik'] }]);
+    expect(textParts('')).toEqual([]);
+  });
+});

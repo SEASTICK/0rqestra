@@ -273,6 +273,17 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-19: what each agent is doing.** A click on an agent in the tree opens a panel beside
+it: **Now** shows what the agent is writing while it writes (text, each file it delivers with its line
+count, "writing…" until the file is complete) and how long it has worked; **Earlier** lists its
+answers, newest first (worked on or reviewed which task, which attempt, how long, when), with review
+verdicts and failures; **Files it wrote** lists its files. The runner sends what an agent writes as
+`output` events (the latest part every 0.4 s while it writes, then the whole answer cut to 12,000
+characters); the window keeps up to 16 answers of 6,000 characters per run with the project. What the
+agents write is never passed to Teams. Verified with unit tests and in the real Electron app with the
+stand-in tools. Also fixed: primary buttons (such as **Restart now** in the update dialog) had dark
+text on a dark button; they now use the shell's accent colours.
+
 **Status 2026-11-19: one question at a time, a working animation, the team's activity, and usage left.**
 - The Manager's questions come one at a time, like Lovable: a click on an option shows the next question
   (Back goes to the previous one), "Write your own" and "Let the Manager decide" work per question, and

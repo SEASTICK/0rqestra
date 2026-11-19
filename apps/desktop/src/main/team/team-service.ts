@@ -78,6 +78,8 @@ export class TeamService {
     if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
     const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace: this.workspaceFor(projectId), cwd: this.cwd(), ...(writeGuard ? { writeGuard } : {}), emit: (event) => {
       emit(runId, event);
+      // What the agents write stays on this computer: it is shown in the window, never shared.
+      if (event.type === "output") return;
       try {
         this.observe?.({ runId, localProjectId: projectId, plan }, event);
       } catch {

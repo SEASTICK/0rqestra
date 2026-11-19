@@ -163,6 +163,19 @@ describe("team run", () => {
     expect(order).toEqual(["t1", "t2"]);
   });
 
+  it("tells the window what each agent wrote, for its task, as author or reviewer", async () => {
+    const codex = new ScriptedTool("codex", deliverOwned);
+    const claude = new ScriptedTool("claude", (_p, n) => (n === 1 ? new Error("Overloaded") : approve));
+    const { events } = await run(plan, [builder, reviewer], codex, claude);
+    const all = events.filter((e): e is Extract<TeamEvent, { type: "output" }> => e.type === "output");
+    // Each request starts with an empty "thinking" output, then the answer.
+    expect(all[0]).toMatchObject({ taskId: "t1", agentId: "b1", done: false, text: "" });
+    const outputs = all.filter((o) => o.done);
+    expect(outputs[0]).toMatchObject({ taskId: "t1", agentId: "b1", kind: "work", attempt: 1, done: true, text: file("index.html", "<h1>Log</h1>") });
+    expect(outputs[1]).toMatchObject({ taskId: "t1", agentId: "r1", kind: "review", attempt: 1, done: true, failed: "Overloaded" });
+    expect(outputs.find((o) => o.kind === "review" && !o.failed)).toMatchObject({ agentId: "r1", text: approve });
+  });
+
   it("sends the reviewer's problems back to the author and stops after the attempt limit", async () => {
     const codex = new ScriptedTool("codex", deliverOwned);
     const claude = new ScriptedTool("claude", () => reject);
