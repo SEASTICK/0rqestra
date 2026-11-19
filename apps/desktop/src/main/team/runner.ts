@@ -1,7 +1,9 @@
 import type { ChatEvent, ProviderAdapter, ProviderId, Usage } from "../providers/types";
 import { REVIEW_ROLES, type Plan, type PlanTask } from "./plan";
 import { deliveryProblems, parseFiles, parseReview, reviewPrompt, workerPrompt, type AgentRef } from "./prompts";
-import { resolveHandoff, type TaskOutput } from "./handoff";
+import { resolveHandoff, type ResolvedHandoff, type TaskOutput } from "./handoff";
+import { followUpPrompt, needKey, parseAnswer, resolveNeed } from "./context-request";
+import { completeBrief, parseBrief, parseNeeds, type ContextNeed, type ReturnBrief } from "./return-brief";
 import { writeFiles } from "./workspace";
 
 // Runs an approved plan with the agents in the tree. Plain code, no AI: the order, the limits, the
@@ -14,13 +16,17 @@ export interface TeamAgent extends AgentRef {
   effort: string | null;
 }
 
-export type TaskStatus = "waiting" | "working" | "reviewing" | "done" | "unverified" | "failed" | "blocked" | "stopped";
+export type TaskStatus = "waiting" | "working" | "waiting_context" | "reviewing" | "done" | "unverified" | "failed" | "blocked" | "stopped";
+
+// Rounds of context requests one task may make before it is shown as blocked (Stage 2).
+export const MAX_CONTEXT_ROUNDS = 2;
 
 export type TeamEvent =
   | { type: "run-started"; tasks: { id: string; title: string; role: string; agentId: string; agentName: string; deliverables: string[] }[] }
   | { type: "task"; taskId: string; status: TaskStatus; agentId: string | null; attempt: number; note?: string }
   | { type: "review"; taskId: string; reviewerId: string; approved: boolean; problems: string[] }
   | { type: "files"; taskId: string; files: { path: string; bytes: number }[] }
+  | { type: "brief"; taskId: string; brief: ReturnBrief }
   | { type: "run-finished"; status: "done" | "failed" | "stopped"; summary: string; files: { path: string; bytes: number }[]; calls: number; usage: { inputTokens: number; outputTokens: number } };
 
 export interface Limits {
@@ -76,6 +82,9 @@ export class TeamRun {
   private readonly written = new Map<string, { path: string; bytes: number }>();
   // What each finished task produced, for the handoffs of the tasks after it.
   private readonly outputs = new Map<string, TaskOutput>();
+  // What tasks need from the user or the Manager, and requests that were refused (Stage 2).
+  private readonly escalations: string[] = [];
+  private readonly notices: string[] = [];
 
   constructor(private readonly o: RunOptions) {
     this.limits = { ...DEFAULT_LIMITS, ...o.limits };
@@ -123,6 +132,9 @@ export class TeamRun {
       this.set(task, "blocked", null, 0, `Missing context: ${resolved.problems.join(" ")}`);
       return;
     }
+    // Context requests (Stage 2): answered once each, in a bounded number of rounds.
+    const asked = new Set<string>();
+    let rounds = 0;
     let problems: string[] = [];
     for (let attempt = 1; attempt <= this.limits.maxAttempts; attempt += 1) {
       // A retry goes to the next agent with the same role, if there is one (escalation by priority).
@@ -135,6 +147,19 @@ export class TeamRun {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
         problems = [(error as Error).message];
+        continue;
+      }
+      const needs = parseNeeds(text);
+      if (needs.length) {
+        rounds += 1;
+        const blocker = await this.answerNeeds(task, worker, needs, asked, resolved, rounds);
+        if (blocker) {
+          this.set(task, "blocked", worker.id, attempt, blocker);
+          return;
+        }
+        // Asking for context is not a failed attempt.
+        attempt -= 1;
+        problems = [];
         continue;
       }
       const { summary, files } = parseFiles(text);
@@ -151,10 +176,13 @@ export class TeamRun {
       const saved = writeFiles(workspace, outgoing);
       for (const f of saved) this.written.set(f.path.toLowerCase(), f);
       this.o.emit({ type: "files", taskId: task.id, files: saved });
-      this.outputs.set(task.id, { title: task.title, role: task.role, summary, files: saved.map((f) => f.path) });
+      const observed = [`Delivered ${saved.map((f) => f.path).join(", ")}: the expected files, none empty, no others.`];
+      const brief = completeBrief(parseBrief(text, task.id, plan.tasks.map((t) => t.id)), task.id, summary, saved.map((f) => f.path), observed);
+      this.outputs.set(task.id, { title: task.title, role: task.role, summary: brief.summary, files: saved.map((f) => f.path), brief });
 
       const reviewer = REVIEW_ROLES.includes(task.role) ? null : reviewerFor(worker, agents);
       if (!reviewer) {
+        this.keepBrief(task, brief);
         this.set(task, "unverified", worker.id, attempt, "No reviewer in the tree, so this was not checked.");
         return;
       }
@@ -164,9 +192,9 @@ export class TeamRun {
         const checks = [
           `Delivery check passed: ${task.deliverables.join(", ")} delivered, none empty, no other files.`,
           ...(attempt > 1 ? [`This is attempt ${attempt}; the problems found last time were sent to the author.`] : []),
-          "No code was run: agents cannot run tools in this version.",
+          "No code was run: agents cannot run tools in this version, so any test results in the author's brief are agent-reported.",
         ];
-        reviewText = await this.ask(reviewer, reviewPrompt(plan, task, reviewer, worker, outgoing, resolved, checks));
+        reviewText = await this.ask(reviewer, reviewPrompt(plan, task, reviewer, worker, outgoing, resolved, checks, brief));
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
@@ -176,12 +204,66 @@ export class TeamRun {
       const review = parseReview(reviewText);
       this.o.emit({ type: "review", taskId: task.id, reviewerId: reviewer.id, approved: review.approved, problems: review.problems });
       if (review.approved) {
+        const reviewed = { ...brief, verified: [{ text: `Reviewed and approved by ${reviewer.name} (${reviewer.role}).`, source: "runner" as const }, ...brief.verified] };
+        this.outputs.set(task.id, { ...this.outputs.get(task.id)!, brief: reviewed });
+        this.keepBrief(task, reviewed);
         this.set(task, "done", worker.id, attempt, `Approved by ${reviewer.name}${reviewer.tool === worker.tool ? " (same tool as the author)" : ""}.`);
         return;
       }
       problems = review.problems;
     }
     this.set(task, "failed", null, this.limits.maxAttempts, problems[0] ?? "Not approved.");
+  }
+
+  // The brief goes to the window (the run card, and the Manager's next turn) and to later tasks.
+  private keepBrief(task: PlanTask, brief: ReturnBrief): void {
+    this.o.emit({ type: "brief", taskId: task.id, brief });
+  }
+
+  // Answers an agent's requests for context. Returns why the task cannot continue, or null when
+  // everything was answered (or refused) and the agent can go on.
+  private async answerNeeds(task: PlanTask, worker: TeamAgent, needs: ContextNeed[], asked: Set<string>, resolved: ResolvedHandoff, round: number): Promise<string | null> {
+    const { plan, agents, workspace } = this.o;
+    const waiting = needs.map((n) => n.ref).join("; ");
+    this.set(task, "waiting_context", worker.id, 0, `Waiting for context: ${waiting}`);
+    if (round > MAX_CONTEXT_ROUNDS) {
+      return this.escalate(task, `Still missing after ${MAX_CONTEXT_ROUNDS} rounds of questions: ${waiting}`);
+    }
+    const briefs = new Map([...this.outputs].flatMap(([id, out]) => (out.brief ? [[id, out.brief] as const] : [])));
+    const blockers: string[] = [];
+    for (const need of needs) {
+      const key = needKey(need);
+      if (asked.has(key)) {
+        resolved.provided.push(`You asked again for ${need.ref}; it was answered above. Continue with what you have.`);
+        continue;
+      }
+      asked.add(key);
+      const r = resolveNeed(plan, task, need, workspace, briefs, this.limits.contextChars);
+      if (r.kind === "provided") resolved.provided.push(`You asked for ${r.label}${need.why ? ` (${need.why})` : ""}:\n${r.content}`);
+      else if (r.kind === "refused") {
+        resolved.provided.push(`Not given: ${r.message}`);
+        this.notices.push(`Task ${task.id} asked for something outside its scope: ${r.message}`);
+      } else if (r.kind === "escalate") blockers.push(r.message);
+      else {
+        // The earlier task's agent answers the one question, from its own task and brief.
+        const from = plan.tasks.find((t) => t.id === r.taskId)!;
+        const answerer = agentsFor(from.role, agents)[0];
+        if (!answerer) {
+          blockers.push(`Task ${from.id} would know (${need.ref}), but no agent has its role.`);
+          continue;
+        }
+        const reply = parseAnswer(await this.ask(answerer, followUpPrompt(plan, from, briefs.get(from.id), task, r.question)));
+        if (reply) resolved.provided.push(`You asked task ${from.id} (${from.title}): ${need.ref}\nAnswer from ${answerer.name}: ${reply}`);
+        else blockers.push(`Task ${from.id} could not answer: ${need.ref}`);
+      }
+    }
+    return blockers.length ? this.escalate(task, blockers.join(" ")) : null;
+  }
+
+  // Shown in the run card and the Manager chat: what the task needs from the user or the Manager.
+  private escalate(task: PlanTask, message: string): string {
+    this.escalations.push(`${task.id} (${task.title}): ${message}`);
+    return `Needs the Manager or you: ${message}`;
   }
 
   async start(): Promise<void> {
@@ -234,6 +316,8 @@ export class TeamRun {
     const parts = [`${done + unverified} of ${plan.tasks.length} tasks finished`];
     if (unverified) parts.push(`${unverified} not reviewed`);
     if (failure) parts.push(String(failure).replace(/[.\s]+$/, ""));
+    if (this.escalations.length) parts.push(`Needs the Manager or you: ${this.escalations.join("; ").replace(/[.\s]+$/, "")}`);
+    if (this.notices.length) parts.push(this.notices.join(" ").replace(/[.\s]+$/, ""));
     return this.finish(ok ? "done" : "failed", `${parts.join(". ")}.`);
   }
 

@@ -319,3 +319,19 @@ describe('plans with handoffs', () => {
     expect(old).toEqual({ goal: 'g', tasks: [{ id: 't1', title: 'T', role: 'Builder', goal: 'Do', dependsOn: [], deliverables: ['a.txt'] }] });
   });
 });
+
+describe('return briefs in the window', () => {
+  it('keeps each task brief and gives the Manager a short account of it in the next turn', async () => {
+    const { teamRunText, historyFor } = await import('./live-chat.mjs');
+    let run = newTeamRun('run-1', { goal: 'Log', tasks: [{ id: 'b1', title: 'Build', role: 'Builder', deliverables: ['index.html'] }] });
+    run = applyTeamEvent(run, { type: 'task', taskId: 'b1', status: 'waiting_context', agentId: 'bu', attempt: 0, note: 'Waiting for context: r1.f3' });
+    expect(nodeStates(run)).toEqual({ bu: 'working' });
+    run = applyTeamEvent(run, { type: 'brief', taskId: 'b1', brief: { taskId: 'b1', summary: 'Built the page.', decisions: ['No frameworks'], findings: [], evidence: ['index.html'], verified: [{ text: 'Delivered index.html', source: 'runner' }, { text: 'All tests passed', source: 'agent-reported' }], unresolved: ['Pounds?'], given: true } });
+    run = applyTeamEvent(run, { type: 'run-finished', status: 'done', summary: '1 of 1 tasks finished.', files: [{ path: 'index.html', bytes: 9 }], calls: 2, usage: null });
+    const text = teamRunText(run);
+    expect(text).toContain('- b1 Build (Builder, waiting_context): Built the page.');
+    expect(text).toContain('Verified: Delivered index.html [checked by the app]; All tests passed [agent-reported]');
+    expect(text).toContain('Unresolved: Pounds?');
+    expect(historyFor([{ id: 'x', kind: 'team', run }])[0].text).toBe(text);
+  });
+});

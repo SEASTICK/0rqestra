@@ -1,6 +1,7 @@
 import type { Plan, PlanTask } from "./plan";
 import { WEB_RULES } from "../providers/history";
 import { handoffText, type ResolvedHandoff } from "./handoff";
+import { answerFormat, briefText, type ReturnBrief } from "./return-brief";
 
 // What the agents are asked, and how their answers are read. Agents have no tools, so they hand over
 // files as text in a fixed form, and the main process writes them.
@@ -34,20 +35,22 @@ export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, resolv
       "the complete file content",
       "</orqestra-file>",
       "Use exactly the file names listed above, and no other files.",
+      answerFormat(resolved.dependents),
       WEB_RULES,
     ].join("\n"),
   );
   return parts.join("\n\n");
 }
 
-export function reviewPrompt(plan: Plan, task: PlanTask, reviewer: AgentRef, author: AgentRef, files: { path: string; content: string }[], resolved: ResolvedHandoff, checks: string[]): string {
+export function reviewPrompt(plan: Plan, task: PlanTask, reviewer: AgentRef, author: AgentRef, files: { path: string; content: string }[], resolved: ResolvedHandoff, checks: string[], authorBrief?: ReturnBrief): string {
   return [
     `You are ${reviewer.name}, the ${reviewer.role} in a team of AI agents in the app 0rqestra. Review another agent's work.`,
     `Project goal: ${plan.goal}`,
     `The task was done by ${author.name} (${author.role}) from this handoff:`,
     handoffText(plan, task, resolved, true),
-    `Submitted changes:\n${fileBlocks(files)}`,
+    `Submitted changes (the latest version):\n${fileBlocks(files)}`,
     `Verification results so far:\n${list(checks)}`,
+    ...(authorBrief ? [`Evidence from the author:\n${briefText(authorBrief, "Author's brief")}`] : []),
     [
       "Check the submitted files against each acceptance criterion, the decisions and the rules, and look for missing parts,",
       "placeholders and clear bugs. Approve work that is good enough for a first version; list only problems that must be",

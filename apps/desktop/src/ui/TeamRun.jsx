@@ -2,7 +2,7 @@
 import React from 'react';
 
 const STATUS_LABEL = {
-  waiting: 'Waiting', working: 'Working', reviewing: 'In review', done: 'Done', unverified: 'Done, not reviewed',
+  waiting: 'Waiting', working: 'Working', waiting_context: 'Waiting for context', reviewing: 'In review', done: 'Done', unverified: 'Done, not reviewed',
   failed: 'Failed', blocked: 'Blocked', stopped: 'Stopped',
 };
 const RUN_LABEL = { running: 'The team is working', done: 'Finished', failed: 'Did not finish', stopped: 'Stopped' };
@@ -53,6 +53,7 @@ export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPre
               <strong>{t.title}</strong>
               <span>{t.role}{t.agentId || t.plannedAgentId ? ` · ${nameOf(t.agentId || t.plannedAgentId)}` : ''}{t.attempt > 1 ? ` · attempt ${t.attempt}` : ''}</span>
               {t.note && <small>{t.note}</small>}
+              {t.brief?.summary && <small className="team-brief">{t.brief.summary}{t.brief.unresolved?.length ? ` · Open: ${t.brief.unresolved.slice(0, 2).join('; ')}` : ''}</small>}
               {t.review && !t.review.approved && t.review.problems.length > 0 && <small className="team-problems">Review: {t.review.problems.slice(0, 3).join(' · ')}</small>}
               {t.files.length > 0 && <div className="plan-files">{t.files.map((f) => <code key={f.path}>{f.path}</code>)}</div>}
             </div>

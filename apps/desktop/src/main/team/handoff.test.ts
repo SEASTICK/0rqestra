@@ -107,7 +107,8 @@ describe("task handoffs at the adapter boundary", () => {
     expect(build1).toContain("--- notes.md ---\nExercises: squat, bench, deadlift");
     expect(build1).toContain("research.md (a project file, excerpt below)");
     expect(build1).not.toContain("RESEARCH-END-MARKER");
-    expect(build1).not.toContain("Style it"); // another task's job stays out
+    expect(build1).not.toContain("Style the page."); // another task's job stays out (only its name, for tagging findings)
+    expect(build1).toContain("Tasks that use your result: t2 (Style it)");
     expect(build1).toContain("do not redo research or reopen decisions");
 
     // Builder of t2: its own decisions, t1's result, and t1's file in full; not t1's references.
@@ -125,7 +126,7 @@ describe("task handoffs at the adapter boundary", () => {
     expect(review1).toContain("- Adding a set shows it in the list");
     expect(review1).toContain("- [project] All interface text in Swedish");
     expect(review1).toContain("- Save sets in localStorage, not on a server");
-    expect(review1).toContain("Submitted changes:\n--- index.html ---\n<p>index.html content</p>");
+    expect(review1).toContain("Submitted changes (the latest version):\n--- index.html ---\n<p>index.html content</p>");
     expect(review1).toContain("Verification results so far:\n- Delivery check passed: index.html delivered");
     expect(review1).toContain("- notes.md (a project file): The user's exercise list");
     expect(review1).not.toContain("squat, bench");
@@ -180,7 +181,7 @@ describe("task handoffs at the adapter boundary", () => {
     expect(first).toContain("Every file listed (index.html) is delivered and complete");
     expect(second).toContain("--- index.html ---\n<p>index.html content</p>");
     expect(second).toContain("Task a (Page, Builder) delivered index.html: Made it.");
-    expect(claude.requests[0]!.text).toContain("Submitted changes:");
+    expect(claude.requests[0]!.text).toContain("Submitted changes (the latest version):");
   });
 });
 

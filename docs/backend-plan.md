@@ -210,7 +210,18 @@ Phase 3 uses the same question card when the plan needs a decision.
   the task's dependencies when the plan is read, project files before the run starts, and the rest
   just before the task runs; a missing one blocks the task instead of being dropped. Agents never
   get the chat. Plans made before handoffs get one built from the task's goal and dependencies.
-  Not yet: agents asking for more context, return briefs, token measurements, skills.
+- **Task handoffs, stage 2 (2026-11-19).** Every worker ends with a return brief
+  (`<orqestra-brief>`: summary, decisions, findings tagged for the tasks that need them, evidence,
+  what it verified, what is open). The runner adds what it observed itself ("checked by the app")
+  and labels the agent's own claims "agent-reported". Later tasks get the brief with only the
+  findings tagged for them (the rest by id), the reviewer gets the latest files plus the brief as
+  evidence, and the Manager's next turn gets every brief in short (`main/team/return-brief.ts`).
+  An agent can answer `<orqestra-need>` instead of files: the runner answers from the plan and the
+  finished tasks, asks the earlier task's agent one follow-up question when the detail is not
+  written down, refuses anything outside the task's readable files, and sends new decisions or a
+  missing file to the Manager chat (the task is blocked; independent tasks go on). Requests are
+  answered once each, at most 2 rounds per task (`main/team/context-request.ts`).
+  Not yet: token measurements and usage reporting (stage 3), skills.
 - Verified: unit tests, and the flow in a browser with a stubbed bridge. **Not verified:** the
   Planner and the re-plan with the real Claude Code and Codex.
 The port of the Python engine's core, in TypeScript.

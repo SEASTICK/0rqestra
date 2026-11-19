@@ -1,4 +1,5 @@
 import { ancestors, fileOwner, type Handoff, type Plan, type PlanTask } from "./plan";
+import { briefText, type ReturnBrief } from "./return-brief";
 import { listFiles, readFiles } from "./workspace";
 
 // Turns a task's handoff into what its agent reads (Stage 1 of task-specific handoffs). The handoff
@@ -11,6 +12,8 @@ export interface TaskOutput {
   role: string;
   summary: string;
   files: string[];
+  // The agent's return brief (Stage 2), with what the runner verified itself.
+  brief?: ReturnBrief;
 }
 
 export interface Attachment {
@@ -29,6 +32,10 @@ export interface ResolvedHandoff {
   earlier: string[];
   // References that could not be resolved. Non-empty means: do not launch the task.
   problems: string[];
+  // Details the agent asked for and got while doing the task (Stage 2).
+  provided: string[];
+  // The tasks that use this task's result, so the agent can tag its findings for them.
+  dependents: { id: string; title: string }[];
 }
 
 const EXCERPT_CHARS = 1500;
@@ -79,14 +86,17 @@ export function resolveHandoff(plan: Plan, task: PlanTask, workspace: string, ou
   };
   const describe = (id: string) => {
     const out = outputs.get(id);
-    return out ? `Task ${id} (${out.title}, ${out.role}) delivered ${out.files.join(", ") || "no files"}${out.summary ? `: ${out.summary}` : "."}` : null;
+    if (!out) return null;
+    const label = `Task ${id} (${out.title}, ${out.role}) delivered ${out.files.join(", ") || "no files"}`;
+    // Only the findings that matter for this task; the others are listed by id, to ask for.
+    return out.brief ? briefText(out.brief, label, task.id) : `${label}${out.summary ? `: ${out.summary}` : "."}`;
   };
 
   for (const ref of handoff.references) {
     if (ref.task) {
       const line = before.has(ref.task) ? describe(ref.task) : null;
       if (!line) problems.push(`The result of task ${ref.task} is not available${before.has(ref.task) ? " (it has not finished)" : " (it is not an earlier task of this one)"}.`);
-      else if (!earlier.includes(line)) earlier.push(`${line}${ref.why ? ` Why it matters: ${ref.why}` : ""}`);
+      else if (!earlier.includes(line)) earlier.push(`${line}${ref.why ? `\nWhy it matters: ${ref.why}` : ""}`);
       continue;
     }
     const file = ref.file!;
@@ -113,7 +123,8 @@ export function resolveHandoff(plan: Plan, task: PlanTask, workspace: string, ou
     const line = describe(d);
     if (line && !earlier.some((e) => e.startsWith(line))) earlier.push(line);
   }
-  return { handoff, attachments, earlier, problems };
+  const dependents = plan.tasks.filter((t) => t.dependsOn.includes(task.id)).map((t) => ({ id: t.id, title: t.title }));
+  return { handoff, attachments, earlier, problems, provided: [], dependents };
 }
 
 const bullets = (items: string[], empty: string) => (items.length ? items.map((i) => `- ${i}`).join("\n") : `- ${empty}`);
@@ -132,7 +143,8 @@ export function handoffText(plan: Plan, task: PlanTask, resolved: ResolvedHandof
     `Decisions already made (do not reopen them):\n${bullets(h.decisions, "None recorded.")}`,
     `Rules and constraints (must follow):\n${bullets(rules, "No project rules beyond the app's rules below.")}`,
     `Findings:\n${bullets(h.findings, "None recorded.")}`,
-    `References:\n${refs.length ? refs.join("\n") : "- None."}${resolved.earlier.length ? `\nEarlier tasks:\n${resolved.earlier.map((e) => `- ${e}`).join("\n")}` : ""}`,
+    `References:\n${refs.length ? refs.join("\n") : "- None."}${resolved.earlier.length ? `\nEarlier tasks:\n${resolved.earlier.join("\n\n")}` : ""}`,
+    ...(resolved.provided.length ? [`Details you asked for:\n${resolved.provided.join("\n\n")}`] : []),
     `Acceptance criteria:\n${bullets(h.acceptance, "The work does what the task asks.")}`,
     `How it will be verified: ${h.verify || "A reviewer reads the delivered files against this handoff."}`,
   ].join("\n\n");

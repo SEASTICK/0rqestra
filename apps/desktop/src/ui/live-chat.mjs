@@ -51,8 +51,26 @@ export function historyFor(messages, max = 40) {
     .filter((m) => m.kind === 'user' || (m.kind === 'assistant' && m.status === 'done' && m.text) || (m.kind === 'team' && m.run && m.run.status !== 'running'))
     .slice(-max)
     .map((m) => (m.kind === 'team'
-      ? { role: 'assistant', text: `Team run (${m.run.status}): ${m.run.summary || ''} Files: ${(m.run.files || []).map((f) => f.path).join(', ') || 'none'}.` }
+      ? { role: 'assistant', text: teamRunText(m.run) }
       : { role: m.kind === 'user' ? 'user' : 'assistant', text: String(m.text).slice(0, 20000) }));
+}
+
+// A finished team run as the Manager sees it in its next turn: the outcome, and each task's return
+// brief (summary, decisions, what was verified and by whom, what is still open). The briefs are
+// short, so the Manager can use them in the next plan without the agents' transcripts.
+export function teamRunText(run) {
+  const lines = [`Team run (${run.status}): ${run.summary || ''} Files: ${(run.files || []).map((f) => f.path).join(', ') || 'none'}.`];
+  for (const t of run.tasks || []) {
+    const b = t.brief;
+    if (!b) continue;
+    const parts = [`- ${t.id} ${t.title} (${t.role}, ${t.status}): ${b.summary}`];
+    if (b.decisions?.length) parts.push(`  Decisions: ${b.decisions.slice(0, 5).join('; ')}`);
+    if (b.findings?.length) parts.push(`  Findings: ${b.findings.slice(0, 6).map((f) => `${f.id} ${f.title}`).join('; ')}`);
+    if (b.verified?.length) parts.push(`  Verified: ${b.verified.slice(0, 5).map((v) => `${v.text} [${v.source === 'runner' ? 'checked by the app' : 'agent-reported'}]`).join('; ')}`);
+    if (b.unresolved?.length) parts.push(`  Unresolved: ${b.unresolved.slice(0, 5).join('; ')}`);
+    lines.push(parts.join('\n'));
+  }
+  return lines.join('\n');
 }
 
 export function newAssistant(id, target) {
@@ -250,13 +268,14 @@ export function applyTeamEvent(run, event) {
     case 'task': return patch(event.taskId, (t) => ({ ...t, status: event.status, agentId: event.agentId ?? t.agentId, attempt: event.attempt || t.attempt, note: event.note ?? null }));
     case 'review': return patch(event.taskId, (t) => ({ ...t, review: { reviewerId: event.reviewerId, approved: event.approved, problems: event.problems } }));
     case 'files': return patch(event.taskId, (t) => ({ ...t, files: event.files }));
+    case 'brief': return patch(event.taskId, (t) => ({ ...t, brief: event.brief }));
     case 'run-finished': return { ...run, status: event.status, summary: event.summary, files: event.files, calls: event.calls, usage: event.usage };
     default: return run;
   }
 }
 
 // What each agent in the tree is doing in a run, using the tree's own status names.
-const TREE_STATE = { working: 'working', reviewing: 'reviewing', waiting: 'queued', done: 'completed', unverified: 'completed', failed: 'blocked', blocked: 'blocked', stopped: 'interrupted' };
+const TREE_STATE = { working: 'working', waiting_context: 'working', reviewing: 'reviewing', waiting: 'queued', done: 'completed', unverified: 'completed', failed: 'blocked', blocked: 'blocked', stopped: 'interrupted' };
 const RANK = ['working', 'reviewing', 'queued', 'blocked', 'interrupted', 'completed'];
 export function nodeStates(run) {
   const states = {};
@@ -274,7 +293,7 @@ export function nodeStates(run) {
 // A run that was going on when the app closed cannot continue.
 export function settleTeamRun(run) {
   if (!run || run.status !== 'running') return run;
-  return { ...run, status: 'stopped', summary: 'The app closed while the team was working. Files already written stay in the project folder.', tasks: run.tasks.map((t) => (['waiting', 'working', 'reviewing'].includes(t.status) ? { ...t, status: 'stopped' } : t)) };
+  return { ...run, status: 'stopped', summary: 'The app closed while the team was working. Files already written stay in the project folder.', tasks: run.tasks.map((t) => (['waiting', 'working', 'waiting_context', 'reviewing'].includes(t.status) ? { ...t, status: 'stopped' } : t)) };
 }
 
 // ---- Setting up the team in one step -----------------------------------------------------------
@@ -336,7 +355,7 @@ export function plannerOf(graph) {
 // The message that asks the Manager to fix a run that did not finish. It says what happened and
 // which files exist, so the next plan can build on them.
 export function replanMessage(run) {
-  const tasks = run.tasks.map((t) => `- ${t.title} (${t.role}): ${t.status}${t.note ? ` — ${t.note}` : ''}${t.review && !t.review.approved ? `; review: ${t.review.problems.slice(0, 3).join('; ')}` : ''}`);
+  const tasks = run.tasks.map((t) => `- ${t.title} (${t.role}): ${t.status}${t.note ? ` — ${t.note}` : ''}${t.review && !t.review.approved ? `; review: ${t.review.problems.slice(0, 3).join('; ')}` : ''}${t.brief?.unresolved?.length ? `; unresolved: ${t.brief.unresolved.slice(0, 3).join('; ')}` : ''}`);
   const files = [...new Set([...(run.files || []), ...run.tasks.flatMap((t) => t.files || [])].map((f) => f.path))];
   return [
     `The team run "${run.goal}" did not finish. ${run.summary || ''}`.trim(),
@@ -348,7 +367,7 @@ export function replanMessage(run) {
 
 // Products (web pages the team built) in the tree. The main process finds them in the project's folder;
 // here they are linked to the agents that wrote or reviewed their files, and placed under those agents.
-const ACTIVE = ['waiting', 'working', 'reviewing'];
+const ACTIVE = ['waiting', 'working', 'waiting_context', 'reviewing'];
 const inProduct = (file, product) => product.files.includes(file) || (product.folder !== '' && file.startsWith(`${product.folder}/`));
 
 export function productLinks(product, messages, graph) {
