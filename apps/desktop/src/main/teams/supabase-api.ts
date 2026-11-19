@@ -94,10 +94,16 @@ export class SupabaseApi {
 
   // Sends a one-time code. Only createUser: true may create an account (with the display name in
   // its profile); otherwise Supabase refuses an unknown address with otp_disabled.
-  async sendCode(email: string, opts: { createUser: boolean; displayName?: string } = { createUser: false }): Promise<void> {
+  async sendCode(email: string, opts: { createUser: boolean; displayName?: string; username?: string } = { createUser: false }): Promise<void> {
+    const data = { ...(opts.displayName ? { display_name: opts.displayName } : {}), ...(opts.username ? { username: opts.username } : {}) };
     await this.request("POST", "/auth/v1/otp", {
-      body: { email, create_user: opts.createUser, ...(opts.createUser && opts.displayName ? { data: { display_name: opts.displayName } } : {}) },
+      body: { email, create_user: opts.createUser, ...(opts.createUser && Object.keys(data).length ? { data } : {}) },
     });
+  }
+
+  // Whether the Auth server answers at all (used to tell "offline" apart from "signed out").
+  async health(): Promise<void> {
+    await this.request("GET", "/auth/v1/health");
   }
 
   // Saves the display name in the signed-in account's profile.
@@ -128,7 +134,8 @@ export class SupabaseApi {
     return rows[0]!;
   }
 
-  rpc<T>(token: string, fn: string, args: Record<string, unknown>): Promise<T> {
-    return this.request("POST", `/rest/v1/rpc/${fn}`, { token, body: args }) as Promise<T>;
+  // A null token calls the function as an anonymous visitor (only username_available allows that).
+  rpc<T>(token: string | null, fn: string, args: Record<string, unknown>): Promise<T> {
+    return this.request("POST", `/rest/v1/rpc/${fn}`, { ...(token ? { token } : {}), body: args }) as Promise<T>;
   }
 }

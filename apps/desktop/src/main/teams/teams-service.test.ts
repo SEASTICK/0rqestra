@@ -48,6 +48,9 @@ class FakeSupabase {
   otpRequests: { email: string; createUser: boolean }[] = [];
   rateLimited = false;
   offline = false;
+  profiles = new Map<string, string>(); // user id -> username
+  friendships: { id: string; requester: string; addressee: string; status: "pending" | "accepted" }[] = [];
+  memberInvites: { id: string; team_id: string; invitee: string; invited_by: string; status: "pending" | "accepted" | "declined" | "revoked" }[] = [];
 
   fetch: FetchLike = async (url, init) => {
     if (this.offline) throw new Error("offline");
@@ -57,6 +60,12 @@ class FakeSupabase {
     const reply = (status: number, value: unknown) => ({ ok: status < 300, status, text: async () => (value === undefined ? "" : JSON.stringify(value)) });
     const pgError = (status: number, code: string, message: string) => reply(status, { code, message, details: null, hint: null });
     if (init.headers.apikey !== "sb_publishable_test") return reply(401, { message: "Invalid API key" });
+    if (u.pathname === "/auth/v1/health") return reply(200, { name: "GoTrue" });
+    const USER = /^[a-z0-9][a-z0-9_]{2,23}$/;
+    if (u.pathname === "/rest/v1/rpc/username_available") {
+      const n = String(body.p_username).trim().toLowerCase();
+      return reply(200, USER.test(n) && ![...this.profiles.values()].includes(n));
+    }
     if (u.pathname === "/auth/v1/otp") {
       const email = String(body.email);
       // As Supabase: without create_user an unknown address is refused, and nothing is sent.
@@ -64,7 +73,7 @@ class FakeSupabase {
       if (this.rateLimited) return reply(429, { code: 429, error_code: "over_email_send_rate_limit", msg: "For security purposes, you can only request this after 42 seconds." });
       if (!this.users.has(email)) {
         this.users.set(email, crypto.randomUUID());
-        const data = body.data as { display_name?: string } | undefined;
+        const data = body.data as { display_name?: string; username?: string } | undefined;
         if (data?.display_name) this.meta.set(email, data.display_name);
       }
       this.otpRequests.push({ email, createUser: body.create_user === true });
@@ -102,7 +111,7 @@ class FakeSupabase {
     if (init.method === "GET" && u.pathname === "/rest/v1/teams") {
       return reply(200, this.teams.filter((t) => isMember(t.id)).map((t) => ({
         id: t.id, name: t.name, owner_id: t.owner_id,
-        team_members: this.members.filter((m) => m.team_id === t.id).map(({ user_id, email, role }) => ({ user_id, email, role })),
+        team_members: this.members.filter((m) => m.team_id === t.id).map(({ user_id, role }) => ({ user_id, username: this.profiles.get(user_id) ?? null, role })),
         shared_projects: this.projects.filter((p) => p.team_id === t.id),
       })));
     }
@@ -185,6 +194,82 @@ class FakeSupabase {
       inv.redeemed_at = new Date(this.now).toISOString();
       return reply(200, inv.team_id);
     }
+    // ---- usernames, friends and team invitations to friends (same rules as the migration)
+    const pair = (x: string, y: string) => this.friendships.find((f) => (f.requester === x && f.addressee === y) || (f.requester === y && f.addressee === x));
+    const needName = () => (this.profiles.has(me) ? null : pgError(401, "28000", "username_required"));
+    if (init.method === "GET" && u.pathname === "/rest/v1/profiles") {
+      return reply(200, this.profiles.has(me) ? [{ username: this.profiles.get(me) }] : []);
+    }
+    if (u.pathname === "/rest/v1/rpc/set_username") {
+      const n = String(body.p_username).trim().toLowerCase();
+      if (!USER.test(n)) return pgError(400, "22023", "invalid_username");
+      if ([...this.profiles].some(([id, name]) => name === n && id !== me)) return pgError(409, "23505", "username_taken");
+      this.profiles.set(me, n);
+      return reply(200, n);
+    }
+    if (u.pathname === "/rest/v1/rpc/list_friends") {
+      return reply(200, this.friendships.filter((f) => f.requester === me || f.addressee === me).map((f) => {
+        const other = f.requester === me ? f.addressee : f.requester;
+        return { request_id: f.id, user_id: other, username: this.profiles.get(other) ?? "unknown", state: f.status === "accepted" ? "friend" : f.requester === me ? "outgoing" : "incoming" };
+      }));
+    }
+    if (u.pathname === "/rest/v1/rpc/send_friend_request") {
+      const refusal = needName();
+      if (refusal) return refusal;
+      const target = [...this.profiles].find(([, name]) => name === String(body.p_username).trim().toLowerCase())?.[0];
+      if (!target) return pgError(404, "P0002", "user_not_found");
+      if (target === me) return pgError(400, "22023", "cannot_friend_self");
+      let f = pair(me, target);
+      if (f && f.status === "pending" && f.addressee === me) f.status = "accepted";
+      if (!f) this.friendships.push((f = { id: crypto.randomUUID(), requester: me, addressee: target, status: "pending" }));
+      return reply(200, [{ request_id: f.id, status: f.status }]);
+    }
+    if (u.pathname === "/rest/v1/rpc/respond_friend_request") {
+      const f = this.friendships.find((x) => x.id === body.p_request_id && (x.requester === me || x.addressee === me));
+      if (!f) return pgError(404, "P0002", "request_not_found");
+      if (f.status === "accepted") return reply(200, "accepted");
+      if (f.addressee !== me) return pgError(404, "P0002", "request_not_found");
+      if (body.p_accept === true) { f.status = "accepted"; return reply(200, "accepted"); }
+      this.friendships = this.friendships.filter((x) => x !== f);
+      return reply(200, "declined");
+    }
+    if (u.pathname === "/rest/v1/rpc/remove_friend") {
+      const other = String(body.p_user_id);
+      this.friendships = this.friendships.filter((f) => !(pair(me, other) === f && (f.status === "accepted" || f.requester === me)));
+      return reply(204, undefined);
+    }
+    if (u.pathname === "/rest/v1/rpc/invite_friend_to_team") {
+      const teamId = String(body.p_team_id), invitee = String(body.p_user_id);
+      if (!isOwner(teamId)) return pgError(403, "42501", "not_team_owner");
+      if (pair(me, invitee)?.status !== "accepted") return pgError(403, "42501", "not_friends");
+      if (this.members.some((m) => m.team_id === teamId && m.user_id === invitee)) return pgError(409, "23505", "already_member");
+      let inv = this.memberInvites.find((i) => i.team_id === teamId && i.invitee === invitee && i.status === "pending");
+      if (!inv) this.memberInvites.push((inv = { id: crypto.randomUUID(), team_id: teamId, invitee, invited_by: me, status: "pending" }));
+      return reply(200, inv.id);
+    }
+    if (u.pathname === "/rest/v1/rpc/list_team_invites") {
+      return reply(200, this.memberInvites.filter((i) => i.status === "pending" && (i.invitee === me || isOwner(i.team_id))).map((i) => {
+        const incoming = i.invitee === me;
+        const other = incoming ? i.invited_by : i.invitee;
+        return { invite_id: i.id, team_id: i.team_id, team_name: this.teams.find((t) => t.id === i.team_id)!.name, user_id: other, username: this.profiles.get(other) ?? "unknown", direction: incoming ? "incoming" : "outgoing" };
+      }));
+    }
+    if (u.pathname === "/rest/v1/rpc/respond_team_invite") {
+      const inv = this.memberInvites.find((i) => i.id === body.p_invite_id && i.invitee === me);
+      if (!inv || inv.status === "declined") return pgError(404, "P0002", "invite_not_found");
+      if (inv.status === "accepted") return reply(200, inv.team_id);
+      if (inv.status === "revoked") return pgError(400, "P0001", "invite_revoked");
+      if (body.p_accept !== true) { inv.status = "declined"; return reply(200, null); }
+      if (!isMember(inv.team_id)) this.members.push({ team_id: inv.team_id, user_id: me, email: myEmail, role: "member" });
+      inv.status = "accepted";
+      return reply(200, inv.team_id);
+    }
+    if (u.pathname === "/rest/v1/rpc/revoke_team_invite") {
+      const inv = this.memberInvites.find((i) => i.id === body.p_invite_id && isOwner(i.team_id));
+      if (!inv) return pgError(404, "P0002", "invite_not_found");
+      if (inv.status === "pending") inv.status = "revoked";
+      return reply(204, undefined);
+    }
     return reply(404, { message: `No route ${init.method} ${u.pathname}` });
   };
 
@@ -226,9 +311,12 @@ function computer(name: string, server: FakeSupabase, now = () => server.now) {
   return { dir, ...make(), restart: make };
 }
 
+// The tests' people get a username from their email: a@example.test is "a_user".
+const userOf = (email: string) => `${email.split("@")[0]!.toLowerCase().replace(/[^a-z0-9_]/g, "_")}_user`.slice(0, 24);
+
 // Signs in, creating the account if needed (the tests' people are new to the stand-in server).
 async function signIn(service: TeamsService, email: string) {
-  await service.sendCode(email, { mode: "register", displayName: email.split("@")[0] });
+  await service.sendCode(email, { mode: "register", username: userOf(email) });
   return service.verifyCode("123 456");
 }
 
@@ -253,7 +341,7 @@ describe("Teams, phase 1", () => {
 
   it("signs in with an email code, sends the key as apikey only, and refuses a wrong code", async () => {
     const a = computer("a", server);
-    await a.service.sendCode("A@Example.test", { mode: "register", displayName: "Ann" });
+    await a.service.sendCode("A@Example.test", { mode: "register", username: "ann" });
     expect(a.service.view()).toMatchObject({ status: "code_sent", pendingEmail: "a@example.test" });
     await expect(a.service.verifyCode("999999")).rejects.toThrow(/wrong or has expired/);
     await expect(a.service.verifyCode("abc")).rejects.toThrow(/only digits/);
@@ -279,7 +367,7 @@ describe("Teams, phase 1", () => {
     await signIn(a.service, "a@example.test");
     let view = await a.service.createTeam("  Orq team ");
     const team = view.teams[0]!;
-    expect(team).toMatchObject({ name: "Orq team", isOwner: true, members: [{ email: "a@example.test", role: "owner", isYou: true }] });
+    expect(team).toMatchObject({ name: "Orq team", isOwner: true, members: [{ name: "a_user", role: "owner", isYou: true }] });
     const pickA = await a.service.inspectFolder(sshClone);
     expect(pickA.repo).toMatchObject({ owner: "SEASTICK", name: "orq-test", key: "github.com/seastick/orq-test", remote: "origin" });
     view = await a.service.registerProject({ teamId: team.id, selectionId: pickA.id, localProjectId: "local-a", name: "Orq test" });
@@ -309,7 +397,9 @@ describe("Teams, phase 1", () => {
     await signIn(b.service, "b@example.test");
     view = await b.service.acceptInvite(invite.code.toLowerCase());
     expect(view.teams[0]).toMatchObject({ name: "Orq team", isOwner: false, invites: [] });
-    expect(view.teams[0]!.members.map((m) => m.email)).toEqual(["a@example.test", "b@example.test"]);
+    expect(view.teams[0]!.members.map((m) => m.name)).toEqual(["a_user", "b_user"]);
+    // Teammates' email addresses are not in the view.
+    expect(JSON.stringify(view.teams)).not.toContain("a@example.test");
     expect(view.teams[0]!.projects[0]!.link).toBeNull();
     const wrong = await b.service.inspectFolder(otherRepo);
     await expect(b.service.linkCheckout({ sharedProjectId: project.id, selectionId: wrong.id, localProjectId: "local-b" })).rejects.toThrow(/not SEASTICK\/orq-test: it points to seastick\/something-else/);
@@ -410,9 +500,9 @@ describe("Teams, phase 2", () => {
     const code = (await a.service.createInvite(teamId, "b@example.test")).invite.code;
     await signIn(b.service, "b@example.test");
     const viewB = await b.service.acceptInvite(code);
-    const ids = Object.fromEntries(viewB.teams[0]!.members.map((m) => [m.email, m.userId]));
-    expect(b.targets.at(-1)).toEqual([{ projectId: project.id, selfId: ids["b@example.test"], memberIds: [ids["a@example.test"], ids["b@example.test"]] }]);
-    expect(viewB.userId).toBe(ids["b@example.test"]);
+    const ids = Object.fromEntries(viewB.teams[0]!.members.map((m) => [m.name, m.userId]));
+    expect(b.targets.at(-1)).toEqual([{ projectId: project.id, selfId: ids["b_user"], memberIds: [ids["a_user"], ids["b_user"]] }]);
+    expect(viewB.userId).toBe(ids["b_user"]);
     // Presence shows up in the view, and is cleared when signing out.
     b.service.setPresence({ [project.id]: { connection: "live", online: [ids["a@example.test"]!], publishing: true, problem: null } });
     expect(b.service.view().presence[project.id]!.online).toEqual([ids["a@example.test"]]);
@@ -521,47 +611,53 @@ describe("Teams, phase 5", () => {
 });
 
 describe("0rqestra account", () => {
-  it("creates an account with a display name, and signing in never creates one", async () => {
+  it("creates an account with a unique username, and signing in never creates one", async () => {
     const server = new FakeSupabase();
     const a = computer("acct", server);
     await expect(a.service.sendCode("new@example.test")).rejects.toThrow(/There is no 0rqestra account for new@example.test. Choose Create account/);
     expect(server.users.has("new@example.test")).toBe(false);
     expect(a.service.view()).toMatchObject({ status: "signed_out" });
-    await expect(a.service.sendCode("new@example.test", { mode: "register", displayName: "  " })).rejects.toThrow(/display name/);
-    await a.service.sendCode("new@example.test", { mode: "register", displayName: "Ann Persson" });
+    await expect(a.service.sendCode("new@example.test", { mode: "register", username: "  " })).rejects.toThrow(/3 to 24/);
+    await expect(a.service.sendCode("new@example.test", { mode: "register", username: "_ann" })).rejects.toThrow(/3 to 24/);
+    server.profiles.set("someone-else", "taken_name");
+    await expect(a.service.sendCode("new@example.test", { mode: "register", username: "Taken_Name" })).rejects.toThrow(/username is taken/);
+    expect(server.users.has("new@example.test")).toBe(false);
+    await a.service.sendCode("new@example.test", { mode: "register", username: "@Ann_P" });
     expect(a.service.view()).toMatchObject({ status: "code_sent", pendingEmail: "new@example.test", pendingMode: "register" });
     await expect(a.service.verifyCode("000000")).rejects.toThrow(/wrong or has expired/);
     // The email is kept after a wrong code, so the user can try again.
     expect(a.service.view().pendingEmail).toBe("new@example.test");
     const v = await a.service.verifyCode("123456");
-    expect(v).toMatchObject({ status: "signed_in", email: "new@example.test", displayName: "Ann Persson" });
-    expect(server.meta.get("new@example.test")).toBe("Ann Persson");
+    expect(v).toMatchObject({ status: "signed_in", email: "new@example.test", username: "ann_p", needsUsername: false });
+    expect(server.profiles.get(v.userId!)).toBe("ann_p");
     // Signed out, the same address signs in (no new account).
     await a.service.signOut();
     await a.service.sendCode("new@example.test");
     expect(server.otpRequests.at(-1)).toEqual({ email: "new@example.test", createUser: false });
-    expect((await a.service.verifyCode("123456")).displayName).toBe("Ann Persson");
-    // The display name and session survive a restart, with the token only in the encrypted file.
-    const again = a.restart().service.view();
-    expect(again).toMatchObject({ status: "signed_in", displayName: "Ann Persson" });
+    expect((await a.service.verifyCode("123456")).username).toBe("ann_p");
+    // The session survives a restart, with the token only in the encrypted file; the username is
+    // read again from the server.
+    const restarted = a.restart().service;
+    expect(restarted.view()).toMatchObject({ status: "signed_in", email: "new@example.test" });
+    expect((await restarted.refresh()).username).toBe("ann_p");
   });
 
   it("enforces a resend cooldown, and takes Supabase's own wait when it gives one", async () => {
     const server = new FakeSupabase();
     let now = 1_000_000;
     const a = computer("cool", server, () => now);
-    await a.service.sendCode("c@example.test", { mode: "register", displayName: "C" });
+    await a.service.sendCode("c@example.test", { mode: "register", username: "c_user" });
     expect(a.service.view().resendAt).toBe(now + 60_000);
     await expect(a.service.sendCode("c@example.test", { mode: "register" })).rejects.toThrow(/in 60 seconds/);
     now += 61_000;
-    // A resend without the name keeps the name given first.
+    // A resend without the username keeps the one given first.
     await a.service.sendCode("c@example.test", { mode: "register" });
     server.rateLimited = true;
     now += 61_000;
     await expect(a.service.sendCode("c@example.test", { mode: "register" })).rejects.toThrow(/in 42 seconds/);
     expect(a.service.view()).toMatchObject({ status: "code_sent", pendingEmail: "c@example.test", resendAt: now + 42_000 });
     server.rateLimited = false;
-    expect((await a.service.verifyCode("123456")).displayName).toBe("C");
+    expect((await a.service.verifyCode("123456")).username).toBe("c_user");
   });
 
   it("asks to sign in again when Supabase ends the session, and keeps working offline otherwise", async () => {
@@ -589,8 +685,109 @@ describe("0rqestra account", () => {
     await a.service.createTeam("First's team");
     expect(a.service.view().teams).toHaveLength(1);
     await a.service.signOut();
-    expect(a.service.view()).toMatchObject({ status: "signed_out", teams: [], presence: {}, displayName: null });
+    expect(a.service.view()).toMatchObject({ status: "signed_out", teams: [], presence: {}, displayName: null, username: null, friends: [], teamInvites: [] });
     const v = await signIn(a.service, "second@example.test");
     expect(v).toMatchObject({ email: "second@example.test", teams: [] });
+  });
+});
+
+describe("usernames, friends and team invitations", () => {
+  it("asks an account without a username to choose one", async () => {
+    const server = new FakeSupabase();
+    const a = computer("old", server);
+    // An account from before usernames: signs in, has no profile.
+    server.users.set("old@example.test", crypto.randomUUID());
+    await a.service.sendCode("old@example.test");
+    let v = await a.service.verifyCode("123456");
+    expect(v).toMatchObject({ status: "signed_in", username: null, needsUsername: true });
+    server.profiles.set("x", "taken_one");
+    await expect(a.service.setUsername("taken_one")).rejects.toThrow(/taken/);
+    await expect(a.service.setUsername("x")).rejects.toThrow(/3 to 24/);
+    v = await a.service.setUsername("Old_Timer");
+    expect(v).toMatchObject({ username: "old_timer", needsUsername: false });
+  });
+
+  it("an existing account that registers again keeps its username", async () => {
+    const server = new FakeSupabase();
+    const a = computer("again", server);
+    await signIn(a.service, "k@example.test");
+    await a.service.signOut();
+    await a.service.sendCode("k@example.test", { mode: "register", username: "other_name" });
+    expect((await a.service.verifyCode("123456")).username).toBe("k_user");
+  });
+
+  it("finds a friend by exact username, handles repeats, and invites them to a team in the app", async () => {
+    const server = new FakeSupabase();
+    const a = computer("fa", server);
+    const b = computer("fb", server);
+    const c = computer("fc", server);
+    await signIn(a.service, "ann@example.test");
+    await signIn(b.service, "bob@example.test");
+    await signIn(c.service, "cat@example.test");
+
+    await expect(a.service.sendFriendRequest("nobody_x")).rejects.toThrow(/No 0rqestra account has that username/);
+    await expect(a.service.sendFriendRequest("ann_user")).rejects.toThrow(/your own username/);
+    await expect(a.service.sendFriendRequest("b")).rejects.toThrow(/exact username/);
+    const r = await a.service.sendFriendRequest("@BOB_user");
+    expect(r.status).toBe("pending");
+    expect(r.view.friends).toEqual([expect.objectContaining({ username: "bob_user", state: "outgoing" })]);
+    // A repeated request does not make a second one.
+    await a.service.sendFriendRequest("bob_user");
+    expect(server.friendships).toHaveLength(1);
+
+    // Bob sees it after the periodic refresh, and accepts it (twice is harmless).
+    await b.service.refreshSocial();
+    const incoming = b.service.view().friends;
+    expect(incoming).toEqual([expect.objectContaining({ username: "ann_user", state: "incoming" })]);
+    expect(JSON.stringify(b.service.view().friends)).not.toContain("@example.test");
+    await b.service.respondFriend(incoming[0]!.requestId, true);
+    let vb: TeamsView;
+    vb = await b.service.respondFriend(incoming[0]!.requestId, true);
+    expect(vb.friends).toEqual([expect.objectContaining({ username: "ann_user", state: "friend" })]);
+
+    // Cat asks Ann, Ann declines; Cat can ask again later.
+    await c.service.sendFriendRequest("ann_user");
+    await a.service.refreshSocial();
+    const fromCat = a.service.view().friends.find((f) => f.username === "cat_user")!;
+    expect(fromCat.state).toBe("incoming");
+    await expect(c.service.respondFriend(fromCat.requestId, true)).rejects.toThrow(/no longer there/);
+    expect((await a.service.respondFriend(fromCat.requestId, false)).friends.map((f) => f.username)).toEqual(["bob_user"]);
+
+    // Ann's team: only accepted friends can be invited; Bob answers inside the app.
+    const team = (await a.service.createTeam("Duo")).teams[0]!;
+    const bobId = a.service.view().friends[0]!.userId;
+    const catId = server.users.get("cat@example.test")!;
+    await expect(a.service.inviteFriend(team.id, catId)).rejects.toThrow(/accepted your friend request/);
+    await a.service.inviteFriend(team.id, bobId);
+    let va: TeamsView;
+    va = await a.service.inviteFriend(team.id, bobId);
+    expect(va.teamInvites).toEqual([expect.objectContaining({ teamId: team.id, username: "bob_user", direction: "outgoing" })]);
+    expect(server.memberInvites).toHaveLength(1);
+    await b.service.refreshSocial();
+    const invite = b.service.view().teamInvites[0]!;
+    expect(invite).toMatchObject({ teamName: "Duo", username: "ann_user", direction: "incoming" });
+    await expect(c.service.respondTeamInvite(invite.id, true)).rejects.toThrow(/invitation is no longer there/);
+    await expect(b.service.inviteFriend(team.id, bobId)).rejects.toThrow(/Unknown team/);
+    vb = await b.service.respondTeamInvite(invite.id, true);
+    expect(vb.teams.map((t) => t.name)).toEqual(["Duo"]);
+    expect(vb.teamInvites).toEqual([]);
+    await b.service.respondTeamInvite(invite.id, true);
+    expect(server.members.filter((m) => m.team_id === team.id)).toHaveLength(2);
+    // Ann's view shows Bob as a member by username after a refresh.
+    va = await a.service.refresh();
+    expect(va.teams[0]!.members.map((m) => m.name)).toEqual(["ann_user", "bob_user"]);
+    await expect(a.service.inviteFriend(team.id, bobId)).rejects.toThrow(/already in the team/);
+  });
+
+  it("says when the server cannot be reached, and clears it when it answers again", async () => {
+    const server = new FakeSupabase();
+    const a = computer("down", server);
+    server.offline = true;
+    let v = await a.service.refresh();
+    expect(v).toMatchObject({ status: "signed_out", serverProblem: expect.stringMatching(/Can't reach the 0rqestra server/) });
+    await expect(a.service.sendCode("x@example.test", { mode: "register", username: "x_user" })).rejects.toThrow(/Could not reach/);
+    server.offline = false;
+    v = await a.service.refresh();
+    expect(v.serverProblem).toBeNull();
   });
 });

@@ -2,7 +2,7 @@
 // process does every step (main/teams); this page never sees a token. "Sign in" never creates an
 // account. The same forms are used on the Teams page.
 import React, { useEffect, useState } from 'react';
-import { cleanError, secondsLeft } from './account-ui.mjs';
+import { USERNAME_RULE, cleanError, cleanUsername, secondsLeft } from './account-ui.mjs';
 
 function useNow(active) {
   const [now, setNow] = useState(Date.now());
@@ -19,7 +19,7 @@ function useNow(active) {
 export function AccountForms({ api, view, onView, initialStep = 'sign_in', onBack }) {
   const [step, setStep] = useState(initialStep);
   const [email, setEmail] = useState(view?.pendingEmail || '');
-  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
@@ -42,7 +42,7 @@ export function AccountForms({ api, view, onView, initialStep = 'sign_in', onBac
         {error && <p className="account-error" role="alert">{error}</p>}
         <div className="account-actions">
           <button className="button primary-button" type="submit" disabled={pending || !code.trim()}>{register ? 'Create account' : 'Sign in'}</button>
-          <button className="button" type="button" disabled={pending || wait > 0} onClick={() => run(() => api.sendCode(view.pendingEmail, { mode: view.pendingMode, displayName: name }))}>{wait > 0 ? `Send a new code (${wait} s)` : 'Send a new code'}</button>
+          <button className="button" type="button" disabled={pending || wait > 0} onClick={() => run(() => api.sendCode(view.pendingEmail, { mode: view.pendingMode, username }))}>{wait > 0 ? `Send a new code (${wait} s)` : 'Send a new code'}</button>
           <button className="button" type="button" disabled={pending} onClick={() => run(async () => { const v = await api.cancelCode(); setStep(register ? 'register' : 'sign_in'); return v; })}>Use another email</button>
         </div>
       </form>
@@ -50,14 +50,15 @@ export function AccountForms({ api, view, onView, initialStep = 'sign_in', onBac
   }
   if (step === 'register') {
     return (
-      <form className="account-form" onSubmit={(e) => { e.preventDefault(); run(() => api.sendCode(email, { mode: 'register', displayName: name })); }}>
+      <form className="account-form" onSubmit={(e) => { e.preventDefault(); run(() => api.sendCode(email, { mode: 'register', username: cleanUsername(username) })); }}>
         <h2>Create your 0rqestra account</h2>
         <p className="account-lead">We email you a one-time code; there is no password. Your account is separate from Claude Code and Codex.</p>
         <label className="account-field">Email<input autoFocus type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" maxLength={254} required/></label>
-        <label className="account-field">Display name<input autoComplete="nickname" value={name} onChange={(e) => setName(e.target.value)} placeholder="How teammates see you" maxLength={60} required/></label>
+        <label className="account-field">Username<input autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. alex_k" maxLength={25} spellCheck={false} required/></label>
+        <p className="account-hint">Friends find you by this exact name. 3 to 24 lower-case letters, digits or _. Your email stays private.</p>
         {error && <p className="account-error" role="alert">{error}</p>}
         <div className="account-actions">
-          <button className="button primary-button" type="submit" disabled={pending || !email.trim() || !name.trim()}>Send code</button>
+          <button className="button primary-button" type="submit" disabled={pending || !email.trim() || !USERNAME_RULE.test(cleanUsername(username))}>Send code</button>
           <button className="button" type="button" onClick={() => { setError(''); setStep('sign_in'); }}>I already have an account</button>
           {onBack && <button className="button" type="button" onClick={onBack}>Back</button>}
         </div>
@@ -79,8 +80,49 @@ export function AccountForms({ api, view, onView, initialStep = 'sign_in', onBac
   );
 }
 
+// A signed-in account without a username (made before usernames existed, or whose name was taken
+// while it was being created) chooses one here.
+export function UsernameForm({ api, view, onView, onSignOut }) {
+  const [username, setUsername] = useState('');
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    setPending(true);
+    setError('');
+    try { const v = await api.setUsername(cleanUsername(username)); if (v?.status) onView(v); } catch (err) { setError(cleanError(err)); } finally { setPending(false); }
+  };
+  return (
+    <form className="account-form" onSubmit={submit}>
+      <h2>Choose your username</h2>
+      <p className="account-lead">Signed in as <strong>{view?.email}</strong>. Friends find you by your username; your email address stays private.</p>
+      <label className="account-field">Username<input autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. alex_k" maxLength={25} spellCheck={false} required/></label>
+      <p className="account-hint">3 to 24 lower-case letters, digits or _.</p>
+      {error && <p className="account-error" role="alert">{error}</p>}
+      <div className="account-actions">
+        <button className="button primary-button" type="submit" disabled={pending || !USERNAME_RULE.test(cleanUsername(username))}>Save username</button>
+        {onSignOut && <button className="button" type="button" disabled={pending} onClick={onSignOut}>Sign out</button>}
+      </div>
+    </form>
+  );
+}
+
 // The full-window first-launch screen.
-export function AccountWelcome({ api, view, onView, onContinueLocal, onDismissEnded }) {
+export function AccountWelcome({ api, view, onView, onContinueLocal, onDismissEnded, onSignOut }) {
+  if (view?.status === 'signed_in' && view.needsUsername) {
+    return (
+      <div className="account-screen" role="dialog" aria-modal="true" aria-label="Choose your username">
+        <div className="account-card">
+          <div className="account-brand"><img src="logo.png" alt="" width="56" height="56"/><span>0rqestra</span></div>
+          <UsernameForm api={api} view={view} onView={onView} onSignOut={onSignOut}/>
+        </div>
+      </div>
+    );
+  }
+  return <WelcomeCard api={api} view={view} onView={onView} onContinueLocal={onContinueLocal} onDismissEnded={onDismissEnded}/>;
+}
+
+function WelcomeCard({ api, view, onView, onContinueLocal, onDismissEnded }) {
   const [step, setStep] = useState(view?.sessionEnded ? 'sign_in' : view?.status === 'code_sent' ? 'code' : 'welcome');
   const showForms = step !== 'welcome' || view?.status === 'code_sent';
   return (
@@ -88,6 +130,7 @@ export function AccountWelcome({ api, view, onView, onContinueLocal, onDismissEn
       <div className="account-card">
         <div className="account-brand"><img src="logo.png" alt="" width="56" height="56"/><span>0rqestra</span></div>
         {view?.sessionEnded && <p className="account-notice" role="status">{view.sessionEnded}</p>}
+        {view?.serverProblem && <p className="account-error" role="alert">{view.serverProblem}</p>}
         {!showForms ? (
           <>
             <h1>One conversation. A whole team.</h1>

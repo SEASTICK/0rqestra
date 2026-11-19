@@ -82,7 +82,7 @@ export function ProfileMenu({ name, version, updates, theme, onTheme, onSettings
         </div>
       )}
       <button className={`profile-button ${open ? 'is-open' : ''}`} aria-haspopup="menu" aria-expanded={open} onClick={() => (open ? close() : setOpen(true))}>
-        <span className="profile-avatar">{((account ? account.name : name).trim()[0] || '0').toUpperCase()}{ready && <i className="profile-dot" title="Update ready"/>}</span>
+        <span className="profile-avatar">{((account ? account.name : name).trim().replace(/^@/, '')[0] || '0').toUpperCase()}{ready && <i className="profile-dot" title="Update ready"/>}</span>
         <span className="profile-text"><strong>{account ? account.name : name}</strong><span>{ready ? 'Update ready' : account ? account.email : 'Personal'}</span></span>
         <span className="profile-more" aria-hidden="true">···</span>
       </button>

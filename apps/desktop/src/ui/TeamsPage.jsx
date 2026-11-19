@@ -4,7 +4,8 @@
 // Solo projects work without any of this.
 import React, { useEffect, useState } from 'react';
 import { AccountForms } from './AccountWelcome.jsx';
-import { errorText, inviteLine, linkLine, localName, projectChoices, repoName, selectionMatches, signInTitle } from './teams-ui.mjs';
+import { TeamInvitesInbox } from './FriendsPage.jsx';
+import { errorText, inviteLine, invitableFriends, linkLine, localName, outgoingTeamInvites, projectChoices, repoName, selectionMatches, signInTitle } from './teams-ui.mjs';
 
 function useAction(notify) {
   const [pending, setPending] = useState(false);
@@ -38,8 +39,8 @@ function StartTeam({ api, notify, onView }) {
         <div className="setup-actions"><button className="button primary-button" type="submit" disabled={pending || !name.trim()}>Create team</button></div>
       </form>
       <form className="provider-card teams-card" onSubmit={(e) => { e.preventDefault(); run(async () => { onView(await api.acceptInvite(code)); setCode(''); notify?.('You joined the team.'); }); }}>
-        <h2>Join a team</h2>
-        <p className="provider-line">Paste the invite code the owner sent you. It only works for the email you are signed in with.</p>
+        <h2>Join with an invite code</h2>
+        <p className="provider-line">Invitations from friends appear above, with a Join button. If an owner sent you a code instead, paste it here; it only works for the email you are signed in with.</p>
         <label className="teams-field">Invite code<input value={code} onChange={(e) => setCode(e.target.value)} maxLength={60} placeholder="1A2B3C-4D5E6F-7A8B9C-0D1E2F" autoComplete="off" spellCheck={false} required/></label>
         <div className="setup-actions"><button className="button primary-button" type="submit" disabled={pending || !code.trim()}>Join team</button></div>
       </form>
@@ -164,14 +165,37 @@ function SharedProject({ api, project, teams, projects, onCreateProject, notify,
   );
 }
 
-function Invites({ api, team, notify, onView }) {
+function Invites({ api, team, view, notify, onView, onFriends }) {
   const [email, setEmail] = useState('');
   const [created, setCreated] = useState(null);
+  const [friend, setFriend] = useState('');
   const [pending, run] = useAction(notify);
   const open = team.invites.filter((i) => i.state === 'pending');
+  const choices = invitableFriends(view, team);
+  const waiting = outgoingTeamInvites(view, team);
   return (
     <div className="teams-section">
-      <h3>Invite a teammate</h3>
+      <h3>Invite a friend</h3>
+      {choices.length === 0 ? (
+        <p className="provider-line">{waiting.length ? 'Every friend is in the team or already invited.' : 'Invite people from your friends list.'} <button type="button" className="provider-text-link" onClick={onFriends}>Add friends</button></p>
+      ) : (
+        <form className="teams-inline" onSubmit={(e) => { e.preventDefault(); run(async () => { const f = choices.find((c) => c.userId === friend); onView(await api.inviteFriend(team.id, friend)); setFriend(''); notify?.(`Invitation sent to @${f?.username}. They join from inside 0rqestra.`); }); }}>
+          <select aria-label="Friend to invite" value={friend} onChange={(e) => setFriend(e.target.value)}>
+            <option value="">Choose a friend…</option>
+            {choices.map((f) => <option key={f.userId} value={f.userId}>@{f.username}</option>)}
+          </select>
+          <button className="button primary-button" type="submit" disabled={pending || !friend}>Invite</button>
+        </form>
+      )}
+      {waiting.length > 0 && (
+        <ul className="teams-list">
+          {waiting.map((i) => (
+            <li key={i.id}><span>@{i.username}</span><small>Invited · waiting for an answer</small><button type="button" className="provider-text-link" disabled={pending} onClick={() => run(async () => onView(await api.revokeTeamInvite(i.id)))}>Withdraw</button></li>
+          ))}
+        </ul>
+      )}
+      <details className="teams-code-invite">
+        <summary>Invite by email code instead</summary>
       <form className="teams-inline" onSubmit={(e) => { e.preventDefault(); run(async () => { const r = await api.createInvite(team.id, email); setCreated(r.invite); onView(r.view); setEmail(''); }); }}>
         <input type="email" aria-label="Teammate's email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="teammate@example.com" maxLength={254} required/>
         <button className="button" type="submit" disabled={pending || !email.trim()}>Create invite</button>
@@ -189,11 +213,12 @@ function Invites({ api, team, notify, onView }) {
           ))}
         </ul>
       )}
+      </details>
     </div>
   );
 }
 
-function TeamCard({ api, team, teams, projects, onCreateProject, notify, onView }) {
+function TeamCard({ api, team, teams, view, projects, onCreateProject, notify, onView, onFriends }) {
   const [registering, setRegistering] = useState(false);
   return (
     <article className="provider-card teams-card teams-team" aria-label={`Team ${team.name}`}>
@@ -203,10 +228,10 @@ function TeamCard({ api, team, teams, projects, onCreateProject, notify, onView 
       <div className="teams-section">
         <h3>Members</h3>
         <ul className="teams-list">
-          {team.members.map((m) => <li key={m.userId}><span>{m.email}{m.isYou ? ' (you)' : ''}</span><small>{m.role === 'owner' ? 'Owner' : 'Member'}</small></li>)}
+          {team.members.map((m) => <li key={m.userId}><span>@{m.name}{m.isYou ? ' (you)' : ''}</span><small>{m.role === 'owner' ? 'Owner' : 'Member'}</small></li>)}
         </ul>
       </div>
-      {team.isOwner && <Invites api={api} team={team} notify={notify} onView={onView}/>}
+      {team.isOwner && <Invites api={api} team={team} view={view} notify={notify} onView={onView} onFriends={onFriends}/>}
       <div className="teams-section">
         <h3>Shared projects</h3>
         {team.projects.length === 0 && <p className="provider-line">{team.isOwner ? 'No repository is shared yet. Register one from a project on this computer.' : 'The owner has not shared a repository yet.'}</p>}
@@ -222,7 +247,7 @@ function TeamCard({ api, team, teams, projects, onCreateProject, notify, onView 
 }
 
 // The Teams view lives in App (it also drives the Team Bridge in the tree); this page shows it.
-export function TeamsPage({ view, onView: setView, onBack, notify, projects, onCreateProject }) {
+export function TeamsPage({ view, onView: setView, onBack, notify, projects, onCreateProject, onFriends }) {
   const api = typeof window !== 'undefined' ? window.orqestra?.teams : null;
   const [loading, setLoading] = useState(false);
   const onView = (v) => { if (v && typeof v === 'object' && v.status) setView(v); };
@@ -253,20 +278,21 @@ export function TeamsPage({ view, onView: setView, onBack, notify, projects, onC
         <p className="provider-line">Loading…</p>
       ) : view.status === 'unconfigured' ? (
         <div className="provider-card teams-card">
-          <h2>Teams is not set up on this computer</h2>
-          {view.configProblem ? <div className="setup-error" role="alert"><span>{view.configProblem}</span></div> : <p className="provider-line">This build has no Teams server. The rest of 0rqestra works as usual.</p>}
-          <p className="provider-line">To set it up, put the Supabase project URL and publishable key in <code>teams-config.json</code> in the app's data folder, or set ORQESTRA_SUPABASE_URL and ORQESTRA_SUPABASE_PUBLISHABLE_KEY. See docs/teams-setup.md.</p>
+          <h2>Teams is not available in this build</h2>
+          {view.configProblem ? <div className="setup-error" role="alert"><span>{view.configProblem}</span></div> : <p className="provider-line">This build was made without the 0rqestra server address. Released builds include it; the rest of 0rqestra works as usual.</p>}
+          <p className="provider-line">For development: see docs/teams-setup.md for the ORQESTRA_SUPABASE_* variables or a teams-config.json override.</p>
         </div>
       ) : (
         <>
           <p className="provider-line teams-who">{signInTitle(view)}{view.status === 'signed_in' && !view.rememberSession ? ' · this computer cannot store the session securely, so you sign in again after a restart' : ''}</p>
-          {view.loadProblem && <div className="setup-error" role="alert"><span>{view.loadProblem}</span></div>}
+          {view.serverProblem ? <div className="setup-error" role="alert"><span>{view.serverProblem}</span></div> : view.loadProblem && <div className="setup-error" role="alert"><span>{view.loadProblem}</span></div>}
           {view.status !== 'signed_in' ? (
             <SignIn api={api} view={view} notify={notify} onView={onView}/>
           ) : (
             <>
+              <TeamInvitesInbox api={api} view={view} notify={notify} onView={onView}/>
               <div className="teams-grid">
-                {view.teams.map((t) => <TeamCard key={t.id} api={api} team={t} teams={view.teams} projects={projects} onCreateProject={onCreateProject} notify={notify} onView={onView}/>)}
+                {view.teams.map((t) => <TeamCard key={t.id} api={api} team={t} teams={view.teams} view={view} projects={projects} onCreateProject={onCreateProject} notify={notify} onView={onView} onFriends={onFriends}/>)}
               </div>
               <StartTeam api={api} notify={notify} onView={onView}/>
             </>

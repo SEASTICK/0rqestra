@@ -57,6 +57,7 @@ modules.storageKeys = compile('storage-keys.mjs', plain);
 modules.accountsUI = compile('AccountsSetup.jsx', jsx);
 modules.accountSetup = compile('account-setup.mjs', plain);
 modules.teamsUI = compile('TeamsPage.jsx', jsx);
+modules.friendsUI = compile('FriendsPage.jsx', jsx);
 modules.teamsText = compile('teams-ui.mjs', plain);
 modules.teamBridge = compile('TeamBridge.jsx', jsx);
 modules.teamCatchUp = compile('team-catchup.mjs', plain);
@@ -65,7 +66,7 @@ modules.accountWelcome = compile('AccountWelcome.jsx', jsx);
 modules.accountUI = compile('account-ui.mjs', plain);
 
 const aliases = {
-  './UpdateDialog.jsx': 'updateUI', './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './storage-keys.mjs': 'storageKeys', './Shell.jsx': 'shell', './theme.mjs': 'theme', './launch.mjs': 'launch', './LiveChat.jsx': 'liveChatUI', './live-chat.mjs': 'liveChat', './AgentRuntime.jsx': 'agentRuntime', './TeamRun.jsx': 'teamRun', './Preview.jsx': 'previewUI', './AccountsSetup.jsx': 'accountsUI', './account-setup.mjs': 'accountSetup', './TeamsPage.jsx': 'teamsUI', './teams-ui.mjs': 'teamsText', './TeamBridge.jsx': 'teamBridge', './team-catchup.mjs': 'teamCatchUp', './migrate-demo.mjs': 'migrateDemo', './AccountWelcome.jsx': 'accountWelcome', './account-ui.mjs': 'accountUI', 'react-dom/client': 'react-dom-client',
+  './UpdateDialog.jsx': 'updateUI', './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './storage-keys.mjs': 'storageKeys', './Shell.jsx': 'shell', './theme.mjs': 'theme', './launch.mjs': 'launch', './LiveChat.jsx': 'liveChatUI', './live-chat.mjs': 'liveChat', './AgentRuntime.jsx': 'agentRuntime', './TeamRun.jsx': 'teamRun', './Preview.jsx': 'previewUI', './AccountsSetup.jsx': 'accountsUI', './account-setup.mjs': 'accountSetup', './TeamsPage.jsx': 'teamsUI', './FriendsPage.jsx': 'friendsUI', './teams-ui.mjs': 'teamsText', './TeamBridge.jsx': 'teamBridge', './team-catchup.mjs': 'teamCatchUp', './migrate-demo.mjs': 'migrateDemo', './AccountWelcome.jsx': 'accountWelcome', './account-ui.mjs': 'accountUI', 'react-dom/client': 'react-dom-client',
   'next/dist/compiled/react': 'react', 'next/dist/compiled/react-dom': 'react-dom', 'next/dist/compiled/scheduler': 'scheduler',
 };
 // Every local import must resolve inside the bundle. A missing entry above compiles fine but throws

@@ -45,10 +45,10 @@ export function TeamOverlay({ graph, linked, view, onOpen, managerAt, Icon }) {
         const status = memberStatus(view, linked.project.id, m.userId);
         const at = layout.teammates[i];
         return (
-          <div key={m.userId} className="agent-node team-node team-remote-node" style={{ left: at.x, top: at.y }} role="button" tabIndex={0} aria-label={`${displayName(m.email)}'s Manager, read-only, ${STATUS_TEXT[status]}`}
+          <div key={m.userId} className="agent-node team-node team-remote-node" style={{ left: at.x, top: at.y }} role="button" tabIndex={0} aria-label={`${displayName(m.name)}'s Manager, read-only, ${STATUS_TEXT[status]}`}
             onPointerDown={(e) => e.stopPropagation()} onClick={open} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') open(e); }}>
-            <div className="node-heading"><span className="node-avatar"><Icon name="tree" size={19}/></span><div><span className="node-role">Manager · read-only</span><strong>{displayName(m.email)}’s Manager</strong></div></div>
-            <div className="node-model">{m.email}</div>
+            <div className="node-heading"><span className="node-avatar"><Icon name="tree" size={19}/></span><div><span className="node-role">Manager · read-only</span><strong>{displayName(m.name)}’s Manager</strong></div></div>
+            <div className="node-model">@{m.name}</div>
             <div className="node-bottom"><span><span className={`status-dot team-dot-${status}`}/>{STATUS_TEXT[status]}</span><span className="node-bottom-actions"><span>On their computer</span></span></div>
           </div>
         );
@@ -60,7 +60,7 @@ export function TeamOverlay({ graph, linked, view, onOpen, managerAt, Icon }) {
 export function BridgePanel({ linked, view, onClose, Icon }) {
   const { team, project } = linked;
   const presence = view.presence?.[project.id];
-  const nameOf = (userId) => displayName(team.members.find((m) => m.userId === userId)?.email);
+  const nameOf = (userId) => displayName(team.members.find((m) => m.userId === userId)?.name);
   const notice = briefsNotice(view, project.id);
   const unsynced = unsyncedBriefs(view, project.id);
   return (
@@ -78,7 +78,7 @@ export function BridgePanel({ linked, view, onClose, Icon }) {
           <ul className="team-people">
             {team.members.map((m) => {
               const status = memberStatus(view, project.id, m.userId);
-              return <li key={m.userId}><span className={`status-dot team-dot-${status}`}/><span>{m.email}{m.userId === view.userId ? ' (you)' : ''}</span><small>{STATUS_TEXT[status]}</small></li>;
+              return <li key={m.userId}><span className={`status-dot team-dot-${status}`}/><span>@{m.name}{m.userId === view.userId ? ' (you)' : ''}</span><small>{STATUS_TEXT[status]}</small></li>;
             })}
           </ul>
           <p className="team-muted">Online means their 0rqestra is open, signed in and they have used their computer in the last 10 minutes. Going offline never changes their work.</p>
@@ -139,7 +139,7 @@ export function TeamAskBar({ linked, view, busy, onAsk }) {
     <div className="team-ask-bar" aria-label="Ask about teammates">
       {teammates.map((m) => (
         <button key={m.userId} type="button" className="team-ask-chip" disabled={busy} onClick={() => onAsk(m)}>
-          <span className={`status-dot team-dot-${memberStatus(view, linked.project.id, m.userId)}`}/>What is {displayName(m.email)} working on?
+          <span className={`status-dot team-dot-${memberStatus(view, linked.project.id, m.userId)}`}/>What is {displayName(m.name)} working on?
         </button>
       ))}
     </div>

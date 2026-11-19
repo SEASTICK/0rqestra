@@ -14,6 +14,9 @@ import type { PresenceSnapshot, PresenceTarget } from "./presence";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LOCAL_ID = /^[A-Za-z0-9_-]{1,100}$/;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+// Lower case letters, digits and _, 3 to 24 characters, not starting with _ (the database checks the same).
+export const USERNAME = /^[a-z0-9][a-z0-9_]{2,23}$/;
+const SERVER_DOWN = "Can't reach the 0rqestra server. Check your internet connection and try again. Local projects keep working without it.";
 const REFRESH_MARGIN_MS = 60_000;
 const SELECTION_TTL_MS = 30 * 60_000;
 
@@ -22,7 +25,12 @@ export type TeamsStatus = "unconfigured" | "signed_out" | "code_sent" | "signed_
 export type CodeMode = "register" | "sign_in";
 export const RESEND_COOLDOWN_MS = 60_000;
 
-export interface MemberView { userId: string; email: string; role: "owner" | "member"; isYou: boolean }
+// Teammates are shown by username; their email addresses are never sent to other people.
+export interface MemberView { userId: string; name: string; role: "owner" | "member"; isYou: boolean }
+// A friend, or a friend request waiting for an answer (usernames only).
+export interface FriendView { requestId: string; userId: string; username: string; state: "friend" | "incoming" | "outgoing" }
+// A pending invitation to a team: to me (incoming), or from a team I own (outgoing).
+export interface TeamInviteView { id: string; teamId: string; teamName: string; userId: string; username: string; direction: "incoming" | "outgoing" }
 export interface InviteView { id: string; email: string; expiresAt: string; state: "pending" | "used" | "revoked" | "expired" }
 export interface LinkView {
   localProjectId: string;
@@ -55,6 +63,13 @@ export interface TeamsView {
   email: string | null;
   // The account's display name (from its profile), or null if it never set one.
   displayName: string | null;
+  // The account's unique username, and whether it still has to choose one.
+  username: string | null;
+  needsUsername: boolean;
+  friends: FriendView[];
+  teamInvites: TeamInviteView[];
+  // Set while the 0rqestra server cannot be reached.
+  serverProblem: string | null;
   pendingEmail: string | null;
   pendingMode: CodeMode | null;
   // When another code may be requested (ms since the epoch); 0 when it may be now.
@@ -87,7 +102,7 @@ export interface CheckoutSelection {
 
 export interface CreatedInvite { id: string; teamId: string; teamName: string; email: string; code: string; expiresAt: string; shareText: string }
 
-interface TeamRow { id: string; name: string; owner_id: string; team_members: { user_id: string; email: string; role: "owner" | "member" }[]; shared_projects: { id: string; name: string; repo_owner: string; repo_name: string; repo_key: string }[] }
+interface TeamRow { id: string; name: string; owner_id: string; team_members: { user_id: string; username: string | null; role: "owner" | "member" }[]; shared_projects: { id: string; name: string; repo_owner: string; repo_name: string; repo_key: string }[] }
 interface BriefRow { id: string; project_id: string; run_id: string; title: string; status: string; author_id: string; author_name: string | null; branch: string | null; paths: string[] | null; updated_at: string }
 interface CatchUpRow { brief_id: string; run_id: string; author_id: string; author_name: string | null; title: string; status: string; branch: string | null; paths: string[] | null; outcome: string | null; seq: number; seen_seq: number | null; updated_at: string; finished_at: string | null }
 const catchUpItem = (r: CatchUpRow): CatchUpItem => ({
@@ -99,6 +114,8 @@ const reservationView = (r: ReservationRow): ReservationView => ({ id: r.id, run
 const BRIEF_COLUMNS = "id,project_id,run_id,title,status,author_id,author_name,branch,paths,updated_at";
 const briefView = (b: BriefRow): BriefView => ({ id: b.id, runId: b.run_id, title: b.title, status: b.status, authorId: b.author_id, authorName: b.author_name ?? "", branch: b.branch, paths: b.paths ?? [], updatedAt: b.updated_at });
 interface InviteRow { id: string; team_id: string; email: string; expires_at: string; redeemed_at: string | null; revoked_at: string | null }
+interface FriendRow { request_id: string; user_id: string; username: string; state: string }
+interface TeamInviteRow { invite_id: string; team_id: string; team_name: string; user_id: string; username: string; direction: string }
 
 const MESSAGES: Record<string, string> = {
   otp_expired: "That code is wrong or has expired. Check the newest email, or ask for a new code.",
@@ -120,6 +137,22 @@ const MESSAGES: Record<string, string> = {
   invite_expired: "That invite has expired. Ask the owner for a new one.",
   invite_wrong_email: "That invite is for a different email address. Sign in with the address it was sent to.",
   not_project_member: "You are not a member of this shared project's team.",
+  invalid_username: "A username has 3 to 24 lower-case letters, digits or _, and does not start with _.",
+  username_taken: "That username is taken. Choose another one.",
+  username_required: "Choose a username first.",
+  user_not_found: "No 0rqestra account has that username. Check the spelling: it must match exactly.",
+  cannot_friend_self: "That is your own username.",
+  request_not_found: "That friend request is no longer there.",
+  not_friends: "You can only invite people who accepted your friend request.",
+  too_many_requests: "You have 100 friend requests waiting for an answer. Withdraw some first.",
+  too_many_invites: "This team has 50 invitations waiting. Withdraw some first.",
+  try_again: "Something changed at the same moment. Try again.",
+};
+
+// Invitations to friends have no code, so their errors are worded differently.
+const FRIEND_INVITE_MESSAGES: Record<string, string> = {
+  invite_not_found: "That invitation is no longer there. Ask the team owner to invite you again.",
+  invite_revoked: "The team owner withdrew that invitation.",
 };
 
 export function friendlyError(error: unknown): string {
@@ -165,7 +198,12 @@ export class TeamsService {
   private session: AuthSession | null = null;
   private pendingEmail: string | null = null;
   private pendingMode: CodeMode | null = null;
-  private pendingName: string | null = null;
+  private pendingUsername: string | null = null;
+  private username: string | null = null;
+  private profileLoaded = false;
+  private friends: FriendView[] = [];
+  private teamInvites: TeamInviteView[] = [];
+  private serverProblem: string | null = null;
   private resendAt = 0;
   private sessionEnded: string | null = null;
   private teams: TeamView[] = [];
@@ -215,6 +253,11 @@ export class TeamsService {
       server: config?.url ?? null,
       email: this.session?.user.email ?? null,
       displayName: this.session?.user.displayName ?? null,
+      username: status === "signed_in" ? this.username : null,
+      needsUsername: status === "signed_in" && this.profileLoaded && !this.username,
+      friends: status === "signed_in" ? this.friends : [],
+      teamInvites: status === "signed_in" ? this.teamInvites : [],
+      serverProblem: config ? this.serverProblem : null,
       pendingEmail: this.pendingEmail,
       pendingMode: this.pendingEmail ? this.pendingMode : null,
       resendAt: this.resendAt > this.now() ? this.resendAt : 0,
@@ -422,16 +465,28 @@ export class TeamsService {
     if (!EMAIL.test(email) || email.length > 254) throw new Error(MESSAGES.invalid_email);
     const o = (rawOptions ?? {}) as Record<string, unknown>;
     const mode: CodeMode = o.mode === "register" ? "register" : "sign_in";
-    // A resend for the same new account keeps the display name given the first time.
-    const given = typeof o.displayName === "string" ? o.displayName.replace(/\s+/g, " ").trim() : "";
-    const name = given || (mode === "register" && email === this.pendingEmail ? (this.pendingName ?? "") : "");
-    if (mode === "register" && (name.length < 1 || name.length > 60)) throw new Error("Enter a display name of 1 to 60 characters.");
+    // A resend for the same new account keeps the username given the first time.
+    const given = typeof o.username === "string" ? o.username.trim().replace(/^@/, "").toLowerCase() : "";
+    const username = given || (mode === "register" && email === this.pendingEmail ? (this.pendingUsername ?? "") : "");
+    if (mode === "register" && !USERNAME.test(username)) throw new Error(MESSAGES.invalid_username);
     if (email === this.pendingEmail && this.resendAt > this.now()) {
       throw new Error(`You can ask for a new code in ${Math.ceil((this.resendAt - this.now()) / 1000)} seconds.`);
     }
+    if (mode === "register") {
+      let free: unknown;
+      try {
+        free = await this.api().rpc<boolean>(null, "username_available", { p_username: username });
+      } catch (error) {
+        this.noteNetwork(error);
+        throw new Error(friendlyError(error), { cause: error });
+      }
+      if (free !== true) throw new Error(MESSAGES.username_taken);
+    }
     try {
-      await this.api().sendCode(email, { createUser: mode === "register", ...(mode === "register" ? { displayName: name } : {}) });
+      await this.api().sendCode(email, { createUser: mode === "register", ...(mode === "register" ? { displayName: username, username } : {}) });
+      this.serverProblem = null;
     } catch (error) {
+      this.noteNetwork(error);
       // Supabase's own wait ("…only request this after 42 seconds") becomes the cooldown.
       const wait = error instanceof SupabaseError ? /after (\d+) seconds?/i.exec(error.message) : null;
       if (wait) this.resendAt = this.now() + Number(wait[1]) * 1000;
@@ -442,7 +497,7 @@ export class TeamsService {
     }
     this.pendingEmail = email;
     this.pendingMode = mode;
-    this.pendingName = mode === "register" ? name : null;
+    this.pendingUsername = mode === "register" ? username : null;
     this.resendAt = this.now() + RESEND_COOLDOWN_MS;
     return this.changed();
   }
@@ -455,18 +510,12 @@ export class TeamsService {
     try {
       session = await this.api().verifyCode(this.pendingEmail, code);
     } catch (error) {
+      this.noteNetwork(error);
       throw new Error(friendlyError(error), { cause: error });
     }
-    // A new account gets its display name in its profile (also when the address already existed).
-    if (this.pendingMode === "register" && this.pendingName) {
-      try {
-        await this.api().setDisplayName(session.accessToken, this.pendingName);
-        session = { ...session, user: { ...session.user, displayName: this.pendingName } };
-      } catch {
-        /* the account works without it; the name can be set again later */
-      }
-    }
-    // Another account's teams, presence and briefs must not remain in the view.
+    const wanted = this.pendingMode === "register" ? this.pendingUsername : null;
+    // Another account's teams, presence, briefs and friends must not remain in the view.
+    this.resetAccountData();
     this.teams = [];
     this.presence = {};
     this.briefsAt = {};
@@ -475,9 +524,19 @@ export class TeamsService {
     this.setSession(session);
     this.pendingEmail = null;
     this.pendingMode = null;
-    this.pendingName = null;
+    this.pendingUsername = null;
     this.resendAt = 0;
     this.sessionEnded = null;
+    // A new account gets the username it registered with. An account that already had one keeps
+    // it; if the name was taken in the meantime, the app asks for another.
+    if (wanted) {
+      try {
+        const rows = await this.call((api, token) => api.select<{ username: string }>(token, "profiles", `select=username&user_id=eq.${session.user.id}`));
+        if (!rows.length) await this.call((api, token) => api.rpc<string>(token, "set_username", { p_username: wanted }));
+      } catch {
+        /* needsUsername makes the app ask */
+      }
+    }
     await this.load();
     return this.changed();
   }
@@ -485,7 +544,7 @@ export class TeamsService {
   cancelCode(): TeamsView {
     this.pendingEmail = null;
     this.pendingMode = null;
-    this.pendingName = null;
+    this.pendingUsername = null;
     this.resendAt = 0;
     return this.changed();
   }
@@ -519,7 +578,20 @@ export class TeamsService {
     this.presence = {};
     this.briefsAt = {};
     this.createdInvites.clear();
+    this.resetAccountData();
     this.deps.sessions.clear();
+  }
+
+  private resetAccountData(): void {
+    this.username = null;
+    this.profileLoaded = false;
+    this.friends = [];
+    this.teamInvites = [];
+  }
+
+  // Remembers that the server could not be reached (shown until a request succeeds again).
+  private noteNetwork(error: unknown): void {
+    if (error instanceof SupabaseError && (error.code === "network" || error.status >= 500)) this.serverProblem = SERVER_DOWN;
   }
 
   private async token(force = false): Promise<string> {
@@ -572,14 +644,61 @@ export class TeamsService {
 
   async refresh(): Promise<TeamsView> {
     this.restore();
-    if (this.session && this.configured()) await this.load();
+    if (!this.configured()) return this.changed();
+    if (this.session) await this.load();
+    else await this.checkServer();
     return this.changed();
+  }
+
+  // Asks the server whether it answers, so a signed-out window can say "offline" instead of
+  // showing a sign-in form that cannot work.
+  private async checkServer(): Promise<void> {
+    try {
+      await this.api().health();
+      this.serverProblem = null;
+    } catch (error) {
+      if (error instanceof SupabaseError && (error.code === "network" || error.status >= 500)) this.serverProblem = SERVER_DOWN;
+      else this.serverProblem = null;
+    }
+  }
+
+  // The username, friends and team invitations. Called with every full load, and on its own more
+  // often, so requests and invitations show up without a restart.
+  private async loadSocial(): Promise<void> {
+    const me = this.userId();
+    const [profile, friends, invites] = await Promise.all([
+      this.call((api, token) => api.select<{ username: string }>(token, "profiles", `select=username&user_id=eq.${me}`)),
+      this.call((api, token) => api.rpc<FriendRow[]>(token, "list_friends", {})),
+      this.call((api, token) => api.rpc<TeamInviteRow[]>(token, "list_team_invites", {})),
+    ]);
+    if (this.session?.user.id !== me) return;
+    this.username = profile[0]?.username ?? null;
+    this.profileLoaded = true;
+    this.friends = (Array.isArray(friends) ? friends : [])
+      .filter((f) => ["friend", "incoming", "outgoing"].includes(f.state))
+      .map((f) => ({ requestId: f.request_id, userId: f.user_id, username: f.username, state: f.state as FriendView["state"] }));
+    this.teamInvites = (Array.isArray(invites) ? invites : [])
+      .filter((i) => i.direction === "incoming" || i.direction === "outgoing")
+      .map((i) => ({ id: i.invite_id, teamId: i.team_id, teamName: i.team_name, userId: i.user_id, username: i.username, direction: i.direction as TeamInviteView["direction"] }));
+  }
+
+  // Re-reads friends and invitations only, and tells the window only when something changed.
+  async refreshSocial(): Promise<void> {
+    if (!this.session || !this.configured()) return;
+    const before = JSON.stringify([this.username, this.friends, this.teamInvites]);
+    try {
+      await this.loadSocial();
+      this.serverProblem = null;
+    } catch (error) {
+      this.noteNetwork(error);
+    }
+    if (JSON.stringify([this.username, this.friends, this.teamInvites]) !== before) this.changed();
   }
 
   private async load(): Promise<void> {
     try {
       const rows = await this.call((api, token) =>
-        api.select<TeamRow>(token, "teams", "select=id,name,owner_id,team_members(user_id,email,role),shared_projects(id,name,repo_owner,repo_name,repo_key)&order=created_at.asc"),
+        api.select<TeamRow>(token, "teams", "select=id,name,owner_id,team_members(user_id,username,role),shared_projects(id,name,repo_owner,repo_name,repo_key)&order=created_at.asc"),
       );
       const me = this.userId();
       const owned = rows.filter((t) => t.owner_id === me).map((t) => t.id);
@@ -592,14 +711,15 @@ export class TeamsService {
       const briefs = await this.fetchBriefs(projectIds);
       const reservations = await this.fetchReservations(projectIds);
       const now = this.now();
+      await this.loadSocial();
       this.teams = await Promise.all(
         rows.map(async (t) => ({
           id: t.id,
           name: t.name,
           isOwner: t.owner_id === me,
           members: t.team_members
-            .map((m) => ({ userId: m.user_id, email: m.email, role: m.role, isYou: m.user_id === me }))
-            .sort((a, b) => (a.role === b.role ? a.email.localeCompare(b.email) : a.role === "owner" ? -1 : 1)),
+            .map((m) => ({ userId: m.user_id, name: m.username ?? (m.user_id === me ? (this.username ?? "you") : "teammate"), role: m.role, isYou: m.user_id === me }))
+            .sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === "owner" ? -1 : 1)),
           invites: invites.filter((i) => i.team_id === t.id).map((i) => ({ id: i.id, email: i.email, expiresAt: i.expires_at, state: inviteState(i, now) })),
           projects: await Promise.all(
             t.shared_projects.map(async (p) => ({ id: p.id, name: p.name, repo: { owner: p.repo_owner, name: p.repo_name, key: p.repo_key }, link: await this.linkView(p.id, p.repo_key),
@@ -610,8 +730,10 @@ export class TeamsService {
         })),
       );
       this.loadProblem = null;
+      this.serverProblem = null;
     } catch (error) {
       if (!this.session) return;
+      this.noteNetwork(error);
       this.loadProblem = friendlyError(error);
     }
   }
@@ -717,6 +839,93 @@ export class TeamsService {
       throw new Error(friendlyError(error), { cause: error });
     }
     await this.load();
+    return this.changed();
+  }
+
+  // ---- Username and friends ------------------------------------------------------------------
+
+  async setUsername(raw: unknown): Promise<TeamsView> {
+    const name = typeof raw === "string" ? raw.trim().replace(/^@/, "").toLowerCase() : "";
+    if (!USERNAME.test(name)) throw new Error(MESSAGES.invalid_username);
+    try {
+      const saved = await this.call((api, token) => api.rpc<string>(token, "set_username", { p_username: name }));
+      this.username = typeof saved === "string" ? saved : name;
+      this.profileLoaded = true;
+    } catch (error) {
+      throw new Error(friendlyError(error), { cause: error });
+    }
+    await this.load();
+    return this.changed();
+  }
+
+  private async social<T>(fn: (api: SupabaseApi, token: string) => Promise<T>, own: Record<string, string> = {}): Promise<T> {
+    let result: T;
+    try {
+      result = await this.call(fn);
+    } catch (error) {
+      this.noteNetwork(error);
+      const message = error instanceof SupabaseError ? own[error.message] : undefined;
+      throw new Error(message ?? friendlyError(error), { cause: error });
+    }
+    try {
+      await this.loadSocial();
+    } catch {
+      /* shown on the next refresh */
+    }
+    return result;
+  }
+
+  private uuid(raw: unknown, what: string): string {
+    if (typeof raw !== "string" || !UUID.test(raw)) throw new Error(`Unknown ${what}.`);
+    return raw;
+  }
+
+  // Finds the account with exactly this username and sends it a friend request. If that person had
+  // already asked you, you become friends right away.
+  async sendFriendRequest(raw: unknown): Promise<{ status: "pending" | "accepted"; view: TeamsView }> {
+    const name = typeof raw === "string" ? raw.trim().replace(/^@/, "").toLowerCase() : "";
+    if (!USERNAME.test(name)) throw new Error("Enter the exact username: 3 to 24 lower-case letters, digits or _.");
+    if (this.username && name === this.username) throw new Error(MESSAGES.cannot_friend_self);
+    const rows = await this.social((api, token) => api.rpc<{ request_id: string; status: string }[]>(token, "send_friend_request", { p_username: name }));
+    const status = Array.isArray(rows) && rows[0]?.status === "accepted" ? "accepted" : "pending";
+    return { status, view: this.changed() };
+  }
+
+  async respondFriend(requestId: unknown, accept: unknown): Promise<TeamsView> {
+    const id = this.uuid(requestId, "friend request");
+    await this.social((api, token) => api.rpc<string>(token, "respond_friend_request", { p_request_id: id, p_accept: accept === true }));
+    return this.changed();
+  }
+
+  // Withdraws a request you sent, or ends a friendship.
+  async removeFriend(userId: unknown): Promise<TeamsView> {
+    const id = this.uuid(userId, "person");
+    await this.social((api, token) => api.rpc(token, "remove_friend", { p_user_id: id }));
+    return this.changed();
+  }
+
+  // Owner: invites an accepted friend to the team. The friend answers inside the app.
+  async inviteFriend(teamId: unknown, userId: unknown): Promise<TeamsView> {
+    const team = this.team(teamId);
+    if (!team.isOwner) throw new Error(MESSAGES.not_team_owner);
+    const id = this.uuid(userId, "person");
+    if (!this.friends.some((f) => f.userId === id && f.state === "friend")) throw new Error(MESSAGES.not_friends);
+    if (team.members.some((m) => m.userId === id)) throw new Error(MESSAGES.already_member);
+    await this.social((api, token) => api.rpc<string>(token, "invite_friend_to_team", { p_team_id: team.id, p_user_id: id }));
+    return this.changed();
+  }
+
+  // The invited person accepts (and joins the team) or declines.
+  async respondTeamInvite(inviteId: unknown, accept: unknown): Promise<TeamsView> {
+    const id = this.uuid(inviteId, "invitation");
+    await this.social((api, token) => api.rpc(token, "respond_team_invite", { p_invite_id: id, p_accept: accept === true }), FRIEND_INVITE_MESSAGES);
+    if (accept === true) await this.load();
+    return this.changed();
+  }
+
+  async revokeTeamInvite(inviteId: unknown): Promise<TeamsView> {
+    const id = this.uuid(inviteId, "invitation");
+    await this.social((api, token) => api.rpc(token, "revoke_team_invite", { p_invite_id: id }), FRIEND_INVITE_MESSAGES);
     return this.changed();
   }
 

@@ -157,6 +157,35 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
     guard(event);
     return service.acceptInvite(code);
   });
+  // Username, friends and team invitations to friends. The window sends usernames and ids only.
+  ipcMain.handle("teams:set-username", (event, name: unknown) => {
+    guard(event);
+    return service.setUsername(name);
+  });
+  ipcMain.handle("teams:add-friend", (event, username: unknown) => {
+    guard(event);
+    return service.sendFriendRequest(username);
+  });
+  ipcMain.handle("teams:respond-friend", (event, requestId: unknown, accept: unknown) => {
+    guard(event);
+    return service.respondFriend(requestId, accept);
+  });
+  ipcMain.handle("teams:remove-friend", (event, userId: unknown) => {
+    guard(event);
+    return service.removeFriend(userId);
+  });
+  ipcMain.handle("teams:invite-friend", (event, teamId: unknown, userId: unknown) => {
+    guard(event);
+    return service.inviteFriend(teamId, userId);
+  });
+  ipcMain.handle("teams:respond-team-invite", (event, inviteId: unknown, accept: unknown) => {
+    guard(event);
+    return service.respondTeamInvite(inviteId, accept);
+  });
+  ipcMain.handle("teams:revoke-team-invite", (event, inviteId: unknown) => {
+    guard(event);
+    return service.revokeTeamInvite(inviteId);
+  });
   // Opens the system folder dialog. Returns null when the user cancels.
   ipcMain.handle("teams:choose-checkout", async (event) => {
     guard(event);
@@ -231,7 +260,12 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
   const briefsTimer = setInterval(() => {
     if (service.currentUserId()) void service.refresh();
   }, 60_000);
+  // Friend requests and team invitations arrive without a restart: read them every 20 seconds.
+  const socialTimer = setInterval(() => {
+    if (service.currentUserId()) void service.refreshSocial();
+  }, 20_000);
   app.on("before-quit", () => {
+    clearInterval(socialTimer);
     clearInterval(tokenTimer);
     clearInterval(briefsTimer);
     activity.stop();

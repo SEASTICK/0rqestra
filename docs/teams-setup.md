@@ -1,14 +1,16 @@
-# Teams setup (phase 1)
+# Teams setup
 
 Teams lets two or more people sign in, join one team, and link their own local checkouts of the
-same GitHub repository to one shared project. It runs on a Supabase project. Without one, the
-Teams page shows "not set up" and the rest of 0rqestra works as before.
+same GitHub repository to one shared project. It runs on the shared 0rqestra Supabase project,
+whose address ships with every build (`apps/desktop/teams-config.json`), so an installed app needs
+no setup. A build without it shows "Teams is not available in this build" and the rest of
+0rqestra works as before.
 
 What is stored where:
 
 | On Supabase | Only on each computer |
 |---|---|
-| Teams, members (with their email), invitations (code hashes only), shared projects (GitHub owner/repository and a name), and the empty tables for work briefs and task reservations | The Teams session (encrypted with the operating system's key store), and which local folder is linked to which shared project (`<user data>/teams/links.json`) |
+| Usernames, friends and friend requests, teams, members (their email is stored but only usernames are readable by others), invitations (to friends, or by code: code hashes only), shared projects (GitHub owner/repository and a name), work briefs and task reservations | The Teams session (encrypted with the operating system's key store), and which local folder is linked to which shared project (`<user data>/teams/links.json`) |
 
 Checkout paths and branches are never sent to Supabase.
 
@@ -19,10 +21,16 @@ Teams and the app share one account: the same Supabase Auth user and session.
 - **First launch** shows a welcome screen with **Create account**, **Sign in** and **Continue
   without an account** (local projects work without one; Teams needs one). The choice to continue
   without an account is remembered; the profile menu offers "Sign in or create account" later.
-- **Create account** asks for an email and a display name, emails a one-time code, and after the
-  code is entered saves the display name in the account's profile (Supabase user metadata
-  `display_name`). **Sign in** emails a code only to an existing account: it never creates one
-  (an unknown address gets "There is no 0rqestra account …").
+- **Create account** asks for an email and a **username**, checks that the username is free
+  before any email is sent, emails a one-time code, and after the code is entered creates the
+  profile (`public.profiles`). A username has 3 to 24 lower-case letters, digits or `_` and is
+  unique. An address that already has an account keeps its account and its username. **Sign in**
+  emails a code only to an existing account: it never creates one (an unknown address gets
+  "There is no 0rqestra account …").
+- An account **without a username** (made before usernames existed, or whose name was taken while
+  it was being created) is asked to choose one right after signing in.
+- If the server **cannot be reached**, the welcome screen, Teams and Friends say so ("Can't reach
+  the 0rqestra server …") instead of offering a form that cannot work.
 - A new code can be requested after 60 seconds (or after the wait Supabase reports). A wrong or
   expired code, or a connection problem, keeps the email filled in.
 - The session stays in the main process, encrypted with the operating system's key store
@@ -32,7 +40,7 @@ Teams and the app share one account: the same Supabase Auth user and session.
 - **Offline at startup** the app opens signed in and local projects work; Teams says it cannot
   connect and checks again when the connection is back. If Supabase refuses the session (expired
   or revoked), the app asks to sign in again (and still allows continuing without an account).
-- **Sign out** (profile menu) deletes the saved session, stops Teams' live connection and clears
+- The profile menu shows the account as `@username` with its email; **Sign out** there deletes the saved session, stops Teams' live connection and clears
   Teams data from the window; local projects and settings stay.
 - Claude Code and Codex keep their own sign-in under AI accounts, unrelated to this account.
 
@@ -63,13 +71,13 @@ supabase db push
 
 `db push` applies the files in `supabase/migrations/` in order (`…_teams_phase1.sql`,
 `…_teams_fk_indexes.sql`, `…_teams_presence.sql`, `…_teams_run_briefs.sql`, `…_teams_catch_up.sql`,
-`…_teams_reservations.sql`, `…_teams_membership_changes.sql`).
+`…_teams_reservations.sql`, `…_teams_membership_changes.sql`, `…_accounts_friends.sql`).
 Without the CLI, paste each file into the dashboard's SQL Editor and run it once, in that order.
 
-The team's test project already has all of them applied (2026-11-18). The local file names carry
+The shared project has all of them applied (`…_accounts_friends.sql` on 2026-11-19). The local file names carry
 the versions recorded there, so `db push` sees them as done.
 
-The database tests in `supabase/tests/teams_phase1_test.sql` run against a local stack
+The database tests in `supabase/tests/` run against a local stack
 (`supabase start`, then `supabase test db`; this needs Docker).
 
 ## 3. Dashboard settings for email sign-in
@@ -107,11 +115,12 @@ The app needs two values, both safe to ship in an app:
 Never use the secret key (`sb_secret_…`) or the legacy `service_role` key: the app refuses them
 and they must not be committed anywhere.
 
-Put them in one of these places (first match wins):
+Where the app reads them (first match wins):
 
-1. Environment variables, for development: `ORQESTRA_SUPABASE_URL` and
+1. Environment variables, for development against another project: `ORQESTRA_SUPABASE_URL` and
    `ORQESTRA_SUPABASE_PUBLISHABLE_KEY`.
-2. `teams-config.json` in the app's user-data folder, to configure an installed or test build
+2. `teams-config.json` in the app's user-data folder, to point one installed or test build at
+   another project
    (on Windows `%APPDATA%\<package name>\teams-config.json`, for example
    `%APPDATA%\@0rqestra\desktop\teams-config.json`):
 
@@ -119,7 +128,10 @@ Put them in one of these places (first match wins):
    { "supabaseUrl": "https://<project-ref>.supabase.co", "publishableKey": "sb_publishable_..." }
    ```
 
-3. `apps/desktop/teams-config.json`, which ships with a build. It is empty in the repository.
+3. `apps/desktop/teams-config.json`, which ships inside every build. It holds the shared
+   0rqestra project's URL and publishable key, so users never edit a file. (Until 2026-11-19 it was
+   empty in the repository, which is why installed builds said "Teams is not set up on this
+   computer".)
 
 Restart the app after changing the configuration.
 
@@ -129,15 +141,26 @@ Two people, or one person with two user-data folders (for example two isolated t
 different package names), and two separate clones of the same GitHub test repository, one cloned
 with SSH and one with HTTPS:
 
-1. Account A: Teams → Sign in → enter the code from the email → Create a team.
-2. A: Register a repository → choose a local 0rqestra project → choose the SSH clone → Register.
-3. A: Invite a teammate → B's email → Copy invite, and send it to B.
-4. Account B: Teams → sign in with that email → Join a team → paste the code.
-5. B: on the shared project, Link my checkout → choose a project (or "New project …") → choose
+1. A and B: Create account (email and username) → enter the code from the email.
+2. A: Friends → type B's exact username → Send request. B sees it under Friends (a badge shows on
+   Friends within about 20 seconds) → Accept.
+3. A: Teams → Create a team → Invite a friend → choose B → Invite.
+4. B: the invitation shows on Teams and Friends → Join team.
+5. A: Register a repository → choose a local 0rqestra project → choose the SSH clone → Register.
+6. B: on the shared project, Link my checkout → choose a project (or "New project …") → choose
    the HTTPS clone → Link checkout. Choosing a clone of another repository is refused.
-6. Restart both apps: both stay signed in and show "Linked on this computer".
+7. Open the linked project and its team tree: each sees the other's Manager on the Team Bridge.
+8. Restart both apps: both stay signed in and show "Linked on this computer".
 
-Rules the database enforces: an invite works once, for the invited email only, until it expires
+The older way still works: Invite by email code instead (on the team card) → send the code → the
+teammate pastes it under "Join with an invite code".
+
+Rules the database enforces for friends: only the person a request was sent to can accept or
+decline it; one request per pair (a repeat returns the same request, and a request back accepts
+it); only accepted friends can be invited to a team, only by its owner; only the invited person can
+accept, and accepting twice changes nothing. Others see usernames, never email addresses.
+
+Rules for code invites: an invite works once, for the invited email only, until it expires
 (72 hours) or the owner withdraws it; only the owner invites and registers repositories; one
 shared project per repository per team; people outside the team see nothing.
 
@@ -170,7 +193,7 @@ Online status uses Supabase Realtime Presence on private channels:
 ## Phase 3: work briefs
 
 When an approved team run actually starts in a project linked to a shared project, the owner's app
-publishes one short brief: the owner's display name, the plan's goal (shortened), the checkout's
+publishes one short brief: the owner's username, the plan's goal (shortened), the checkout's
 Git branch, the plan's repository-relative files, the status and the last update time. The same
 brief is updated when the run delivers files outside the plan, when a task fails or is blocked
 (status Blocked), and when the run completes, stops or fails, with the runner's own short summary

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountLabel, cleanError, gateState, secondsLeft } from './account-ui.mjs';
+import { USERNAME_RULE, accountLabel, cleanError, cleanUsername, gateState, secondsLeft } from './account-ui.mjs';
 
 describe('first launch and staying signed in', () => {
   const signedIn = { status: 'signed_in', email: 'ann@x.se', displayName: 'Ann' };
@@ -28,5 +28,16 @@ describe('first launch and staying signed in', () => {
     expect(accountLabel({ ...signedIn, displayName: null })).toEqual({ name: 'ann', email: 'ann@x.se' });
     expect(accountLabel({ status: 'signed_out' })).toBeNull();
     expect(cleanError(new Error("Error invoking remote method 'teams:send-code': Error: No account"))).toBe('No account');
+  });
+});
+
+describe('usernames', () => {
+  it('asks a signed-in account without a username to choose one, and labels the account by username', () => {
+    expect(gateState({ loaded: true, view: { status: 'signed_in', needsUsername: true }, choice: null })).toBe('username');
+    expect(gateState({ loaded: true, view: { status: 'signed_in', needsUsername: false }, choice: null })).toBe('app');
+    expect(accountLabel({ status: 'signed_in', username: 'ann_p', email: 'a@x.se' })).toEqual({ name: '@ann_p', email: 'a@x.se' });
+    expect(USERNAME_RULE.test(cleanUsername(' @Ann_P '))).toBe(true);
+    expect(USERNAME_RULE.test(cleanUsername('_ann'))).toBe(false);
+    expect(USERNAME_RULE.test(cleanUsername('ab'))).toBe(false);
   });
 });

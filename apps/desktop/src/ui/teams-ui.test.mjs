@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ago, briefsNotice, unsyncedBriefs, bridgeLayout, bridgeSummary, displayName, errorText, inviteLine, linkedTeamProject, memberStatus, linkLine, localName, projectChoices, repoName, selectionMatches, signInTitle } from './teams-ui.mjs';
+import { ago, briefsNotice, unsyncedBriefs, bridgeLayout, bridgeSummary, displayName, errorText, inviteLine, linkedTeamProject, memberStatus, linkLine, localName, projectChoices, repoName, selectionMatches, signInTitle, friendGroups, incomingTeamInvites, invitableFriends, outgoingTeamInvites, waitingCount } from './teams-ui.mjs';
 
 describe('Teams page text', () => {
   it('says whether this computer has a linked checkout', () => {
@@ -91,5 +91,31 @@ describe('work briefs in the bridge', () => {
     const view = { localBriefs: { p: [{ runId: 'a', sync: 'synced' }, { runId: 'b', sync: 'failed' }, { runId: 'c', sync: 'pending' }] } };
     expect(unsyncedBriefs(view, 'p').map((b) => b.runId)).toEqual(['b', 'c']);
     expect(unsyncedBriefs({}, 'p')).toEqual([]);
+  });
+});
+
+describe('friends and team invitations', () => {
+  const view = {
+    status: 'signed_in',
+    friends: [
+      { requestId: 'r1', userId: 'u1', username: 'zed', state: 'friend' },
+      { requestId: 'r2', userId: 'u2', username: 'amy', state: 'friend' },
+      { requestId: 'r3', userId: 'u3', username: 'kim', state: 'incoming' },
+      { requestId: 'r4', userId: 'u4', username: 'lou', state: 'outgoing' },
+    ],
+    teamInvites: [
+      { id: 'i1', teamId: 't1', teamName: 'Duo', userId: 'u1', username: 'zed', direction: 'outgoing' },
+      { id: 'i2', teamId: 't9', teamName: 'Other', userId: 'u5', username: 'max', direction: 'incoming' },
+    ],
+  };
+  it('groups friends, lists what can still be invited, and counts what waits for an answer', () => {
+    expect(friendGroups(view).friends.map((f) => f.username)).toEqual(['amy', 'zed']);
+    expect(friendGroups(view).incoming.map((f) => f.username)).toEqual(['kim']);
+    const team = { id: 't1', members: [{ userId: 'me' }] };
+    expect(invitableFriends(view, team).map((f) => f.username)).toEqual(['amy']);
+    expect(outgoingTeamInvites(view, team).map((i) => i.username)).toEqual(['zed']);
+    expect(incomingTeamInvites(view).map((i) => i.teamName)).toEqual(['Other']);
+    expect(waitingCount(view)).toBe(2);
+    expect(waitingCount({ status: 'signed_out', friends: view.friends })).toBe(0);
   });
 });

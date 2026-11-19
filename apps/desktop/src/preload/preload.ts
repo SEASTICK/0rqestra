@@ -59,8 +59,8 @@ contextBridge.exposeInMainWorld("orqestra", {
   // folders are chosen in the system dialog and referred to by the id that comes back.
   teams: {
     status: (refresh?: boolean) => ipcRenderer.invoke("teams:status", refresh === true),
-    sendCode: (email: string, options?: { mode?: string; displayName?: string }) =>
-      ipcRenderer.invoke("teams:send-code", String(email), { mode: options?.mode === "register" ? "register" : "sign_in", displayName: String(options?.displayName ?? "").slice(0, 200) }),
+    sendCode: (email: string, options?: { mode?: string; username?: string }) =>
+      ipcRenderer.invoke("teams:send-code", String(email), { mode: options?.mode === "register" ? "register" : "sign_in", username: String(options?.username ?? "").slice(0, 100) }),
     verifyCode: (code: string) => ipcRenderer.invoke("teams:verify-code", String(code)),
     cancelCode: () => ipcRenderer.invoke("teams:cancel-code"),
     signOut: () => ipcRenderer.invoke("teams:sign-out"),
@@ -69,6 +69,13 @@ contextBridge.exposeInMainWorld("orqestra", {
     copyInvite: (inviteId: string) => ipcRenderer.invoke("teams:copy-invite", String(inviteId)),
     revokeInvite: (inviteId: string) => ipcRenderer.invoke("teams:revoke-invite", String(inviteId)),
     acceptInvite: (code: string) => ipcRenderer.invoke("teams:accept-invite", String(code)),
+    setUsername: (name: string) => ipcRenderer.invoke("teams:set-username", String(name)),
+    addFriend: (username: string) => ipcRenderer.invoke("teams:add-friend", String(username)),
+    respondFriend: (requestId: string, accept: boolean) => ipcRenderer.invoke("teams:respond-friend", String(requestId), accept === true),
+    removeFriend: (userId: string) => ipcRenderer.invoke("teams:remove-friend", String(userId)),
+    inviteFriend: (teamId: string, userId: string) => ipcRenderer.invoke("teams:invite-friend", String(teamId), String(userId)),
+    respondTeamInvite: (inviteId: string, accept: boolean) => ipcRenderer.invoke("teams:respond-team-invite", String(inviteId), accept === true),
+    revokeTeamInvite: (inviteId: string) => ipcRenderer.invoke("teams:revoke-team-invite", String(inviteId)),
     chooseCheckout: () => ipcRenderer.invoke("teams:choose-checkout"),
     chooseRemote: (selectionId: string, remote: string) => ipcRenderer.invoke("teams:choose-remote", String(selectionId), String(remote)),
     registerProject: (payload: unknown) => ipcRenderer.invoke("teams:register-project", payload),

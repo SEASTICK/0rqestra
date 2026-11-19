@@ -43,7 +43,7 @@ export function selectionMatches(selection, repoKey) {
 export function signInTitle(view) {
   if (!view) return 'Teams';
   if (view.status === 'unconfigured') return 'Teams is not set up';
-  if (view.status === 'signed_in') return `Signed in as ${view.email}`;
+  if (view.status === 'signed_in') return view.username ? `Signed in as @${view.username} (${view.email})` : `Signed in as ${view.email}`;
   if (view.status === 'code_sent') return `Code sent to ${view.pendingEmail}`;
   return 'Sign in to Teams';
 }
@@ -64,8 +64,9 @@ export function linkedTeamProject(view, localProjectId) {
   return null;
 }
 
-export function displayName(email) {
-  const local = String(email || '').split('@')[0] || 'Teammate';
+// A teammate's name for the bridge: their username (anything after an @ is dropped).
+export function displayName(name) {
+  const local = String(name || '').split('@')[0] || 'Teammate';
   return local.length > 24 ? `${local.slice(0, 23)}…` : local;
 }
 
@@ -133,4 +134,36 @@ export function briefsNotice(view, projectId, now = Date.now()) {
 // This computer's briefs that the server does not have yet.
 export function unsyncedBriefs(view, projectId) {
   return (view?.localBriefs?.[projectId] || []).filter((b) => b.sync !== 'synced');
+}
+
+// ---- Friends and team invitations ------------------------------------------------------------
+
+export function friendGroups(view) {
+  const all = view?.status === 'signed_in' ? view.friends || [] : [];
+  const byName = (a, b) => a.username.localeCompare(b.username);
+  return {
+    incoming: all.filter((f) => f.state === 'incoming').sort(byName),
+    outgoing: all.filter((f) => f.state === 'outgoing').sort(byName),
+    friends: all.filter((f) => f.state === 'friend').sort(byName),
+  };
+}
+
+export function incomingTeamInvites(view) {
+  return view?.status === 'signed_in' ? (view.teamInvites || []).filter((i) => i.direction === 'incoming') : [];
+}
+
+// Friends the owner can still invite to this team: not a member, no invitation waiting.
+export function invitableFriends(view, team) {
+  const waiting = new Set((view?.teamInvites || []).filter((i) => i.direction === 'outgoing' && i.teamId === team.id).map((i) => i.userId));
+  const members = new Set(team.members.map((m) => m.userId));
+  return friendGroups(view).friends.filter((f) => !members.has(f.userId) && !waiting.has(f.userId));
+}
+
+export function outgoingTeamInvites(view, team) {
+  return (view?.teamInvites || []).filter((i) => i.direction === 'outgoing' && i.teamId === team.id);
+}
+
+// What waits for an answer from this person: friend requests and team invitations.
+export function waitingCount(view) {
+  return friendGroups(view).incoming.length + incomingTeamInvites(view).length;
 }
