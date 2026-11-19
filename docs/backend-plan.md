@@ -273,6 +273,25 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-19: one question at a time, a working animation, the team's activity, and usage left.**
+- The Manager's questions come one at a time, like Lovable: a click on an option shows the next question
+  (Back goes to the previous one), "Write your own" and "Let the Manager decide" work per question, and
+  the last answer sends them all as one message.
+- While the Manager answers: a turning star with "Thinking", then "Writing", and the time so far. The
+  team's run card and the Planner's card show the same, and a finished run says how long it took.
+- **Activity** on the run card lists each step with its time, like Claude's lines: who started which
+  task, which files were written (with sizes), reviews (approved or the changes asked for), retries,
+  and the end. While the team works the last four steps show; the whole list opens with a click.
+- **Usage left** in the sidebar: the 5-hour and weekly windows of Claude and ChatGPT, as percent left.
+  Codex is asked directly (`account/rateLimits/read`). Claude Code reports its windows only during a
+  reply (`rate_limit_event`), so Claude's values are the latest seen, with their time, and before the
+  first reply the card says so. Nothing extra is sent to the models to read them.
+- Verified: unit tests, and the whole flow in the real Electron app with stand-in `claude` and `codex`
+  programs (the test fixtures, no models): question steps and Back, the answers message, the plan,
+  Start, the activity steps, the time, and usage before and after a reply. **Not verified:** the
+  shape of `rate_limit_event` from the user's own Claude Code version (older versions may report only
+  the window that limits right now, or nothing; then the card keeps saying "Shown after the next reply").
+
 **Status 2026-11-19: Select a part of the preview and ask for a change.** Like Lovable's visual edit:
 **Select** in the preview's toolbar outlines what the mouse is over; a click picks that part (and does
 not follow links or press buttons). A bar shows what was picked ("<h1> "Träningslogg"") and asks what

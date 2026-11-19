@@ -57,7 +57,7 @@ export function historyFor(messages, max = 40) {
 
 export function newAssistant(id, target) {
   return {
-    id, kind: 'assistant', text: '', status: 'streaming',
+    id, kind: 'assistant', text: '', status: 'streaming', startedAt: Date.now(),
     provider: target.provider, providerName: target.name, model: target.model, effort: target.effort,
   };
 }
@@ -268,11 +268,11 @@ export function planAssignments(plan, graph) {
   return plan.tasks.map((t) => ({ ...t, agent: agents.filter((a) => a.role === t.role).sort(byPriority)[0] || null }));
 }
 
-export function newTeamRun(id, plan) {
-  return { id, status: 'running', goal: plan.goal, products: plan.products || [], tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, role: t.role, deliverables: t.deliverables, ...(t.product ? { product: t.product } : {}), status: 'waiting', agentId: null, attempt: 0, note: null, review: null, files: [] })), summary: null, files: [], calls: 0, usage: null };
+export function newTeamRun(id, plan, now = Date.now()) {
+  return { id, status: 'running', startedAt: now, log: [], goal: plan.goal, products: plan.products || [], tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, role: t.role, deliverables: t.deliverables, ...(t.product ? { product: t.product } : {}), status: 'waiting', agentId: null, attempt: 0, note: null, review: null, files: [] })), summary: null, files: [], calls: 0, usage: null };
 }
 
-export function applyTeamEvent(run, event) {
+function applyTeamEventCore(run, event) {
   const patch = (taskId, fn) => ({ ...run, tasks: run.tasks.map((t) => (t.id === taskId ? fn(t) : t)) });
   switch (event && event.type) {
     case 'run-started': return { ...run, tasks: run.tasks.map((t) => { const a = event.tasks.find((x) => x.id === t.id); return a ? { ...t, plannedAgentId: a.agentId, plannedAgentName: a.agentName } : t; }) };
@@ -519,4 +519,71 @@ export function editMessage(product, picked, request) {
     `Files of this product: ${product.files.slice(0, 40).join(', ')}.`,
     'Make a plan that changes only this, and keeps everything else as it is. Reply in the language I used earlier in this conversation.',
   ].filter(Boolean).join('\n');
+}
+
+// ---- What the team did, step by step, like Claude's activity lines ----------------------------
+export const MAX_LOG = 200;
+function logEntry(event) {
+  switch (event && event.type) {
+    case 'run-started': return { type: 'run-started', count: (event.tasks || []).length };
+    case 'task': return { type: 'task', taskId: event.taskId, status: event.status, agentId: event.agentId ?? null, attempt: event.attempt || 1, note: event.note ? String(event.note).slice(0, 300) : null };
+    case 'review': return { type: 'review', taskId: event.taskId, reviewerId: event.reviewerId, approved: Boolean(event.approved), problems: (event.problems || []).slice(0, 2).map((p) => String(p).slice(0, 200)) };
+    case 'files': return { type: 'files', taskId: event.taskId, files: (event.files || []).slice(0, 12).map((f) => ({ path: String(f.path), bytes: Number(f.bytes) || 0 })) };
+    case 'run-finished': return { type: 'run-finished', status: event.status, summary: event.summary ? String(event.summary).slice(0, 300) : null };
+    default: return null;
+  }
+}
+
+export function applyTeamEvent(run, event, now = Date.now()) {
+  const next = applyTeamEventCore(run, event);
+  const entry = logEntry(event);
+  if (!entry) return next;
+  return { ...next, startedAt: run.startedAt ?? now, ...(entry.type === 'run-finished' ? { endedAt: now } : {}), log: [...(run.log || []), { at: now, ...entry }].slice(-MAX_LOG) };
+}
+
+const size = (bytes) => (bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} kB` : `${bytes} B`);
+const STEP = { working: 'started', reviewing: 'is reviewing', done: 'finished', unverified: 'finished (not reviewed)', failed: 'could not finish', blocked: 'is blocked on', stopped: 'stopped' };
+// One activity line: what kind of step it is (for the icon) and its text.
+export function logLine(entry, run, nameOf) {
+  const task = run.tasks.find((t) => t.id === entry.taskId);
+  const title = task ? `“${task.title}”` : 'a task';
+  const who = (id) => (id ? nameOf(id) : 'The team');
+  switch (entry.type) {
+    case 'run-started': return { kind: 'start', text: `The team started ${entry.count} task${entry.count === 1 ? '' : 's'}` };
+    case 'task':
+      if (entry.status === 'waiting') return null;
+      if (entry.status === 'working' && entry.attempt > 1) return { kind: 'retry', text: `${who(entry.agentId)} tries ${title} again (attempt ${entry.attempt})${entry.note ? ` — ${entry.note}` : ''}` };
+      return { kind: entry.status, text: `${who(entry.agentId)} ${STEP[entry.status] || entry.status} ${title}${['failed', 'blocked'].includes(entry.status) && entry.note ? ` — ${entry.note}` : ''}` };
+    case 'review': return entry.approved
+      ? { kind: 'approved', text: `${who(entry.reviewerId)} approved ${title}` }
+      : { kind: 'changes', text: `${who(entry.reviewerId)} asked for changes to ${title}${entry.problems.length ? `: ${entry.problems.join('; ')}` : ''}` };
+    case 'files': return { kind: 'files', text: `${task?.agentId ? nameOf(task.agentId) : 'An agent'} wrote ${entry.files.map((f) => `${f.path} (${size(f.bytes)})`).join(', ')}` };
+    case 'run-finished': return { kind: entry.status === 'done' ? 'finished' : 'failed', text: entry.status === 'done' ? 'The team finished' : entry.status === 'stopped' ? 'The run was stopped' : `The run did not finish${entry.summary ? ` — ${entry.summary}` : ''}` };
+    default: return null;
+  }
+}
+
+// "12s", "3m 05s", "1h 02m": how long something has been going on.
+export function elapsed(ms) {
+  const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+  if (total < 60) return `${total}s`;
+  const m = Math.floor(total / 60);
+  if (m < 60) return `${m}m ${String(total % 60).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
+// ---- How much of each subscription is left (the sidebar) ----------------------------------------
+const WINDOW_NAME = (l) => (l.windowMinutes === 300 ? '5 hours' : l.windowMinutes >= 7 * 1440 - 60 && l.windowMinutes <= 7 * 1440 + 60 ? 'Week' : l.label);
+const TOOL_NAME = { claude: 'Claude', codex: 'ChatGPT' };
+export function usageRows(statuses, now = Date.now()) {
+  return (statuses || []).filter((s) => s.installed && s.signedIn && s.subscription).map((s) => ({
+    provider: s.provider,
+    name: TOOL_NAME[s.provider] || s.name,
+    at: s.limitsAt || null,
+    windows: (s.limits || []).map((l) => {
+      const left = Math.max(0, Math.min(100, Math.round(100 - Number(l.usedPercent))));
+      const resets = typeof l.resetsAt === 'number' && l.resetsAt * 1000 > now ? l.resetsAt * 1000 : null;
+      return { name: WINDOW_NAME(l), left, resets };
+    }).sort((a, b) => (a.name === '5 hours' ? -1 : b.name === '5 hours' ? 1 : 0)),
+  }));
 }

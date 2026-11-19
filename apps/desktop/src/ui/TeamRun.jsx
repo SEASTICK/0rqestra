@@ -1,5 +1,7 @@
 // The Manager's plan, and the team working on it, as cards in the chat.
 import React from 'react';
+import { ActivityLog, Working } from './Activity.jsx';
+import { elapsed } from './live-chat.mjs';
 
 const STATUS_LABEL = {
   waiting: 'Waiting', working: 'Working', reviewing: 'In review', done: 'Done', unverified: 'Done, not reviewed',
@@ -42,8 +44,9 @@ export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPre
   return (
     <div className={`team-card team-${run.status}`} role="status" aria-live="polite">
       <div className="team-head">
-        <span className={`team-dot ${running ? 'is-live' : ''}`}/>
-        <strong>{RUN_LABEL[run.status] || run.status}</strong>
+        {running
+          ? <Working label={RUN_LABEL.running} since={run.startedAt} className="team-working" />
+          : <><span className="team-dot"/><strong>{RUN_LABEL[run.status] || run.status}</strong>{run.startedAt && run.endedAt ? <span className="team-took">in {elapsed(run.endedAt - run.startedAt)}</span> : null}</>}
         <span className="team-goal">{run.goal}</span>
       </div>
       <ul className="team-tasks">
@@ -60,6 +63,7 @@ export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPre
           </li>
         ))}
       </ul>
+      <ActivityLog run={run} nameOf={nameOf} />
       {run.summary && <p className="team-summary">{run.summary}</p>}
       <div className="team-foot">
         <span>{run.calls ? `${run.calls} agent request${run.calls === 1 ? '' : 's'}${tokens}` : running ? 'Starting…' : ''}</span>
@@ -87,7 +91,7 @@ export function PlannerCard({ planning, brief, onStop, onRetry }) {
   return (
     <div className="plan-card planner-card" role="status" aria-live="polite">
       <div className="plan-head">
-        <span className="plan-eyebrow"><span className="team-dot is-live"/> {planning?.plannerName ? `${planning.plannerName.toUpperCase()} IS PLANNING` : 'WAITING FOR THE PLANNER'}</span>
+        <Working label={planning?.plannerName ? `${planning.plannerName} is planning` : 'Waiting for the Planner'} since={planning?.startedAt} className="plan-working" />
         <strong>{brief.length > 220 ? `${brief.slice(0, 220)}…` : brief}</strong>
       </div>
       <div className="plan-actions">{planning?.status === 'running' && <button type="button" className="shell-button" onClick={onStop}>Stop</button>}</div>

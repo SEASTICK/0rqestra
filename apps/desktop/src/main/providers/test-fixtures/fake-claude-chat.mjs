@@ -1,6 +1,7 @@
 // Fake `claude` for offline tests of the chat adapter. It never contacts a provider.
 // FAKE_AUTH: subscription (default) | apikey | signed-out.  FAKE_MODE: stream | no-deltas | error |
-// crash | slow | stubborn.  FAKE_LOG: file that receives the arguments, the prompt, and whether an
+// crash | slow | stubborn.  FAKE_REPLIES: file with a JSON list of replies, used in turn instead of
+// "Hej där!" (for trying the window by hand); FAKE_DELAY_MS: wait before the reply starts.  FAKE_LOG: file that receives the arguments, the prompt, and whether an
 // API key reached the process.
 import fs from "node:fs";
 import readline from "node:readline";
@@ -33,11 +34,33 @@ if (args.includes("--version")) {
     emit({ type: "system", subtype: "init", model: "claude-test-model", tools: [] });
     const delta = (text) => emit({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text } } });
     if (mode === "stream") {
+      // The usage windows, as newer versions send them, then the limiting one as older versions do.
+      emit({ type: "rate_limit_event", rate_limit_info: { status: "allowed", windows: { five_hour: { utilization: 0.28, resetsAt: 1795050000 }, seven_day: { utilization: 0.4, resetsAt: 1795500000 } } } });
+      emit({ type: "rate_limit_event", rate_limit_info: { status: "allowed", rateLimitType: "five_hour", utilization: 0.31, resetsAt: 1795050000 } });
+      const finish = (text) => {
+        emit({ type: "assistant", message: { content: [{ type: "text", text }] } });
+        emit({ type: "result", subtype: "success", is_error: false, result: text, modelUsage: { m: { inputTokens: 12, outputTokens: 3 } } });
+        process.exit(0);
+      };
+      if (process.env.FAKE_REPLIES) {
+        const replies = JSON.parse(fs.readFileSync(process.env.FAKE_REPLIES, "utf8"));
+        const counter = `${process.env.FAKE_REPLIES}.count`;
+        const n = fs.existsSync(counter) ? Number(fs.readFileSync(counter, "utf8")) : 0;
+        fs.writeFileSync(counter, String(n + 1));
+        const text = replies[Math.min(n, replies.length - 1)];
+        const chunks = text.match(/[\s\S]{1,24}/g) ?? [];
+        setTimeout(() => {
+          let i = 0;
+          const tick = setInterval(() => {
+            if (i < chunks.length) delta(chunks[i++]);
+            else { clearInterval(tick); finish(text); }
+          }, 60);
+        }, Number(process.env.FAKE_DELAY_MS ?? 0));
+        return;
+      }
       delta("Hej");
       delta(" där!");
-      emit({ type: "assistant", message: { content: [{ type: "text", text: "Hej där!" }] } });
-      emit({ type: "result", subtype: "success", is_error: false, result: "Hej där!", modelUsage: { m: { inputTokens: 12, outputTokens: 3 } } });
-      process.exit(0);
+      finish("Hej där!");
     } else if (mode === "no-deltas") {
       emit({ type: "assistant", message: { content: [{ type: "text", text: "Full answer" }] } });
       emit({ type: "result", subtype: "success", is_error: false, result: "Full answer" });

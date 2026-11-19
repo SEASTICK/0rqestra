@@ -457,3 +457,58 @@ describe('selecting a part of the preview', () => {
     expect(text).toContain('What I want: Gör rubriken större');
   });
 });
+
+import { elapsed, logLine, usageRows } from './live-chat.mjs';
+
+describe('the team activity log', () => {
+  const plan = { goal: 'Logg', tasks: [{ id: 't1', title: 'Bygg sidan', role: 'Builder', goal: 'g', dependsOn: [], deliverables: ['index.html'] }] };
+  const names = { b: 'Code builder', r: 'A fresh pair of eyes' };
+  const nameOf = (id) => names[id] || 'someone';
+  it('records each step with its time and writes it as a line', () => {
+    let run = newTeamRun('r1', plan, 1000);
+    run = applyTeamEvent(run, { type: 'run-started', tasks: [{ id: 't1', agentId: 'b' }] }, 1000);
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'waiting', agentId: null, attempt: 0 }, 1100);
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'working', agentId: 'b', attempt: 1 }, 1200);
+    run = applyTeamEvent(run, { type: 'files', taskId: 't1', files: [{ path: 'index.html', bytes: 2150 }] }, 5000);
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'reviewing', agentId: 'r', attempt: 1 }, 5100);
+    run = applyTeamEvent(run, { type: 'review', taskId: 't1', reviewerId: 'r', approved: false, problems: ['No title'] }, 9000);
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'working', agentId: 'b', attempt: 2, note: 'Fixing: No title' }, 9100);
+    run = applyTeamEvent(run, { type: 'run-finished', status: 'done', summary: 'ok', files: [], calls: 4, usage: null }, 20000);
+    expect(run.startedAt).toBe(1000);
+    expect(run.endedAt).toBe(20000);
+    expect(run.log.map((e) => e.at)).toEqual([1000, 1100, 1200, 5000, 5100, 9000, 9100, 20000]);
+    expect(run.log.map((e) => logLine(e, run, nameOf)).filter(Boolean).map((l) => l.text)).toEqual([
+      'The team started 1 task',
+      'Code builder started “Bygg sidan”',
+      'Code builder wrote index.html (2.1 kB)',
+      'A fresh pair of eyes is reviewing “Bygg sidan”',
+      'A fresh pair of eyes asked for changes to “Bygg sidan”: No title',
+      'Code builder tries “Bygg sidan” again (attempt 2) — Fixing: No title',
+      'The team finished',
+    ]);
+  });
+  it('keeps the log short', () => {
+    let run = newTeamRun('r1', plan, 0);
+    for (let i = 0; i < 250; i++) run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'working', agentId: 'b', attempt: 1 }, i);
+    expect(run.log).toHaveLength(200);
+    expect(run.log[0].at).toBe(50);
+  });
+  it('writes how long something took', () => {
+    expect([elapsed(4200), elapsed(65_000), elapsed(3_725_000), elapsed(-5)]).toEqual(['4s', '1m 05s', '1h 02m', '0s']);
+  });
+});
+
+describe('usage left', () => {
+  it('shows what is left of each window, the 5 hours first, for subscribed tools only', () => {
+    const now = 1_000_000_000_000;
+    const rows = usageRows([
+      { provider: 'claude', name: 'Claude Code', installed: true, signedIn: true, subscription: true, limitsAt: now - 60_000, limits: [{ label: '7-day limit', usedPercent: 40, windowMinutes: 10080 }, { label: '5-hour limit', usedPercent: 31.4, windowMinutes: 300, resetsAt: now / 1000 + 3600 }] },
+      { provider: 'codex', name: 'Codex', installed: true, signedIn: true, subscription: true, limits: [{ label: '5-hour limit', usedPercent: 120, windowMinutes: 300, resetsAt: 5 }] },
+      { provider: 'claude', name: 'x', installed: true, signedIn: false, subscription: false, limits: [] },
+    ], now);
+    expect(rows).toEqual([
+      { provider: 'claude', name: 'Claude', at: now - 60_000, windows: [{ name: '5 hours', left: 69, resets: now + 3_600_000 }, { name: 'Week', left: 60, resets: null }] },
+      { provider: 'codex', name: 'ChatGPT', at: null, windows: [{ name: '5 hours', left: 0, resets: null }] },
+    ]);
+  });
+});
