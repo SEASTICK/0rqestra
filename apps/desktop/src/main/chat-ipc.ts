@@ -15,7 +15,7 @@ export function createAdapters(): { claude: ClaudeCodeAdapter; codex: CodexAdapt
   return { claude: new ClaudeCodeAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), codex: new CodexAdapter() };
 }
 
-export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolean, getWindow: () => BrowserWindow | null, adapters = createAdapters()): ChatService {
+export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolean, getWindow: () => BrowserWindow | null, adapters = createAdapters(), teamNow: (projectId: string) => string | null = () => null): ChatService {
   // An empty folder that is the working directory of every chat. The tools get no tools in a
   // chat, but if one ever looked around, there is nothing here to find.
   const cwd = () => {
@@ -23,7 +23,7 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   };
-  service = new ChatService(adapters, cwd);
+  service = new ChatService(adapters, cwd, Date.now, teamNow);
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
   };

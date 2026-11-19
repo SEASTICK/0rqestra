@@ -56,6 +56,8 @@ export class ChatService {
     private readonly adapters: Record<ProviderId, ProviderAdapter>,
     private readonly cwd: () => string,
     private readonly now: () => number = Date.now,
+    // Teams: what teammates are doing in this project right now (null for a solo project).
+    private readonly teamNow: (projectId: string) => string | null = () => null,
   ) {}
 
   async providers(refresh: boolean): Promise<ProviderStatus[]> {
@@ -82,6 +84,7 @@ export class ChatService {
     if (this.running.size >= MAX_RUNNING) throw new Error("Too many replies are running. Wait for one to finish.");
     const handle = this.adapters[payload.provider].chat({
       provider: payload.provider, model: payload.model, effort: payload.effort, history: payload.history, text: payload.text, cwd: this.cwd(), team: payload.team,
+      teamNow: this.teamNowFor(payload.projectId),
     });
     this.running.set(payload.requestId, { projectId: payload.projectId, handle });
     void (async () => {
@@ -96,6 +99,14 @@ export class ChatService {
       }
     })();
     return payload.requestId;
+  }
+
+  private teamNowFor(projectId: string): string | null {
+    try {
+      return this.teamNow(projectId);
+    } catch {
+      return null;
+    }
   }
 
   stop(requestId: unknown): boolean {

@@ -5,7 +5,7 @@ import type { AgentRef } from "./prompts";
 // The Planner turns the Manager's brief into a plan (decision A6). Its answer is read like the
 // Manager's own plan used to be, and validated again before it is shown.
 
-export function plannerPrompt(brief: string, planner: AgentRef, team: TeamMember[], existing: string[]): string {
+export function plannerPrompt(brief: string, planner: AgentRef, team: TeamMember[], existing: string[], teamNow: string | null = null): string {
   return [
     `You are ${planner.name}, the Planner in a team of AI agents led by a Manager in the app 0rqestra.`,
     "The Manager has talked with the user and asks you for a plan the team can carry out.",
@@ -18,6 +18,7 @@ export function plannerPrompt(brief: string, planner: AgentRef, team: TeamMember
       "You cannot run tools or commands. Plan only work the agents can do by writing files.",
     ].join("\n"),
     teamSection(team),
+    ...(teamNow ? [teamNow] : []),
   ].join("\n\n");
 }
 

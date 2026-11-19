@@ -24,6 +24,8 @@ export function registerTeamIpc(
   observe?: (info: { runId: string; localProjectId: string; plan: Plan }, event: TeamEvent) => void,
   // Teams phase 5: a coordinated start reserves the run's paths first (solo projects pass).
   gate?: (info: { runId: string; localProjectId: string; plan: Plan }) => Promise<StartGate>,
+  // Teams: what teammates are doing in a project right now, for the Planner.
+  teamNow?: (projectId: string) => string | null,
 ): void {
   const base = () => app.getPath("userData");
   const cwd = () => {
@@ -31,7 +33,7 @@ export function registerTeamIpc(
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   };
-  const service = new TeamService(adapters, (projectId) => projectWorkspace(base(), projectId), cwd, observe);
+  const service = new TeamService(adapters, (projectId) => projectWorkspace(base(), projectId), cwd, observe, teamNow);
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
   };

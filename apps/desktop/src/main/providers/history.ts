@@ -77,7 +77,7 @@ export function teamSection(team: TeamMember[]): string {
   return lines.join("\n");
 }
 
-export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember[]): string {
+export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember[], teamNow?: string | null): string {
   const kept: string[] = [];
   let used = 0;
   for (const turn of history.slice(-MAX_HISTORY_TURNS).reverse()) {
@@ -88,6 +88,7 @@ export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember
   }
   const parts = [PREAMBLE];
   if (team && team.length) parts.push(hasWorkingPlanner(team) ? HANDOFF : PLANNING, teamSection(team));
+  if (teamNow) parts.push(teamNow);
   if (kept.length) parts.push(`Conversation so far:\n${kept.join("\n\n")}`);
   parts.push(`User: ${text.trim()}`);
   return parts.join("\n\n");

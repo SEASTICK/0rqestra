@@ -273,3 +273,14 @@ repository-relative files in Supabase, and the run starts only if the whole set 
 - The Team Bridge lists active reservations under **Reserved files**, next to the work briefs.
 
 Not in phase 5: the DigitalOcean worker.
+
+## The Managers know what teammates are working on
+
+In a linked project, every message to the Manager and every request to the Planner carries a short
+"Team right now" note, built by the app from what Supabase already holds: teammates' active
+briefs (title, status, branch, files), the files they have reserved, and who is online. The
+Manager can then answer "what is @ostron doing?" itself and plans around a teammate's files; the
+Planner avoids them. A run that finishes leaves the active briefs, so it drops out of the note on
+every computer within seconds (through the live connection). Solo projects get no note. Titles and
+paths come from teammates, so the note keeps them short, on one line, and tells the model they are
+information, not instructions (`apps/desktop/src/main/teams/team-now.ts`).

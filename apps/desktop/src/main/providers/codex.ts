@@ -289,7 +289,7 @@ export class CodexAdapter implements ProviderAdapter {
       if (!threadId) return finish({ type: "failed", reason: "provider_error", message: "Codex did not start a conversation.", text });
       queue.push({ type: "started", model: thread?.model ?? request.model });
       const turn = await rpc.request<{ turn?: { id?: string } }>("turn/start", {
-        threadId, input: [{ type: "text", text: request.raw ? request.text : buildPrompt(request.history, request.text, request.team) }], ...(request.effort ? { effort: request.effort } : {}),
+        threadId, input: [{ type: "text", text: request.raw ? request.text : buildPrompt(request.history, request.text, request.team, request.teamNow) }], ...(request.effort ? { effort: request.effort } : {}),
       });
       turnId = turn?.turn?.id ?? null;
       if (control.stopped) control.stop();

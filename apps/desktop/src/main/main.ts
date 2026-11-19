@@ -94,10 +94,13 @@ ipcMain.handle("app:get-info", (event) => {
 
 registerUpdateIpc(isFromMainWindow);
 const providerAdapters = createAdapters();
-const chatService = registerChatIpc(isFromMainWindow, () => mainWindow, providerAdapters);
+// Teams is registered after chat; the Manager reads "Team right now" through this late binding.
+let teamNow: (projectId: string) => string | null = () => null;
+const chatService = registerChatIpc(isFromMainWindow, () => mainWindow, providerAdapters, (projectId) => teamNow(projectId));
 registerAccountsIpc(isFromMainWindow, () => mainWindow, providerAdapters, () => chatService.invalidate());
 const teams = registerTeamsIpc(isFromMainWindow, () => mainWindow);
-registerTeamIpc(isFromMainWindow, () => mainWindow, providerAdapters, (info, event) => void teams.onRunEvent(info, event), (info) => teams.beforeStart(info));
+teamNow = (projectId) => teams.service.teamNow(projectId);
+registerTeamIpc(isFromMainWindow, () => mainWindow, providerAdapters, (info, event) => void teams.onRunEvent(info, event), (info) => teams.beforeStart(info), teamNow);
 
 if (!smoke) {
   app.on("window-all-closed", () => app.quit());

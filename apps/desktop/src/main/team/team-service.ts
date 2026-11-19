@@ -52,6 +52,8 @@ export class TeamService {
     private readonly cwd: () => string,
     // Sees every run's events, with the run's local project and plan (Teams briefs, phase 3).
     private readonly observe?: (info: { runId: string; localProjectId: string; plan: Plan }, event: TeamEvent) => void,
+    // Teams: what teammates are doing in this project right now, for the Planner.
+    private readonly teamNow: (projectId: string) => string | null = () => null,
   ) {}
 
   // Validates a start request without starting anything (so a reservation can be made first).
@@ -91,6 +93,14 @@ export class TeamService {
     return runId;
   }
 
+  private safeTeamNow(projectId: string): string | null {
+    try {
+      return this.teamNow(projectId);
+    } catch {
+      return null;
+    }
+  }
+
   // Asks the Planner for a plan from the Manager's brief. Resolves with a validated plan, or throws with a
   // message the window can show.
   async plan(raw: unknown): Promise<{ plan: Plan; summary: string }> {
@@ -104,7 +114,7 @@ export class TeamService {
     const team = parseTeamMembers(v.team);
     if (this.planning.has(v.requestId)) throw new Error("This request is already running.");
     const requestId = v.requestId;
-    const prompt = plannerPrompt(v.brief.trim(), planner!, team, listFiles(this.workspaceFor(v.projectId)));
+    const prompt = plannerPrompt(v.brief.trim(), planner!, team, listFiles(this.workspaceFor(v.projectId)), this.safeTeamNow(v.projectId));
     const handle = this.adapters[planner!.tool].chat({ provider: planner!.tool, model: planner!.model, effort: planner!.effort, history: [], text: prompt, cwd: this.cwd(), raw: true });
     this.planning.set(requestId, handle);
     let last: ChatEvent | null = null;

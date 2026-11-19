@@ -21,6 +21,8 @@ export interface ChatRequest {
   raw?: boolean;
   // The agents in the tree, so the Manager can plan work for them.
   team?: TeamMember[];
+  // What teammates are doing in a shared project right now (Teams), or nothing for a solo project.
+  teamNow?: string | null;
 }
 
 export interface TeamMember {

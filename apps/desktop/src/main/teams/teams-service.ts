@@ -6,6 +6,7 @@ import { remoteMatching, resolveIdentity, type RemoteChoice } from "./repo-ident
 import { SupabaseApi, SupabaseError, type AuthSession, type FetchLike } from "./supabase-api";
 import type { ConfigResult } from "./teams-config";
 import type { PresenceSnapshot, PresenceTarget } from "./presence";
+import { teamNowText } from "./team-now";
 
 // Teams between the window and Supabase, free of Electron so it is unit-tested. Everything from the
 // window is checked here; the window never sends a path, a token or a user id. Teams sign-in is
@@ -344,6 +345,28 @@ export class TeamsService {
   linkFor(localProjectId: string): { sharedProjectId: string; userId: string; path: string } | null {
     const link = this.myLinks().find((l) => l.localProjectId === localProjectId);
     return link ? { sharedProjectId: link.sharedProjectId, userId: link.userId, path: link.path } : null;
+  }
+
+  // "Team right now" for the Manager and the Planner of a local project linked to a shared
+  // project: teammates' active work and reserved files. Null for a solo project or when signed out.
+  teamNow(localProjectId: string): string | null {
+    const link = this.myLinks().find((l) => l.localProjectId === localProjectId);
+    if (!link || !this.session) return null;
+    const team = this.teams.find((t) => t.projects.some((p) => p.id === link.sharedProjectId));
+    const project = team?.projects.find((p) => p.id === link.sharedProjectId);
+    if (!team || !project) return null;
+    const presence = this.presence[project.id];
+    const at = this.briefsAt[project.id];
+    return teamNowText({
+      projectName: project.name,
+      repoKey: project.repo.key,
+      me: this.session.user.id,
+      members: team.members.map((m) => ({ userId: m.userId, name: m.name })),
+      briefs: project.briefs,
+      reservations: project.reservations,
+      online: presence?.connection === "live" ? presence.online : null,
+      ageMs: at ? this.now() - at : null,
+    });
   }
 
   currentUserId(): string | null {
