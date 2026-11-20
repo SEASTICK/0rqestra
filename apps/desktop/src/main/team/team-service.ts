@@ -27,7 +27,8 @@ export function parseAgents(value: unknown): TeamAgent[] {
     if (!PROVIDER_IDS.includes(a.tool as ProviderId)) throw new Error("Invalid agent tool.");
     if (model !== null && (typeof model !== "string" || !MODEL_NAME.test(model))) throw new Error("Invalid agent model.");
     if (effort !== null && (typeof effort !== "string" || !EFFORT_NAME.test(effort))) throw new Error("Invalid agent effort.");
-    return { id: a.id, name: a.name.trim(), role: a.role, priority: a.priority as number, tool: a.tool as ProviderId, model: model as string | null, effort: effort as string | null };
+    const models = Array.isArray(a.models) ? a.models.filter((m): m is string => typeof m === "string" && MODEL_NAME.test(m)).slice(0, 16) : [];
+    return { id: a.id, name: a.name.trim(), role: a.role, priority: a.priority as number, tool: a.tool as ProviderId, model: model as string | null, effort: effort as string | null, ...(models.length ? { models } : {}) };
   });
 }
 
@@ -39,8 +40,18 @@ export function parseTeamMembers(value: unknown): TeamMember[] {
     if (!m || typeof m.name !== "string" || !m.name.trim() || m.name.length > 48 || typeof m.role !== "string" || !ROLE.test(m.role)) throw new Error("Invalid team.");
     const tool = m.tool === "claude" || m.tool === "codex" ? m.tool : null;
     const model = typeof m.model === "string" && MODEL_NAME.test(m.model) ? m.model : null;
-    return { name: m.name.trim(), role: m.role, ready: m.ready === true, ...(tool ? { tool } : {}), ...(model ? { model } : {}) };
+    const models = Array.isArray(m.models) ? m.models.filter((x): x is string => typeof x === "string" && MODEL_NAME.test(x)).slice(0, 16) : [];
+    return { name: m.name.trim(), role: m.role, ready: m.ready === true, ...(tool ? { tool } : {}), ...(model ? { model } : {}), ...(models.length ? { models } : {}) };
   });
+}
+
+// A task's model stays only when the agent that will do it has that model (its tool offers it).
+function keepModel<T extends { model?: string }>(task: T, agent: TeamAgent | undefined): T {
+  if (!task.model) return task;
+  if (agent?.models?.includes(task.model)) return task;
+  const rest = { ...task };
+  delete rest.model;
+  return rest;
 }
 
 // The Manager may name the agent for a task. A name that matches a working agent with the task's role
@@ -49,9 +60,9 @@ export function assignAgents(plan: Plan, agents: TeamAgent[]): Plan {
   return {
     ...plan,
     tasks: plan.tasks.map((t) => {
-      if (!t.agent) return t;
+      if (!t.agent) return keepModel(t, agents.filter((a) => a.role === t.role).sort((a, b) => a.priority - b.priority)[0]);
       const match = agents.find((a) => a.role === t.role && a.name.toLowerCase() === t.agent!.toLowerCase());
-      if (match) return { ...t, agent: match.name, agentId: match.id };
+      if (match) return keepModel({ ...t, agent: match.name, agentId: match.id }, match);
       const rest = { ...t };
       delete rest.agent;
       delete rest.why;

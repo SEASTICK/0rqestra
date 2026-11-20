@@ -1,4 +1,5 @@
 import { MAX_MESSAGE_CHARS, PLAN_NEEDED } from "./providers/history";
+import { MAX_PER_MESSAGE, type Attachment } from "./attachments";
 import { EFFORT_NAME, MODEL_NAME } from "./providers/process";
 import { parseTeamMembers } from "./team/team-service";
 import { PROVIDER_IDS, type ChatEvent, type ChatHandle, type ChatTurn, type ProviderAdapter, type ProviderId, type ProviderStatus, type TeamMember, type Usage } from "./providers/types";
@@ -20,6 +21,7 @@ export interface SendPayload {
   history: ChatTurn[];
   text: string;
   team: TeamMember[];
+  attachments?: string[];
 }
 
 export function parseSend(value: unknown): SendPayload {
@@ -43,7 +45,9 @@ export function parseSend(value: unknown): SendPayload {
     return { role: t.role, text: t.text };
   });
   const team = parseTeamMembers(v.team);
-  return { requestId: v.requestId, projectId: v.projectId, provider: v.provider as ProviderId, model, effort, history: turns, text: v.text, team };
+  const attachments = v.attachments ?? [];
+  if (!Array.isArray(attachments) || attachments.length > MAX_PER_MESSAGE || !attachments.every((a) => typeof a === "string")) throw new Error("Invalid attachments.");
+  return { requestId: v.requestId, projectId: v.projectId, provider: v.provider as ProviderId, model, effort, history: turns, text: v.text, team, ...(attachments.length ? { attachments: attachments as string[] } : {}) };
 }
 
 export type Emit = (requestId: string, event: ChatEvent) => void;
@@ -58,6 +62,8 @@ export class ChatService {
     private readonly now: () => number = Date.now,
     // Teams: what teammates are doing in this project right now (null for a solo project).
     private readonly teamNow: (projectId: string) => string | null = () => null,
+    // Files the user attached (main/attachments.ts), by id.
+    private readonly attachmentFor: (id: string) => Attachment | null = () => null,
   ) {}
 
   async providers(refresh: boolean): Promise<ProviderStatus[]> {
@@ -82,9 +88,15 @@ export class ChatService {
     if (this.running.has(payload.requestId)) throw new Error("This request is already running.");
     if ([...this.running.values()].some((r) => r.projectId === payload.projectId)) throw new Error("A reply is already being written in this project. Stop it or wait.");
     if (this.running.size >= MAX_RUNNING) throw new Error("Too many replies are running. Wait for one to finish.");
+    const attachments = (payload.attachments ?? []).map((id) => {
+      const found = this.attachmentFor(id);
+      if (!found) throw new Error("An attached file is no longer available. Attach it again.");
+      return found;
+    });
     const request = {
       provider: payload.provider, model: payload.model, effort: payload.effort, history: payload.history, text: payload.text, cwd: this.cwd(), team: payload.team,
       teamNow: this.teamNowFor(payload.projectId),
+      ...(attachments.length ? { attachments } : {}),
     };
     const first = this.adapters[payload.provider].chat(request);
     // stop() reaches whichever request is current (the second one, when the Manager asks to plan).

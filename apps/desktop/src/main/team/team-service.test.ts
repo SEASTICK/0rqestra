@@ -117,3 +117,26 @@ describe("the Manager chooses the agent for each task", () => {
     expect(teamSection([{ name: "A", role: "Builder", ready: true, tool: "claude", model: null }])).not.toContain("work together");
   });
 });
+
+describe("the Manager chooses the model for each task", () => {
+  it("keeps a model the task's agent can use, and drops one it cannot", async () => {
+    const { assignAgents } = await import("./team-service.js");
+    const { parsePlan } = await import("./plan.js");
+    const builder = { ...agent, models: ["gpt-6.2-sol", "gpt-6.2-mini"] };
+    const plan = parsePlan({ goal: "g", tasks: [
+      { id: "t1", title: "x", role: "Builder", goal: "y", dependsOn: [], deliverables: ["a.txt"], model: "gpt-6.2-mini" },
+      { id: "t2", title: "x", role: "Builder", goal: "y", dependsOn: [], deliverables: ["b.txt"], model: "opus" },
+      { id: "t3", title: "x", role: "Builder", goal: "y", dependsOn: [], deliverables: ["c.txt"], model: "bad model!" },
+    ] }, ["Builder"]);
+    expect(plan.tasks[2]!.model).toBeUndefined();
+    const out = assignAgents(plan, [builder as never]);
+    expect(out.tasks[0]!.model).toBe("gpt-6.2-mini");
+    expect(out.tasks[1]!.model).toBeUndefined();
+  });
+
+  it("lists the models the Manager can choose", async () => {
+    const { teamSection } = await import("../providers/history.js");
+    const text = teamSection([{ name: "B", role: "Builder", ready: true, tool: "codex", model: "gpt-6.2-sol", models: ["gpt-6.2-sol", "gpt-6.2-mini"] }]);
+    expect(text).toContain("Models you can choose per task: Codex: gpt-6.2-sol, gpt-6.2-mini.");
+  });
+});

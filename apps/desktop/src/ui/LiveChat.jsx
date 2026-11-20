@@ -2,6 +2,7 @@
 // message box, and a reply from a real model while it is written and after.
 import React, { useState } from 'react';
 import { Working } from './Activity.jsx';
+import { Markdown } from './Markdown.jsx';
 import { answersFor, FAILURE_HELP, parsePlan, parsePlanRequest, parseQuestion, readyProviders, usageLine, visibleText } from './live-chat.mjs';
 
 export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
@@ -46,8 +47,8 @@ export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPl
   return (
     <div className={`message message-manager message-live message-${m.status}`}>
       <div className="message-author"><span className="mini-avatar green"><Icon name="tree" size={14}/></span>Manager<span>{label}</span></div>
-      <div className="message-body">
-        {body}
+      <div className="message-body md-body">
+        <Markdown text={body} />
         {m.status === 'streaming' && body && <span className="live-caret" aria-hidden="true"/>}
       </div>
       {m.status === 'streaming' && <Working label={m.text ? 'Writing' : 'Thinking'} since={m.startedAt} className="reply-working" />}

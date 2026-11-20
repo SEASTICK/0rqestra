@@ -314,6 +314,28 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-20: a chat like Claude's, attachments, and the model per task.**
+- **Formatted replies.** Replies are drawn from Markdown (`ui/markdown.mjs` reads it into plain data,
+  `ui/Markdown.jsx` draws it with React; no HTML is ever parsed): headings, lists, quotes, tables, inline
+  code, simple formulas, and code blocks with a Copy button. Links open in the user's own browser, and
+  only web addresses (`chat:open-link`). The chat looks like Claude's: replies as plain text across a
+  centred column, the user's messages in a soft bubble on the right.
+- **Attachments.** The + button, drag and drop, and paste add images (PNG, JPEG, GIF, WebP, 5 MB), PDFs
+  (10 MB) and text files (300 kB), at most 6 per message. The main process decides the kind from the
+  content, keeps the file for a week (`main/attachments.ts`), and sends it with that message only:
+  Claude Code gets images and PDFs as their own blocks, Codex gets images as local image files (and is
+  told it cannot read PDFs here), and text files go into the message. Later messages only say what was
+  attached.
+- **The model per task.** The Manager sees which models each tool offers and may set a task's `"model"`
+  (the strongest for hard work, a lighter one for simple work). The main process keeps it only when the
+  task's agent's tool offers that model, and the runner uses it for that task; the plan card shows the
+  model each task will run on.
+- Verified with unit tests and in the real Electron app with the stand-in tools: an image and a CSV were
+  attached and the stand-in Claude received an image block and the file's text; a reply with a heading,
+  a table and code was drawn; the plan card showed "Claude · haiku" for the task the Manager put on Haiku,
+  and the agent's own model where the Manager asked for one its tool does not have. **Not verified:** the
+  real Claude Code and Codex reading attachments (their input formats were followed, not tried).
+
 **Status 2026-11-20: Claude and ChatGPT work together, and the Manager decides who does what.**
 - The Manager (and the Planner) now see which tool and model each agent runs on, and, when the team has
   both, a short guide to what each is good at (Claude Code: planning, interfaces and design, text, careful

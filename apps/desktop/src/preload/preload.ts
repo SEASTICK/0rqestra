@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld("orqestra", {
     providers: (refresh?: boolean) => ipcRenderer.invoke("chat:providers", refresh === true),
     send: (payload: unknown) => ipcRenderer.invoke("chat:send", payload),
     stop: (requestId: string) => ipcRenderer.invoke("chat:stop", String(requestId)),
+    copy: (text: string) => ipcRenderer.invoke("chat:copy", String(text)),
+    attach: (file: { name: string; data: Uint8Array }) => ipcRenderer.invoke("chat:attach", { name: String(file?.name ?? ""), data: file?.data instanceof Uint8Array ? file.data : null }),
+    openLink: (url: string) => ipcRenderer.invoke("chat:open-link", String(url)),
     subscribe: (listener: (message: unknown) => void) => {
       ipcRenderer.removeAllListeners("chat:event");
       ipcRenderer.on("chat:event", (_event, message: unknown) => listener(message));

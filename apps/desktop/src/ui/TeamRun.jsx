@@ -21,7 +21,7 @@ export function PlanCard({ plan, assignments, startedRunId, busy, onStart, onTre
           <li key={t.id} className="plan-task">
             <div className="plan-task-main">
               <strong>{t.title}</strong>
-              <span className={`plan-agent ${t.agent ? '' : 'is-missing'}`}>{t.role} · {t.agent ? t.agent.name : 'no working agent'}{t.agent?.tool && <span className={`tool-chip tool-${t.agent.tool}`}>{TOOL_LABEL[t.agent.tool] || t.agent.tool}</span>}</span>
+              <span className={`plan-agent ${t.agent ? '' : 'is-missing'}`}>{t.role} · {t.agent ? t.agent.name : 'no working agent'}{t.agent?.tool && <span className={`tool-chip tool-${t.agent.tool}`}>{TOOL_LABEL[t.agent.tool] || t.agent.tool}{t.runsOn ? ` · ${t.runsOn}` : ''}</span>}</span>
             </div>
             {t.chosen && t.why && <div className="plan-why">Why {t.agent.name}: {t.why}</div>}
             <div className="plan-task-goal">{t.goal}</div>

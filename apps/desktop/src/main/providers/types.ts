@@ -1,3 +1,4 @@
+import type { Attachment } from "../attachments";
 // What the chat needs from a provider tool, independent of which tool it is. The first adapters
 // drive the user's own subscription tools (Claude Code, Codex); API-key adapters can be added
 // behind the same interface later (docs/backend-plan.md, phase 7).
@@ -25,6 +26,8 @@ export interface ChatRequest {
   teamNow?: string | null;
   // Send the planning instructions whatever the message says (the Manager asked for them).
   planMode?: boolean;
+  // Files and images the user added to this message (main/attachments.ts).
+  attachments?: Attachment[];
 }
 
 export interface TeamMember {
@@ -35,6 +38,8 @@ export interface TeamMember {
   // The tool and model it runs on, so the Manager can give each task to the agent best suited for it.
   tool?: ProviderId | null;
   model?: string | null;
+  // The models its tool offers, which the Manager may choose per task.
+  models?: string[];
 }
 
 // Every input token (cached ones included), output tokens, and how many input tokens came from the

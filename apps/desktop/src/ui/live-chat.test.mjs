@@ -688,3 +688,17 @@ describe('Claude and ChatGPT work together', () => {
     expect(parsePlan(text).plan.tasks[0]).toMatchObject({ agent: 'Builder one', why: 'Fast at logic' });
   });
 });
+
+describe('the model for each task', () => {
+  it('shows the model the Manager chose when the agent can use it, else the agent\'s own', () => {
+    const statuses = [{ provider: 'codex', models: [{ id: 'gpt-6.2-sol' }, { id: 'gpt-6.2-mini' }] }];
+    const graph = { nodes: [{ id: 'b', name: 'B', role: 'Builder', priority: 1, agent: { tool: 'codex', model: 'gpt-6.2-sol', effort: null } }] };
+    const plan = { goal: 'g', tasks: [
+      { id: 't1', title: 'a', role: 'Builder', goal: 'g', dependsOn: [], deliverables: ['a'], model: 'gpt-6.2-mini' },
+      { id: 't2', title: 'b', role: 'Builder', goal: 'g', dependsOn: [], deliverables: ['b'], model: 'opus' },
+    ] };
+    expect(planAssignments(plan, graph, statuses).map((t) => [t.runsOn, t.modelChosen])).toEqual([['gpt-6.2-mini', true], ['gpt-6.2-sol', false]]);
+    expect(teamAgents(graph, statuses)[0].models).toEqual(['gpt-6.2-sol', 'gpt-6.2-mini']);
+    expect(teamMembers(graph, statuses)[0]).toMatchObject({ tool: 'codex', models: ['gpt-6.2-sol', 'gpt-6.2-mini'] });
+  });
+});

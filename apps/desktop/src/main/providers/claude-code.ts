@@ -5,6 +5,7 @@ import path from "node:path";
 import { buildPrompt } from "./history";
 import { findBinary, killTree, MODEL_NAME, onJsonLines, providerEnv, runShort, spawnTool, type ToolBinary } from "./process";
 import { toolEnvironment } from "./tool-env";
+import { withTextFiles, type Attachment } from "../attachments";
 import { EventQueue, type AuthMethod, type ChatEvent, type ChatHandle, type ChatRequest, type ModelOption, type ProviderAdapter, type ProviderStatus, type RateLimit } from "./types";
 
 // Claude Code, signed in with the user's own Claude subscription, run in print mode with streamed
@@ -103,6 +104,18 @@ export function limitsFromClaude(info: unknown, known: Map<string, RateLimit> = 
   }
   if (typeof i.rateLimitType === "string") record(i.rateLimitType, i);
   return next;
+}
+
+// A message with attachments: text files go into the text; images and PDFs go in as their own blocks.
+export function claudeContent(prompt: string, attachments: Attachment[]): string | unknown[] {
+  if (!attachments.length) return prompt;
+  const blocks: unknown[] = [{ type: "text", text: withTextFiles(prompt, attachments) }];
+  for (const a of attachments) {
+    const data = () => fs.readFileSync(a.path).toString("base64");
+    if (a.kind === "image") blocks.push({ type: "image", source: { type: "base64", media_type: a.mediaType, data: data() } });
+    else if (a.kind === "pdf") blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: data() }, title: a.name });
+  }
+  return blocks;
 }
 
 export class ClaudeCodeAdapter implements ProviderAdapter {
@@ -309,6 +322,6 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
 
     const prompt = request.raw ? request.text : buildPrompt(request.history, request.text, request.team, request.teamNow, request.planMode ? "plan" : "auto");
     child.stdin?.on("error", () => {});
-    child.stdin?.write(`${JSON.stringify({ type: "user", message: { role: "user", content: prompt } })}\n`);
+    child.stdin?.write(`${JSON.stringify({ type: "user", message: { role: "user", content: claudeContent(prompt, request.attachments ?? []) } })}\n`);
   }
 }

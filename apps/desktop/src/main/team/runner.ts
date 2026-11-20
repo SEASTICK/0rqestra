@@ -16,6 +16,8 @@ export interface TeamAgent extends AgentRef {
   tool: ProviderId;
   model: string | null;
   effort: string | null;
+  // The models its tool offers, so a task can ask for a stronger or lighter one (Plan task "model").
+  models?: string[];
 }
 
 export type TaskStatus = "waiting" | "working" | "waiting_context" | "reviewing" | "done" | "unverified" | "failed" | "blocked" | "stopped";
@@ -115,12 +117,14 @@ export class TeamRun {
   // One request to one agent. Returns the full text, or throws with a message for the next attempt.
   // Every request is recorded once in the usage ledger (Stage 3), also when it fails or is stopped:
   // only the final event of a reply counts, so streamed updates never add up twice.
-  private async ask(agent: TeamAgent, prompt: string, meta: { taskId: string; kind: CallKind; attempt: number }): Promise<string> {
+  private async ask(agent: TeamAgent, prompt: string, meta: { taskId: string; kind: CallKind; attempt: number; model?: string | undefined }): Promise<string> {
     if (this.stopped) throw new Stopped();
     if (this.calls >= this.limits.maxCalls) throw new Error(`The limit of ${this.limits.maxCalls} agent requests for this run is reached.`);
     this.calls += 1;
     const seq = this.ledger.open();
-    const handle = this.o.adapters[agent.tool].chat({ provider: agent.tool, model: agent.model, effort: agent.effort, history: [], text: prompt, cwd: this.o.cwd, raw: true });
+    // The task's model when the Manager chose one and this agent's tool offers it; else the agent's own.
+    const model = meta.model && agent.models?.includes(meta.model) ? meta.model : agent.model;
+    const handle = this.o.adapters[agent.tool].chat({ provider: agent.tool, model, effort: agent.effort, history: [], text: prompt, cwd: this.o.cwd, raw: true });
     this.active.add(handle);
     let last: ChatEvent | null = null;
     let text = "";
@@ -179,7 +183,7 @@ export class TeamRun {
       let text: string;
       try {
         if (attempt > 1) this.ledger.retries += 1;
-        text = await this.ask(worker, workerPrompt(plan, task, worker, resolved, problems, problems.length ? current : [], { context: openContext, files: existing }), { taskId: task.id, kind: "worker", attempt });
+        text = await this.ask(worker, workerPrompt(plan, task, worker, resolved, problems, problems.length ? current : [], { context: openContext, files: existing }), { taskId: task.id, kind: "worker", attempt, model: task.model });
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;

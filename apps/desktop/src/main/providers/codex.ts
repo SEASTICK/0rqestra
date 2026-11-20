@@ -3,6 +3,7 @@ import { codexUsage } from "./usage";
 import { buildPrompt } from "./history";
 import { EFFORT_NAME, findBinary, killTree, MODEL_NAME, onJsonLines, providerEnv, runShort, spawnTool, type ToolBinary } from "./process";
 import { toolEnvironment } from "./tool-env";
+import { withTextFiles, type Attachment } from "../attachments";
 import { EventQueue, type ChatEvent, type ChatHandle, type ChatRequest, type ModelOption, type ProviderAdapter, type ProviderStatus, type RateLimit, type Usage } from "./types";
 
 // Codex, signed in with the user's own ChatGPT plan, driven through `codex app-server` (JSON-RPC
@@ -111,6 +112,17 @@ function limitsFrom(snapshot: unknown): RateLimit[] {
   add(s?.primary);
   add(s?.secondary);
   return out;
+}
+
+// A message with attachments for Codex: text files in the text, images as local image files. Codex cannot
+// read PDFs here, which the message says, so the reply does not pretend to have read one.
+export function codexInput(prompt: string, attachments: Attachment[]): unknown[] {
+  const pdfs = attachments.filter((a) => a.kind === "pdf");
+  const note = pdfs.length ? `\n\n(The user attached ${pdfs.map((a) => `"${a.name}"`).join(", ")}, but PDFs cannot be read here. Say so, and ask for the text or an image of the pages.)` : "";
+  return [
+    { type: "text", text: withTextFiles(prompt, attachments) + note },
+    ...attachments.filter((a) => a.kind === "image").map((a) => ({ type: "localImage", path: a.path })),
+  ];
 }
 
 export class CodexAdapter implements ProviderAdapter {
@@ -290,7 +302,7 @@ export class CodexAdapter implements ProviderAdapter {
       if (!threadId) return finish({ type: "failed", reason: "provider_error", message: "Codex did not start a conversation.", text });
       queue.push({ type: "started", model: thread?.model ?? request.model });
       const turn = await rpc.request<{ turn?: { id?: string } }>("turn/start", {
-        threadId, input: [{ type: "text", text: request.raw ? request.text : buildPrompt(request.history, request.text, request.team, request.teamNow, request.planMode ? "plan" : "auto") }], ...(request.effort ? { effort: request.effort } : {}),
+        threadId, input: codexInput(request.raw ? request.text : buildPrompt(request.history, request.text, request.team, request.teamNow, request.planMode ? "plan" : "auto"), request.attachments ?? []), ...(request.effort ? { effort: request.effort } : {}),
       });
       turnId = turn?.turn?.id ?? null;
       if (control.stopped) control.stop();

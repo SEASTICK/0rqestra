@@ -53,7 +53,8 @@ export function historyFor(messages, max = 40) {
     .map((m) => (m.kind === 'team'
       ? { role: 'assistant', text: teamRunText(m.run) }
       // A request the user gave one agent directly is shown to the Manager as such, not as a request to it.
-      : { role: m.kind === 'user' ? 'user' : 'assistant', text: `${m.to ? `(To ${m.to}, not to you) ` : ''}${String(m.text).slice(0, 20000)}` }));
+      // Attachments are sent once, with their message; later turns only say they were there.
+      : { role: m.kind === 'user' ? 'user' : 'assistant', text: `${m.to ? `(To ${m.to}, not to you) ` : ''}${String(m.text).slice(0, 20000)}${m.attachments?.length ? `\n[Attached earlier: ${m.attachments.map((a) => a.name).join(', ')}]` : ''}` }));
 }
 
 // A finished team run as the Manager sees it in its next turn: the outcome, and each task's return
@@ -264,6 +265,7 @@ export function parsePlan(raw) {
       ...(typeof t?.product === 'string' && t.product.trim() ? { product: t.product.trim().toLowerCase() } : {}),
       ...(text(t?.agent, 48) ? { agent: text(t.agent, 48) } : {}),
       ...(text(t?.why, 160) ? { why: text(t.why, 160) } : {}),
+      ...(typeof t?.model === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(t.model) ? { model: t.model } : {}),
     }));
     if (parsed.some((t) => !t.id || !t.title || !t.role || !t.goal || !t.deliverables.length)) return { body: source, plan: null };
     const rules = Array.isArray(value?.rules) ? value.rules.filter((r) => typeof r === 'string') : [];
@@ -276,25 +278,38 @@ export function parsePlan(raw) {
 const byPriority = (a, b) => (Number(a.priority) || 0) - (Number(b.priority) || 0) || String(a.name).localeCompare(String(b.name));
 
 // Who is in the team, as the Manager sees it.
-export function teamMembers(graph) {
-  return (graph?.nodes || []).filter((n) => n.role !== 'Manager').map((n) => ({ name: String(n.name).slice(0, 48), role: n.role, ready: isRealAgent(n), ...(isRealAgent(n) ? { tool: n.agent.tool, ...(n.agent.model ? { model: n.agent.model } : {}) } : {}) }));
+// The models a tool offers (from its status), so the Manager can choose one per task.
+const modelsOf = (tool, statuses) => ((Array.isArray(statuses) ? statuses : []).find((s) => s.provider === tool)?.models || []).map((m) => m.id).filter(Boolean).slice(0, 16);
+
+export function teamMembers(graph, statuses = []) {
+  return (graph?.nodes || []).filter((n) => n.role !== 'Manager').map((n) => {
+    if (!isRealAgent(n)) return { name: String(n.name).slice(0, 48), role: n.role, ready: false };
+    const models = modelsOf(n.agent.tool, statuses);
+    return { name: String(n.name).slice(0, 48), role: n.role, ready: true, tool: n.agent.tool, ...(n.agent.model ? { model: n.agent.model } : {}), ...(models.length ? { models } : {}) };
+  });
 }
 
 // The agents that can work, as the main process needs them.
-export function teamAgents(graph) {
-  return (graph?.nodes || []).filter((n) => n.role !== 'Manager' && isRealAgent(n)).map((n) => ({
-    id: n.id, name: String(n.name).slice(0, 48), role: n.role, priority: Number(n.priority) || 0,
-    tool: n.agent.tool, model: n.agent.model ?? null, effort: n.agent.effort ?? null,
-  }));
+export function teamAgents(graph, statuses = []) {
+  return (graph?.nodes || []).filter((n) => n.role !== 'Manager' && isRealAgent(n)).map((n) => {
+    const models = modelsOf(n.agent.tool, statuses);
+    return {
+      id: n.id, name: String(n.name).slice(0, 48), role: n.role, priority: Number(n.priority) || 0,
+      tool: n.agent.tool, model: n.agent.model ?? null, effort: n.agent.effort ?? null, ...(models.length ? { models } : {}),
+    };
+  });
 }
 
 // Which agent each task will start with (the highest priority real agent with that role).
 // The agent the Manager named for the task (when it has the task's role), else the role's first agent.
-export function planAssignments(plan, graph) {
-  const agents = teamAgents(graph);
+export function planAssignments(plan, graph, statuses = []) {
+  const agents = teamAgents(graph, statuses);
   return plan.tasks.map((t) => {
     const named = typeof t.agent === 'string' ? agents.find((a) => a.role === t.role && a.name.toLowerCase() === t.agent.toLowerCase()) : null;
-    return { ...t, chosen: Boolean(named), agent: named || agents.filter((a) => a.role === t.role).sort(byPriority)[0] || null };
+    const agent = named || agents.filter((a) => a.role === t.role).sort(byPriority)[0] || null;
+    // The model this task runs on: the Manager's choice when the agent's tool offers it, else the agent's own.
+    const runsOn = t.model && agent?.models?.includes(t.model) ? t.model : agent?.model || null;
+    return { ...t, chosen: Boolean(named), agent, runsOn, modelChosen: Boolean(t.model && runsOn === t.model) };
   });
 }
 

@@ -373,3 +373,18 @@ describe("undo after a team run", () => {
     expect(fs.readFileSync(path.join(ws, "index.html"), "utf8")).toBe("<h1>Old</h1>");
   });
 });
+
+describe("a task's model", () => {
+  it("is used for the worker when its tool offers it", async () => {
+    const models: (string | null)[] = [];
+    class Recording extends ScriptedTool {
+      override chat(request: ChatRequest) { models.push(request.model); return super.chat(request); }
+    }
+    const codex = new Recording("codex", deliverOwned);
+    const claude = new ScriptedTool("claude", () => approve);
+    const strong = { ...builder, models: ["gpt-6.1-sol", "gpt-6.2-max"] };
+    const plan = parsePlan({ ...planValue, tasks: [{ ...planValue.tasks[0], model: "gpt-6.2-max" }, planValue.tasks[1]] }, roles);
+    await run(plan, [strong, reviewer], codex, claude);
+    expect(models).toEqual(["gpt-6.2-max", "gpt-6.1-sol"]);
+  });
+});

@@ -117,6 +117,12 @@ export function teamSection(team: TeamMember[]): string {
     : "- No agent can work yet; no agent in the tree runs on Claude Code or Codex.");
   if (notSetUp.length) lines.push(`Agents without a tool, which cannot work yet: ${notSetUp.map((m) => `${m.name} (${m.role})`).join(", ")}.`);
   const tools = new Set(working.map((m) => m.tool).filter(Boolean));
+  const offered = new Map<string, string[]>();
+  for (const m of working) if (m.tool && m.models?.length && !offered.has(m.tool)) offered.set(m.tool, m.models);
+  if (offered.size) {
+    lines.push(`Models you can choose per task: ${[...offered].map(([tool, models]) => `${TOOL_NAME[tool] ?? tool}: ${models.join(", ")}`).join("; ")}.`);
+    lines.push("Set a task's \"model\" to one its agent's tool offers: the strongest for hard reasoning, architecture or design, a lighter, faster one for simple or repetitive work. Without it the agent uses its own model.");
+  }
   if (tools.size > 1) {
     lines.push(TOOL_STRENGTHS);
     lines.push("Your team has both tools: make them work together. Give each task to the agent best suited for it, name it in the task's \"agent\" with a short \"why\", and spread the work over both tools when it fits. Reviews go to an agent on the other tool automatically.");

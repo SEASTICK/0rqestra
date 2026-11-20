@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { app, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import { app, clipboard, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { ChatService } from "./chat-service";
+import { AttachmentStore } from "./attachments";
 import { ClaudeCodeAdapter } from "./providers/claude-code";
 import { CodexAdapter } from "./providers/codex";
 import { toolEnvironment } from "./providers/tool-env";
@@ -30,7 +31,9 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   };
-  service = new ChatService(adapters, cwd, Date.now, teamNow);
+  const store = new AttachmentStore(path.join(app.getPath("userData"), "attachments"));
+  store.prune();
+  service = new ChatService(adapters, cwd, Date.now, teamNow, (id) => store.get(id));
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
   };
@@ -52,6 +55,26 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
       }
     });
   });
+  // A file or image the user added to a message: its bytes, checked and kept here (attachments.ts).
+  ipcMain.handle("chat:attach", (event, payload: unknown) => {
+    guard(event);
+    return store.add(payload);
+  });
+  // Copy a code block from the chat.
+  ipcMain.handle("chat:copy", (event, text: unknown) => {
+    guard(event);
+    if (typeof text !== "string" || text.length > 1_000_000) return false;
+    clipboard.writeText(text);
+    return true;
+  });
+  // A link in a reply opens in the user's own browser, and only when it is a web address.
+  ipcMain.handle("chat:open-link", async (event, raw: unknown) => {
+    guard(event);
+    const url = safeWebUrl(raw);
+    if (!url) return false;
+    await shell.openExternal(url);
+    return true;
+  });
   ipcMain.handle("chat:stop", (event, requestId: unknown) => {
     guard(event);
     return service!.stop(requestId);
@@ -59,4 +82,10 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
   // Nothing keeps running in the background after the app quits.
   app.on("before-quit", () => service?.stopAll());
   return service;
+}
+
+export function safeWebUrl(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.length > 2000 || !URL.canParse(raw)) return null;
+  const url = new URL(raw);
+  return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
 }
