@@ -84,9 +84,25 @@ async function runChecks(
   )) as boolean;
   record("window.open is denied", popupBlocked, popupBlocked);
 
-  await contents.executeJavaScript("location.href = 'https://example.invalid/'; 0");
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  record("navigation away from the app page is blocked", isRendererUrl(contents.getURL()), contents.getURL());
+  // Navigating away must not get anywhere: no page from elsewhere loads, and no load from elsewhere even
+  // fails. A fixed short wait was not enough on macOS, where the address resolves slowly, so this waits
+  // (up to 4 s) for such a load to end, and stops early when one does.
+  const outside = await new Promise<string | null>((resolve) => {
+    const done = (url: string | null) => {
+      clearTimeout(timer);
+      contents.off("did-navigate", onNavigate);
+      contents.off("did-fail-load", onFail);
+      resolve(url);
+    };
+    const onNavigate = (_event: unknown, url: string) => { if (!isRendererUrl(url)) done(url); };
+    const onFail = (_event: unknown, _code: number, _description: string, url: string, isMainFrame: boolean) => { if (isMainFrame && !isRendererUrl(url)) done(url); };
+    const timer = setTimeout(() => done(null), 4000);
+    contents.on("did-navigate", onNavigate);
+    contents.on("did-fail-load", onFail);
+    void contents.executeJavaScript("location.href = 'https://example.invalid/'; 0");
+  });
+  const reached = outside;
+  record("navigation away from the app page is blocked", reached === null && isRendererUrl(contents.getURL()), reached ?? contents.getURL());
 
   return failed;
 }
