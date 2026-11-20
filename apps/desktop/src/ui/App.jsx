@@ -11,7 +11,7 @@ import {ProfileMenu,SettingsDialog,HelpDialog,UpdateIntro} from './Shell.jsx';
 import {readTheme,applyTheme} from './theme.mjs';
 import {readLaunch,dismissBoot} from './launch.mjs';
 import {ChatTargetPicker,AssistantMessage} from './LiveChat.jsx';
-import {readTarget,saveTarget,effectiveTarget,historyFor,newAssistant,applyChatEvent,settleInterrupted,parsePlanRequest,plannerOf,replanMessage,placeProducts,isRealAgent,autoTeam,teamNeedsSetup,readyProviders,teamMembers,teamAgents,planAssignments,newTeamRun,applyTeamEvent,nodeStates,agentTarget,nodeFieldsFor,agentBadge,TEST_PROMPT,isTerminal} from './live-chat.mjs';
+import {readTarget,saveTarget,effectiveTarget,historyFor,newAssistant,applyChatEvent,settleInterrupted,parsePlanRequest,plannerOf,replanMessage,planningUsage,placeProducts,isRealAgent,autoTeam,teamNeedsSetup,readyProviders,teamMembers,teamAgents,planAssignments,newTeamRun,applyTeamEvent,nodeStates,agentTarget,nodeFieldsFor,agentBadge,TEST_PROMPT,isTerminal} from './live-chat.mjs';
 import {AgentRunsOn,TryAgent} from './AgentRuntime.jsx';
 import {PlanCard,TeamRunCard,PlannerCard} from './TeamRun.jsx';
 import {ProductNode,ProductPreview} from './Preview.jsx';
@@ -277,7 +277,7 @@ function App() {
     const requestId=id();
     patchMessage(projectId,messageId,m=>({...m,planning:{status:'running',requestId,plannerId:planner.id,plannerName:planner.name}}));
     team.plan({requestId,projectId,brief,planner,agents:teamAgents(proj.graph),team:teamMembers(proj.graph)})
-      .then(result=>patchMessage(projectId,messageId,m=>({...m,planning:{status:'done',plannerId:planner.id,plannerName:planner.name,plan:result.plan,summary:result.summary}})))
+      .then(result=>patchMessage(projectId,messageId,m=>({...m,planning:{status:'done',plannerId:planner.id,plannerName:planner.name,plan:result.plan,summary:result.summary,usage:result.usage||null,tool:planner.tool}})))
       .catch(error=>patchMessage(projectId,messageId,m=>({...m,planning:{status:'failed',plannerName:planner.name,error:String(error?.message||error).replace(/^Error invoking remote method '[^']+': (Error: )?/,'')}})))
       .finally(()=>void refreshProviders(false));
   }
@@ -287,7 +287,7 @@ function App() {
     // A stable run id per approved plan: retrying a start that was refused reuses it, so a
     // coordinated start can never hold two reservations for the same plan.
     const runId=`plan-${String(assistantId).replace(/[^A-Za-z0-9_-]/g,'').slice(0,90)}`;const messageId=id();const projectId=project.id;
-    patchProject({messages:[...project.messages.map(m=>m.id===assistantId?{...m,planStarted:runId}:m),{id:messageId,kind:'team',runId,run:newTeamRun(runId,plan)}]});
+    const source=project.messages.find(m=>m.id===assistantId);patchProject({messages:[...project.messages.map(m=>m.id===assistantId?{...m,planStarted:runId}:m),{id:messageId,kind:'team',runId,run:newTeamRun(runId,plan,planningUsage(source))}]});
     teamRuns.current.set(runId,{projectId,messageId});
     // A refused or failed start ran nothing: the plan can be started again (retry) or changed.
     const notStarted=(summary)=>{teamRuns.current.delete(runId);updateTeamRun(projectId,messageId,run=>applyTeamEvent(run,{type:'run-finished',status:'failed',summary,files:[],calls:0,usage:null}));setProjects(ps=>ps.map(p=>p.id!==projectId?p:{...p,messages:p.messages.map(m=>m.id===assistantId?{...m,planStarted:undefined}:m)}));};

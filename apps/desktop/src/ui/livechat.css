@@ -270,3 +270,8 @@
 .teams-code-invite>summary{cursor:pointer;font-size:12px;color:var(--shell-muted);margin-bottom:8px}
 .teams-inline select{flex:1;min-width:0}
 .team-brief{color:var(--shell-muted)}
+.team-usage{margin-top:8px;font-size:12px;color:var(--shell-muted)}
+.team-usage>summary{cursor:pointer}
+.team-usage ul{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:3px}
+.team-usage li{display:flex;justify-content:space-between;gap:12px}
+.team-usage-note{margin:6px 0 0}

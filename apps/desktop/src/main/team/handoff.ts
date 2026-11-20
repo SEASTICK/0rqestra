@@ -44,10 +44,10 @@ const EXCERPT_CHARS = 1500;
 // the agent gets what it got before (the files of the tasks it depends on, existing files its goal
 // names, and its own files if they exist).
 export function legacyHandoff(plan: Plan, task: PlanTask, existing: string[]): Handoff {
-  const fromDeps = plan.tasks.filter((t) => task.dependsOn.includes(t.id)).flatMap((t) => t.deliverables.map((file) => ({ file, why: `Delivered by task ${t.id} (${t.title}).`, full: true })));
+  const fromDeps = plan.tasks.filter((t) => task.dependsOn.includes(t.id)).flatMap((t) => t.deliverables.map((file) => ({ file, why: "", full: true })));
   const mentioned = existing
     .filter((f) => task.goal.includes(f) && !fileOwner(plan, f))
-    .map((file) => ({ file, why: "Named in the task.", full: true }));
+    .map((file) => ({ file, why: "", full: true }));
   return {
     deliverable: `The files ${task.deliverables.join(", ")}, doing what the task asks.`,
     decisions: [],
@@ -103,7 +103,7 @@ export function resolveHandoff(plan: Plan, task: PlanTask, workspace: string, ou
     const owner = fileOwner(plan, file);
     if (owner && owner.id === task.id) {
       // The task's own file: its current content, if it already exists, so it can be changed.
-      if (have.has(file.toLowerCase())) attach(file, "its current content (this task delivers it)", ref.why, true);
+      if (have.has(file.toLowerCase())) attach(file, "your current version", ref.why, true);
       continue;
     }
     if (owner && !before.has(owner.id)) {
@@ -117,7 +117,7 @@ export function resolveHandoff(plan: Plan, task: PlanTask, workspace: string, ou
     attach(file, owner ? `from task ${owner.id}` : "a project file", ref.why, ref.full);
   }
   // Its own files, if they exist, so the agent changes them instead of starting over.
-  for (const own of task.deliverables) if (have.has(own.toLowerCase())) attach(own, "its current content (this task delivers it)", "You are changing this file.", true);
+  for (const own of task.deliverables) if (have.has(own.toLowerCase())) attach(own, "your current version", "", true);
   // The tasks it directly depends on, in a line each.
   for (const d of task.dependsOn) {
     const line = describe(d);
@@ -127,25 +127,32 @@ export function resolveHandoff(plan: Plan, task: PlanTask, workspace: string, ou
   return { handoff, attachments, earlier, problems, provided: [], dependents };
 }
 
-const bullets = (items: string[], empty: string) => (items.length ? items.map((i) => `- ${i}`).join("\n") : `- ${empty}`);
+const bullets = (items: string[]) => items.map((i) => `- ${i}`).join("\n");
 
-// The handoff in the one format every role reads. `forReview` shows references by name only: the
-// reviewer checks the submitted work against the requirements.
+// The handoff in the one format every role reads. The structured handoff is kept whole inside the
+// app; the prompt only shows the parts that say something (Stage 3: empty sections, defaults and
+// repeated lines cost tokens on every call and tell the agent nothing). Project rules are always
+// shown. Referenced files are listed with the files themselves (prompts.ts), not twice.
 export function handoffText(plan: Plan, task: PlanTask, resolved: ResolvedHandoff, forReview = false): string {
   const h = resolved.handoff;
   const rules = [...(plan.rules ?? []).map((r) => `[project] ${r}`), ...h.rules.map((r) => `[task] ${r}`)];
-  const refs = resolved.attachments.map((a) => `- ${a.path} (${a.source}${forReview ? "" : a.full ? ", full file below" : ", excerpt below"})${a.why ? `: ${a.why}` : ""}`);
-  return [
+  const parts = [
     `HANDOFF for task ${task.id}: ${task.title} (${task.role})`,
-    `Goal: ${task.goal}`,
-    `Expected deliverable: ${h.deliverable || task.deliverables.join(", ")}`,
+    `Goal: ${task.goal}${h.deliverable && !task.goal.includes(h.deliverable) ? `\nExpected deliverable: ${h.deliverable}` : ""}`,
     `Deliver exactly these files: ${task.deliverables.join(", ")}`,
-    `Decisions already made (do not reopen them):\n${bullets(h.decisions, "None recorded.")}`,
-    `Rules and constraints (must follow):\n${bullets(rules, "No project rules beyond the app's rules below.")}`,
-    `Findings:\n${bullets(h.findings, "None recorded.")}`,
-    `References:\n${refs.length ? refs.join("\n") : "- None."}${resolved.earlier.length ? `\nEarlier tasks:\n${resolved.earlier.join("\n\n")}` : ""}`,
-    ...(resolved.provided.length ? [`Details you asked for:\n${resolved.provided.join("\n\n")}`] : []),
-    `Acceptance criteria:\n${bullets(h.acceptance, "The work does what the task asks.")}`,
-    `How it will be verified: ${h.verify || "A reviewer reads the delivered files against this handoff."}`,
-  ].join("\n\n");
+  ];
+  if (h.decisions.length) parts.push(`Decisions already made (do not reopen them):\n${bullets(h.decisions)}`);
+  if (rules.length) parts.push(`Rules and constraints (must follow):\n${bullets(rules)}`);
+  if (h.findings.length) parts.push(`Findings:\n${bullets(h.findings)}`);
+  if (forReview && resolved.attachments.length) parts.push(`The author read: ${resolved.attachments.map((a) => a.path).join(", ")}`);
+  if (resolved.earlier.length) parts.push(`Earlier tasks:\n${resolved.earlier.join("\n\n")}`);
+  if (resolved.provided.length) parts.push(`Details you asked for:\n${resolved.provided.join("\n\n")}`);
+  if (h.acceptance.length) parts.push(`Acceptance criteria:\n${bullets(h.acceptance)}`);
+  if (h.verify) parts.push(`How it will be verified: ${h.verify}`);
+  return parts.join("\n\n");
+}
+
+// How a referenced file is introduced to the agent, with why it is there.
+export function attachmentHeader(a: Attachment): string {
+  return `--- ${a.path} (${a.source}${a.full ? "" : ", excerpt"}${a.why ? `: ${a.why}` : ""}) ---`;
 }

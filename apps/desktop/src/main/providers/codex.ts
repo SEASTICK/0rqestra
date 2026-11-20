@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import { codexUsage } from "./usage";
 import { buildPrompt } from "./history";
 import { EFFORT_NAME, findBinary, killTree, MODEL_NAME, onJsonLines, providerEnv, runShort, spawnTool, type ToolBinary } from "./process";
 import { toolEnvironment } from "./tool-env";
@@ -239,8 +240,8 @@ export class CodexAdapter implements ProviderAdapter {
         const item = params.item as { type?: string; text?: string } | undefined;
         if (item?.type === "agentMessage" && typeof item.text === "string") finalText += (finalText ? "\n\n" : "") + item.text;
       } else if (method === "thread/tokenUsage/updated") {
-        const total = (params.tokenUsage as { total?: { inputTokens?: number; outputTokens?: number } } | undefined)?.total;
-        if (total) usage = { inputTokens: total.inputTokens ?? null, outputTokens: total.outputTokens ?? null };
+        // Sent again while the turn streams, with running totals: the latest one replaces the last.
+        usage = codexUsage(params.tokenUsage) ?? usage;
       } else if (method === "account/rateLimits/updated") {
         limits = limitsFrom(params.rateLimits);
       } else if (method === "turn/completed") {
@@ -289,7 +290,7 @@ export class CodexAdapter implements ProviderAdapter {
       if (!threadId) return finish({ type: "failed", reason: "provider_error", message: "Codex did not start a conversation.", text });
       queue.push({ type: "started", model: thread?.model ?? request.model });
       const turn = await rpc.request<{ turn?: { id?: string } }>("turn/start", {
-        threadId, input: [{ type: "text", text: request.raw ? request.text : buildPrompt(request.history, request.text, request.team, request.teamNow) }], ...(request.effort ? { effort: request.effort } : {}),
+        threadId, input: [{ type: "text", text: request.raw ? request.text : buildPrompt(request.history, request.text, request.team, request.teamNow, request.planMode ? "plan" : "auto") }], ...(request.effort ? { effort: request.effort } : {}),
       });
       turnId = turn?.turn?.id ?? null;
       if (control.stopped) control.stop();

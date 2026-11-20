@@ -1,6 +1,6 @@
 // Fake `claude` for offline tests of the chat adapter. It never contacts a provider.
 // FAKE_AUTH: subscription (default) | apikey | signed-out.  FAKE_MODE: stream | no-deltas | error |
-// crash | slow | stubborn.  FAKE_LOG: file that receives the arguments, the prompt, and whether an
+// crash | slow | stubborn | stall | stall-fake-tool.  FAKE_LOG: file that receives the arguments, the prompt, and whether an
 // API key reached the process.
 import fs from "node:fs";
 import readline from "node:readline";
@@ -45,6 +45,12 @@ if (args.includes("--version")) {
     } else if (mode === "error") {
       emit({ type: "result", subtype: "success", is_error: true, result: "Claude AI usage limit reached" });
       process.exit(1);
+    } else if (mode === "stall-fake-tool") {
+      // Like Claude Code without tools wanting to open a file: the same tool call as text, forever.
+      delta("Let me look. ");
+      timer = setInterval(() => delta('<invoke name="Bash">cat sources.md</invoke> '), 20);
+    } else if (mode === "stall") {
+      delta("Starting the answer");
     } else if (mode === "crash") {
       process.stderr.write("boom\n");
       process.exit(3);

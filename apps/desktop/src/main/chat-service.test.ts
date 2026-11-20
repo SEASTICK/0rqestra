@@ -100,3 +100,54 @@ describe("ChatService", () => {
     expect(claude.statusCalls).toBe(3);
   });
 });
+
+describe("light chat and the plan-needed fallback (Stage 3)", () => {
+  it("sends plain questions without the planning instructions, and work requests with them", async () => {
+    const { buildPrompt, wantsTeamWork, PLAN_NEEDED } = await import("./providers/history.js");
+    const team = [{ name: "Bob", role: "Builder", ready: true }];
+    const question = buildPrompt([], "What will the reviewer do? Do not make a plan.", team);
+    expect(question).not.toContain("<orqestra-plan>");
+    expect(question).toContain(PLAN_NEEDED);
+    expect(question).toContain("- Builder: Bob (can work)");
+    expect(buildPrompt([], "Add multiply to math.js", team)).toContain("<orqestra-plan>");
+    expect(buildPrompt([], "What is this?", team, null, "plan")).toContain("<orqestra-plan>");
+    expect(wantsTeamWork("Bygg en inloggningssida")).toBe(true);
+    expect(wantsTeamWork("Vad gör granskaren?")).toBe(false);
+    expect(wantsTeamWork("Option A", [{ role: "assistant", text: "Which?\n<orqestra-question>{}</orqestra-question>" }])).toBe(true);
+    // Without a team there is nothing to plan for, so nothing about plans is sent.
+    expect(buildPrompt([], "Add a page", [])).not.toContain(PLAN_NEEDED);
+  });
+
+  it("asks again with the planning instructions when the Manager needs them, shows only the second reply, and adds both usages", async () => {
+    const { claude, service, emitted, emit } = setup();
+    service.start({ ...valid, team: [{ name: "Bob", role: "Builder", ready: true }], text: "Hmm, the page" }, emit);
+    claude.queues[0]!.push({ type: "started", model: "m" });
+    claude.queues[0]!.push({ type: "delta", text: "<orqestra-plan" });
+    claude.queues[0]!.push({ type: "delta", text: "-needed/>" });
+    claude.queues[0]!.push({ type: "completed", text: "<orqestra-plan-needed/>", usage: { inputTokens: 100, outputTokens: 5, cachedInputTokens: 80 }, limits: [] });
+    claude.queues[0]!.end();
+    await tick(); await tick();
+    expect(claude.requests).toHaveLength(2);
+    expect(claude.requests[1]!.planMode).toBe(true);
+    claude.queues[1]!.push({ type: "started", model: "m" });
+    claude.queues[1]!.push({ type: "delta", text: "Here is a plan." });
+    claude.queues[1]!.push({ type: "completed", text: "Here is a plan.", usage: { inputTokens: 900, outputTokens: 60, cachedInputTokens: 700 }, limits: [] });
+    claude.queues[1]!.end();
+    await tick(); await tick();
+    const events = emitted.map(([, e]) => e);
+    expect(events.some((e) => e.type === "delta" && e.text.includes("plan-needed"))).toBe(false);
+    expect(events.at(-1)).toEqual({ type: "completed", text: "Here is a plan.", usage: { inputTokens: 1000, outputTokens: 65, cachedInputTokens: 780 }, limits: [] });
+  });
+
+  it("passes an ordinary reply straight through, even one that starts like the marker", async () => {
+    const { claude, service, emitted, emit } = setup();
+    service.start(valid, emit);
+    claude.queues[0]!.push({ type: "delta", text: "<orq" });
+    claude.queues[0]!.push({ type: "delta", text: "estra is the app" });
+    claude.queues[0]!.push({ type: "completed", text: "<orqestra is the app", usage: null, limits: [] });
+    claude.queues[0]!.end();
+    await tick(); await tick();
+    expect(claude.requests).toHaveLength(1);
+    expect(emitted.map(([, e]) => (e.type === "delta" ? e.text : e.type))).toEqual(["<orq", "estra is the app", "completed"]);
+  });
+});

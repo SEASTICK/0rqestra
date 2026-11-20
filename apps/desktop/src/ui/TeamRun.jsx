@@ -1,5 +1,6 @@
 // The Manager's plan, and the team working on it, as cards in the chat.
 import React from 'react';
+import { runUsage } from './live-chat.mjs';
 
 const STATUS_LABEL = {
   waiting: 'Waiting', working: 'Working', waiting_context: 'Waiting for context', reviewing: 'In review', done: 'Done', unverified: 'Done, not reviewed',
@@ -35,6 +36,21 @@ export function PlanCard({ plan, assignments, startedRunId, busy, onStart, onTre
   );
 }
 
+// Tokens per agent and for the whole run, including planning (Stage 3).
+function UsageDetails({ run }) {
+  const u = runUsage(run);
+  if (!u || !u.calls) return null;
+  return (
+    <details className="team-usage">
+      <summary>Usage: {u.total} · {u.calls} call{u.calls === 1 ? '' : 's'}{u.retries ? ` · ${u.retries} retr${u.retries === 1 ? 'y' : 'ies'}` : ''}{u.contextRequests ? ` · ${u.contextRequests} context request${u.contextRequests === 1 ? '' : 's'}` : ''}</summary>
+      <ul>
+        {u.rows.map((r) => <li key={r.label}><span>{r.label}</span><small>{r.calls} call{r.calls === 1 ? '' : 's'}{r.kinds ? ` (${r.kinds})` : ''} · {r.text}</small></li>)}
+      </ul>
+      {u.partial && <p className="team-usage-note">Partial: some calls did not report their tokens, so the totals leave them out.</p>}
+    </details>
+  );
+}
+
 export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPreview }) {
   const running = run.status === 'running';
   const tokens = run.usage && (run.usage.inputTokens || run.usage.outputTokens) ? ` · ${run.usage.inputTokens} in · ${run.usage.outputTokens} out tokens` : '';
@@ -61,6 +77,7 @@ export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPre
         ))}
       </ul>
       {run.summary && <p className="team-summary">{run.summary}</p>}
+      <UsageDetails run={run}/>
       <div className="team-foot">
         <span>{run.calls ? `${run.calls} agent request${run.calls === 1 ? '' : 's'}${tokens}` : running ? 'Starting…' : ''}</span>
         <span className="team-actions">

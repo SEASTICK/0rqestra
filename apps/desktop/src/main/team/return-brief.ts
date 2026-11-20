@@ -118,8 +118,9 @@ export function completeBrief(parsed: Omit<ReturnBrief, "given"> | null, taskId:
 
 const bullets = (items: string[]) => items.map((i) => `- ${i}`).join("\n");
 
-// A brief for a reader: the Manager, a downstream task, or a reviewer. `onlyFor` keeps the findings
-// that matter for one task and lists the others by id, so they can be asked for.
+// A brief for a reader: a later task (onlyFor: its id) or the Manager. A later task gets what affects
+// its work: the outcome, decisions, the findings tagged for it (the others by id, to ask for) and
+// what is still open. What the app verified goes to the reviewer and the Manager, not to every task.
 export function briefText(brief: ReturnBrief, label: string, onlyFor: string | null = null): string {
   const relevant = onlyFor ? brief.findings.filter((f) => f.for.includes("all") || f.for.includes(onlyFor)) : brief.findings;
   const others = onlyFor ? brief.findings.filter((f) => !relevant.includes(f)) : [];
@@ -127,27 +128,32 @@ export function briefText(brief: ReturnBrief, label: string, onlyFor: string | n
   if (brief.decisions.length) parts.push(`Decisions:\n${bullets(brief.decisions)}`);
   if (relevant.length) parts.push(`Findings:\n${bullets(relevant.map((f) => `${f.id} ${f.title}${f.detail && f.detail !== f.title ? `: ${f.detail}` : ""}`))}`);
   if (others.length) parts.push(`Other findings you can ask for by id: ${others.map((f) => `${f.id} (${f.title})`).join("; ")}`);
-  if (brief.evidence.length) parts.push(`Evidence: ${brief.evidence.join(", ")}`);
-  if (brief.verified.length) parts.push(`Verified:\n${bullets(brief.verified.map((v) => `${v.text} [${v.source === "runner" ? "checked by the app" : "agent-reported, not checked by the app"}]`))}`);
+  if (!onlyFor && brief.evidence.length) parts.push(`Evidence: ${brief.evidence.join(", ")}`);
+  if (!onlyFor && brief.verified.length) parts.push(`Verified:\n${bullets(brief.verified.map((v) => `${v.text} [${v.source === "runner" ? "checked by the app" : "agent-reported, not checked by the app"}]`))}`);
   if (brief.unresolved.length) parts.push(`Unresolved:\n${bullets(brief.unresolved)}`);
-  if (!brief.given) parts.push("(The agent gave no brief; this one is built from what the app observed.)");
   return parts.join("\n");
 }
 
-// How every worker answers, including the brief and how to ask for missing context.
+// For the reviewer: only what the author claims and the app could not check, and what is open.
+// The app's own checks are listed separately, in the verification results.
+export function claimsText(brief: ReturnBrief): string {
+  const claims = brief.verified.filter((v) => v.source === "agent-reported");
+  const parts: string[] = [];
+  if (claims.length) parts.push(bullets(claims.map((v) => `${v.text} [agent-reported, not checked by the app]`)));
+  if (brief.decisions.length) parts.push(`Decisions the author made:\n${bullets(brief.decisions)}`);
+  if (brief.unresolved.length) parts.push(`Still open:\n${bullets(brief.unresolved)}`);
+  return parts.join("\n");
+}
+
+// How every worker ends its answer: a short brief, and how to ask for missing context. A task no
+// other task builds on only needs the outcome; one that others use also tags its findings for them.
 export function answerFormat(dependents: { id: string; title: string }[]): string {
+  const brief = dependents.length
+    ? '<orqestra-brief>{"summary": "...", "decisions": [], "findings": [{"title": "...", "detail": "...", "for": ["t2"]}], "verified": [], "unresolved": []}</orqestra-brief>'
+    : '<orqestra-brief>{"summary": "...", "verified": [], "unresolved": []}</orqestra-brief>';
   return [
-    "End your answer with a short brief for the Manager and the tasks after yours, exactly in this form:",
-    '<orqestra-brief>{"summary": "One or two sentences on the outcome.", "decisions": ["Choices you made that others must follow"], ' +
-      '"findings": [{"title": "A short name", "detail": "The fact, briefly", "for": ["t2"]}], "evidence": ["files or notes that back it up"], ' +
-      '"verified": ["What you checked and how"], "unresolved": ["Anything still open"]}</orqestra-brief>',
-    dependents.length
-      ? `Tasks that use your result: ${dependents.map((d) => `${d.id} (${d.title})`).join(", ")}. Tag each finding with the ids it matters for, or "all".`
-      : 'Tag each finding with "all".',
-    "If you cannot do the task without something you were not given, do not guess and do not deliver files. Ask instead, with",
-    "nothing after it (at most 3 requests):",
-    '<orqestra-need>[{"kind": "file", "ref": "path/of/the.file", "why": "..."}, {"kind": "finding", "ref": "t1.f3", "why": "..."}, ' +
-      '{"kind": "decision", "ref": "the decision you need", "why": "..."}, {"kind": "question", "task": "t1", "ref": "your question", "why": "..."}]</orqestra-need>',
-    "Ask only for what this task needs. You get it in the next message; a request cannot give you access to more files.",
+    `End with a brief (leave out empty lists): ${brief}`,
+    ...(dependents.length ? [`Tasks that use your result: ${dependents.map((d) => `${d.id} (${d.title})`).join(", ")}. Tag each finding with the ids it matters for, or "all".`] : []),
+    'Missing something this task needs? Instead of files, answer only: <orqestra-need>[{"kind": "file|finding|decision|question", "ref": "...", "task": "t1 (for a question)", "why": "..."}]</orqestra-need>',
   ].join("\n");
 }

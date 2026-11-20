@@ -138,7 +138,7 @@ describe("team run", () => {
     expect(finished).toMatchObject({ status: "done", calls: 4, usage: { inputTokens: 40, outputTokens: 20 } });
     expect(finished.files.map((f) => f.path).sort()).toEqual(["css/style.css", "index.html"]);
     expect(fs.readFileSync(path.join(dir, "index.html"), "utf8")).toBe("<h1>Log</h1>");
-    expect(codex.prompts[1]).toContain("--- index.html ---\n<h1>Log</h1>");
+    expect(codex.prompts[1]).toContain("--- index.html (from task t1) ---\n<h1>Log</h1>");
     expect(claude.prompts[0]).toContain("Review another agent's work");
     const order = events.filter((e) => e.type === "task" && e.status === "working").map((e) => (e as { taskId: string }).taskId);
     expect(order).toEqual(["t1", "t2"]);
@@ -275,8 +275,8 @@ describe("existing files", () => {
     const fixPlan = parsePlan({ goal: "Fix", tasks: [{ id: "f1", title: "Fix", role: "Builder", goal: "Fix the title in index.html; see notes.txt.", dependsOn: [], deliverables: ["index.html"] }] }, roles);
     const codex = new ScriptedTool("codex", () => file("index.html", "<h1>New</h1>"));
     await run(fixPlan, [builder], codex, new ScriptedTool("claude", () => approve));
-    expect(codex.prompts[0]).toContain("--- index.html ---\n<h1>Old</h1>");
-    expect(codex.prompts[0]).toContain("--- notes.txt ---\nkeep tabs");
+    expect(codex.prompts[0]).toContain("--- index.html (your current version) ---\n<h1>Old</h1>");
+    expect(codex.prompts[0]).toContain("--- notes.txt (a project file) ---\nkeep tabs");
     expect(fs.readFileSync(path.join(dir, "index.html"), "utf8")).toBe("<h1>New</h1>");
   });
 });

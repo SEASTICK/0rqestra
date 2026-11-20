@@ -23,6 +23,8 @@ export interface ChatRequest {
   team?: TeamMember[];
   // What teammates are doing in a shared project right now (Teams), or nothing for a solo project.
   teamNow?: string | null;
+  // Send the planning instructions whatever the message says (the Manager asked for them).
+  planMode?: boolean;
 }
 
 export interface TeamMember {
@@ -32,9 +34,12 @@ export interface TeamMember {
   ready: boolean;
 }
 
+// Every input token (cached ones included), output tokens, and how many input tokens came from the
+// cache. null means the tool did not report it (see usage.ts for how each tool counts).
 export interface Usage {
   inputTokens: number | null;
   outputTokens: number | null;
+  cachedInputTokens?: number | null;
 }
 
 export interface RateLimit {

@@ -257,8 +257,16 @@ export function planAssignments(plan, graph) {
   return plan.tasks.map((t) => ({ ...t, agent: agents.filter((a) => a.role === t.role).sort(byPriority)[0] || null }));
 }
 
-export function newTeamRun(id, plan) {
-  return { id, status: 'running', goal: plan.goal, tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, role: t.role, deliverables: t.deliverables, status: 'waiting', agentId: null, attempt: 0, note: null, review: null, files: [] })), summary: null, files: [], calls: 0, usage: null };
+// What planning this run cost (Stage 3): the Planner's call, or the Manager's reply that held the
+// plan. Only numbers are kept.
+export function planningUsage(message) {
+  if (!message) return null;
+  if (message.planning?.status === 'done') return { by: 'Planner', name: message.planning.plannerName || 'Planner', usage: message.planning.usage || null };
+  return { by: 'Manager', name: message.providerName || 'Manager', usage: message.usage || null };
+}
+
+export function newTeamRun(id, plan, planning = null) {
+  return { id, status: 'running', planning, goal: plan.goal, tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, role: t.role, deliverables: t.deliverables, status: 'waiting', agentId: null, attempt: 0, note: null, review: null, files: [] })), summary: null, files: [], calls: 0, usage: null };
 }
 
 export function applyTeamEvent(run, event) {
@@ -269,7 +277,8 @@ export function applyTeamEvent(run, event) {
     case 'review': return patch(event.taskId, (t) => ({ ...t, review: { reviewerId: event.reviewerId, approved: event.approved, problems: event.problems } }));
     case 'files': return patch(event.taskId, (t) => ({ ...t, files: event.files }));
     case 'brief': return patch(event.taskId, (t) => ({ ...t, brief: event.brief }));
-    case 'run-finished': return { ...run, status: event.status, summary: event.summary, files: event.files, calls: event.calls, usage: event.usage };
+    case 'usage': return { ...run, usageEntries: [...(run.usageEntries || []).filter((e) => e.seq !== event.entry.seq), event.entry] };
+    case 'run-finished': return { ...run, status: event.status, summary: event.summary, files: event.files, calls: event.calls, usage: event.usage, totals: event.totals || null };
     default: return run;
   }
 }
@@ -410,4 +419,49 @@ export function placeProducts(products, messages, graph) {
 export function previewUrl(host, product, version = 0) {
   if (!host || !product) return null;
   return `orqestra-preview://${host}/${product.entry.split('/').map(encodeURIComponent).join('/')}?v=${version}`;
+}
+
+// ---- Usage in a run's details (Stage 3) -----------------------------------------------------------
+// Numbers only, from the runner's ledger and the planning call. A call the tool reported no usage for
+// is "Unavailable"; totals that leave such calls out are "Partial".
+
+const fmt = (n) => Number(n || 0).toLocaleString('en-US');
+const tokens = (u) => (u && u.inputTokens != null && u.outputTokens != null
+  ? `${fmt(u.inputTokens)} in${u.cachedInputTokens ? ` (${fmt(u.cachedInputTokens)} cached)` : ''} · ${fmt(u.outputTokens)} out`
+  : 'Unavailable');
+
+export function runUsage(run) {
+  if (!run) return null;
+  const entries = run.usageEntries || [];
+  const byAgent = new Map();
+  for (const e of entries) {
+    const a = byAgent.get(e.agentId) || { name: e.agentName, role: e.role, calls: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, unavailable: 0, kinds: {} };
+    a.calls += 1;
+    a.kinds[e.kind] = (a.kinds[e.kind] || 0) + 1;
+    if (e.inputTokens == null || e.outputTokens == null) a.unavailable += 1;
+    a.inputTokens += e.inputTokens || 0;
+    a.cachedInputTokens += e.cachedInputTokens || 0;
+    a.outputTokens += e.outputTokens || 0;
+    byAgent.set(e.agentId, a);
+  }
+  const plan = run.planning;
+  const planKnown = Boolean(plan?.usage && plan.usage.inputTokens != null && plan.usage.outputTokens != null);
+  const rows = [];
+  if (plan) rows.push({ label: `Planning · ${plan.name} (${plan.by})`, calls: 1, text: tokens(plan.usage) });
+  for (const a of byAgent.values()) {
+    const kinds = Object.entries(a.kinds).map(([k, n]) => `${n} ${k === 'worker' ? 'work' : k}`).join(', ');
+    rows.push({ label: `${a.name} (${a.role})`, calls: a.calls, kinds, text: a.unavailable === a.calls ? 'Unavailable' : `${tokens(a)}${a.unavailable ? ' · Partial' : ''}` });
+  }
+  const unavailable = [...byAgent.values()].reduce((n, a) => n + a.unavailable, 0) + (plan && !planKnown ? 1 : 0);
+  const sum = (k) => [...byAgent.values()].reduce((n, a) => n + a[k], 0) + (planKnown ? plan.usage[k] || 0 : 0);
+  const calls = entries.length + (plan ? 1 : 0);
+  const t = run.totals || {};
+  return {
+    rows,
+    calls,
+    retries: t.retries || 0,
+    contextRequests: t.contextRequests || 0,
+    total: calls === 0 ? 'No model calls yet' : unavailable === calls ? 'Unavailable' : `${tokens({ inputTokens: sum('inputTokens'), cachedInputTokens: sum('cachedInputTokens'), outputTokens: sum('outputTokens') })}${unavailable ? ' · Partial' : ''}`,
+    partial: unavailable > 0,
+  };
 }

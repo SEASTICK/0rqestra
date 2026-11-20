@@ -23,26 +23,24 @@ const PREAMBLE = [
   "index of the option you would choose. Ask at most one question per reply, and none when the request is already clear.",
 ].join("\n");
 
+// Kept short on purpose: the Manager writes this for every plan, so every word here is paid for in
+// each planning call (input) and in what it writes back (output).
 export const PLAN_FORMAT = [
   "<orqestra-plan>",
-  '{"goal": "A simple workout log in the browser", "rules": ["Swedish user interface text", "Works offline; no accounts"], "tasks": [' +
-    '{"id": "t1", "title": "Build the page", "role": "Builder", "goal": "Concrete instructions for the agent.", "dependsOn": [], "deliverables": ["index.html"], ' +
-    '"handoff": {"deliverable": "One page where sets are logged and listed.", "decisions": ["Save sets in localStorage, not on a server"], "rules": ["No frameworks"], ' +
-    '"findings": ["The user logs exercise, sets, reps and weight"], "references": [], ' +
-    '"acceptance": ["Adding a set shows it in the list", "The list survives a reload"], "verify": "Read the code path for adding and reloading."}}, ' +
+  '{"goal": "A simple workout log", "rules": ["Swedish interface text"], "tasks": [' +
+    '{"id": "t1", "title": "Build the page", "role": "Builder", "goal": "Concrete instructions.", "dependsOn": [], "deliverables": ["index.html"], ' +
+    '"handoff": {"decisions": ["Save sets in localStorage"], "acceptance": ["A new set shows in the list", "The list survives a reload"]}}, ' +
     '{"id": "t2", "title": "Style it", "role": "Builder", "goal": "...", "dependsOn": ["t1"], "deliverables": ["style.css"], ' +
-    '"handoff": {"deliverable": "...", "decisions": [], "rules": [], "findings": [], "references": [{"file": "index.html", "why": "Style its class names", "full": true}], "acceptance": ["..."], "verify": "..."}}]}',
+    '"handoff": {"references": [{"file": "index.html", "why": "Its class names"}], "acceptance": ["..."]}}]}',
   "</orqestra-plan>",
 ].join("\n");
 
-// How the handoff fields are filled in: each task's agent gets only its task and its handoff.
+// How the handoff is filled in: each task's agent sees only its own task and handoff.
 export const HANDOFF_RULES = [
-  "Each task's agent sees only its own task and handoff, never this conversation. Put in the handoff what that job needs:",
-  "deliverable (what the finished work is), decisions already made that affect it, rules and constraints for it, findings",
-  "(verified facts and requirements it needs, so nobody redoes research), references (files it must read: a file an",
-  "earlier task it depends on delivers, its own file, or a file already in the project; \"full\": true only when it needs the",
-  "whole file; or {\"task\": \"t1\"} for an earlier task's result), acceptance (how to tell the work is done) and verify (how",
-  "the reviewer should check it). Put rules that apply to every task in the plan's \"rules\". Keep every item short.",
+  "Each agent sees only its own task and handoff, never this chat. In \"handoff\" give only what the goal does not already say:",
+  "acceptance (always: how to tell it is done), and when they matter decisions, rules, findings (facts it needs, so no one",
+  "redoes research) and references ({\"file\": ...} a file it must read, \"full\": true for the whole file; {\"task\": \"t1\"} an",
+  "earlier task's result). Leave out empty fields. Rules for every task go in the plan's \"rules\".",
 ].join("\n");
 
 // The app previews web products in an isolated frame that can load only the product's own files.
@@ -94,7 +92,30 @@ export function teamSection(team: TeamMember[]): string {
   return lines.join("\n");
 }
 
-export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember[], teamNow?: string | null): string {
+// Plain chat stays light (Stage 3): the planning instructions and the plan format are only sent when
+// the message asks for work to be done. This is decided in code, from the words of the message,
+// with no extra model call. If the guess is wrong and the Manager does need to plan, it answers with
+// only this marker, and the app asks it again with the planning instructions (see chat-service.ts).
+export const PLAN_NEEDED = "<orqestra-plan-needed/>";
+
+const LIGHT = [
+  "You can only talk in this reply. If the user wants files built, written or changed, answer with exactly",
+  `${PLAN_NEEDED} and nothing else; the app then asks you again with what you need to plan the work.`,
+].join("\n");
+
+const NO_PLAN = /\b(do not|don't|dont|no need to|without)\s+(make|write|create|draw up)?\s*(a\s+|any\s+)?plans?\b|\bno plan\b|\binte\b[^.?!]{0,30}\bplan/i;
+const WORK = /\b(build|create|make|write|add|implement|fix|change|update|edit|refactor|rename|remove|delete|generate|code|develop|design|style|translate|draft|bygg|bygga|skapa|skriv|skriva|lägg till|fixa|ändra|uppdatera|ta bort|koda|utveckla|designa|översätt)\b/i;
+
+// Whether a message asks for team work (planning), from its words alone.
+export function wantsTeamWork(text: string, history: ChatTurn[] = []): boolean {
+  if (NO_PLAN.test(text)) return false;
+  if (WORK.test(text)) return true;
+  // An answer to the Manager's own multiple-choice question usually continues planning.
+  const last = [...history].reverse().find((t) => t.role === "assistant");
+  return Boolean(last && last.text.includes("<orqestra-question>"));
+}
+
+export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember[], teamNow?: string | null, mode: "auto" | "plan" = "auto"): string {
   const kept: string[] = [];
   let used = 0;
   for (const turn of history.slice(-MAX_HISTORY_TURNS).reverse()) {
@@ -104,7 +125,10 @@ export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember
     used += line.length;
   }
   const parts = [PREAMBLE];
-  if (team && team.length) parts.push(hasWorkingPlanner(team) ? HANDOFF : PLANNING, teamSection(team));
+  if (team && team.length) {
+    const plan = mode === "plan" || wantsTeamWork(text, history);
+    parts.push(plan ? (hasWorkingPlanner(team) ? HANDOFF : PLANNING) : LIGHT, teamSection(team));
+  }
   if (teamNow) parts.push(teamNow);
   if (kept.length) parts.push(`Conversation so far:\n${kept.join("\n\n")}`);
   parts.push(`User: ${text.trim()}`);

@@ -221,7 +221,26 @@ Phase 3 uses the same question card when the plan needs a decision.
   written down, refuses anything outside the task's readable files, and sends new decisions or a
   missing file to the Manager chat (the task is blocked; independent tasks go on). Requests are
   answered once each, at most 2 rounds per task (`main/team/context-request.ts`).
-  Not yet: token measurements and usage reporting (stage 3), skills.
+- **Task handoffs, stage 3 (2026-11-19): usage.** Every request a run makes is recorded once
+  (`main/team/usage-ledger.ts`): agent, task, kind (work, review, follow-up), attempt, outcome, and
+  the input, cached-input and output tokens the tool reported, as numbers only. Claude Code reports
+  cached input apart from its input count; Codex includes it; both are normalised to "all input, of
+  which N cached" (`main/providers/usage.ts`). Codex's repeated usage updates replace each other;
+  a request without usage is "Unavailable" and makes the totals "Partial". The run card shows the
+  planning call and each agent. Reviewers now read the criteria, the checks and a diff first (the
+  whole file only when new, short or too long to compare); a retry gets its problems and its last
+  submitted version; broken JSON or JavaScript is caught before any review.
+  Plain chat stays light: the planning instructions and plan format go only with messages that ask
+  for work (decided from the words, no extra model call); if the Manager still needs to plan it
+  answers `<orqestra-plan-needed/>` and the app asks once more in plan mode, hiding the marker and
+  adding both usages. Prompts show only the handoff sections that say something, list referenced
+  files once, send the web rules only for web files, and ask a task nothing builds on for a short
+  brief. Found while benchmarking (2026-11-20): a reviewer asked to check facts from a file it was
+  not given, with no tools, made Claude Code write `<invoke name="Bash">cat sources.md</invoke>` as
+  text in an endless loop, so the call ran to the time limit (also in the old version). Reviewers
+  now get the files the author worked from (up to 6,000 characters), every agent is told it has no
+  tools, and the Claude Code adapter ends a reply that loops on fake tool calls (3 repeats or 15 s)
+  or goes silent (90 s) instead of waiting 10 minutes. Not yet: skills.
 - Verified: unit tests, and the flow in a browser with a stubbed bridge. **Not verified:** the
   Planner and the re-plan with the real Claude Code and Codex.
 The port of the Python engine's core, in TypeScript.

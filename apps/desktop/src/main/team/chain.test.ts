@@ -93,8 +93,9 @@ describe("handoff chain: Researcher -> Builder -> Reviewer", () => {
     expect(first).not.toContain("YYYY-MM-DD");
     expect(first).toContain("Other findings you can ask for by id: r1.f3 (Date format)");
     expect(first).toContain("- Weights in kg");
-    expect(first).toContain("Checked three gym apps [agent-reported, not checked by the app]");
-    expect(first).toContain("Delivered research.md: the expected files, none empty, no others. [checked by the app]");
+    // What was verified goes to the reviewer and the Manager; the builder gets what affects its work.
+    expect(first).not.toContain("Checked three gym apps");
+    expect(first).toContain("Unresolved:\n- Whether to support pounds");
     for (const p of [first, second]) {
       expect(p).not.toContain("RESEARCH-TRANSCRIPT-MARKER");
       expect(p).not.toContain("RESEARCH-FILE-MARKER");
@@ -107,10 +108,10 @@ describe("handoff chain: Researcher -> Builder -> Reviewer", () => {
     expect(events.some((e) => e.type === "task" && e.taskId === "b1" && e.status === "waiting_context" && e.note === "Waiting for context: r1.f3")).toBe(true);
     // Reviewer: the latest deliverable, the runner's checks, and the author's claims labelled.
     const review = t.claude.requests.map((r) => r.text).find((x) => x.includes("Review another agent's work") && x.includes("HANDOFF for task b1"))!;
-    expect(review).toContain("Submitted changes (the latest version):\n--- index.html ---\n<p>index.html v1</p>");
+    expect(review).toContain("Submitted changes (the latest version):\n--- index.html (new file) ---\n<p>index.html v1</p>");
     expect(review).toContain("Delivery check passed: index.html delivered");
     expect(review).toContain("All tests passed [agent-reported, not checked by the app]");
-    expect(review).toContain("Delivered index.html: the expected files, none empty, no others. [checked by the app]");
+    expect(review).toContain("What the author says:\n- All tests passed [agent-reported, not checked by the app]");
     // Briefs reach the window (and so the Manager's next turn), with the review the runner saw.
     const briefs = events.filter((e) => e.type === "brief") as Extract<TeamEvent, { type: "brief" }>[];
     expect(briefs.map((b) => b.taskId).sort()).toEqual(["b1", "d1", "r1"]);

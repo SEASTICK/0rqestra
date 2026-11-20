@@ -1,7 +1,7 @@
 import type { Plan, PlanTask } from "./plan";
 import { WEB_RULES } from "../providers/history";
-import { handoffText, type ResolvedHandoff } from "./handoff";
-import { answerFormat, briefText, type ReturnBrief } from "./return-brief";
+import { attachmentHeader, handoffText, type ResolvedHandoff } from "./handoff";
+import { answerFormat, claimsText, type ReturnBrief } from "./return-brief";
 
 // What the agents are asked, and how their answers are read. Agents have no tools, so they hand over
 // files as text in a fixed form, and the main process writes them.
@@ -13,49 +13,85 @@ export interface AgentRef {
 }
 
 // Every role gets the same handoff format (handoff.ts); what is in it depends on the job. A worker
-// gets the requirements and the files it needs; a reviewer gets the requirements, the submitted
-// changes and the automatic checks.
+// gets the requirements and the files it needs; a reviewer gets the requirements, the checks and
+// the change. Instructions are short and said once (Stage 3): they are paid for on every call.
 const fileBlocks = (files: { path: string; content: string }[]) => files.map((f) => `--- ${f.path} ---\n${f.content}`).join("\n\n");
 const list = (items: string[]) => items.map((i) => `- ${i}`).join("\n");
+// The web preview rules matter only for files a browser shows.
+const isWeb = (task: PlanTask) => task.deliverables.some((d) => /\.(html?|css)$/i.test(d));
 
-export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, resolved: ResolvedHandoff, problems: string[]): string {
+// A retry gets the specific problems and the version it submitted last, to fix rather than redo.
+export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, resolved: ResolvedHandoff, problems: string[], current: { path: string; content: string }[] = []): string {
   const parts = [
-    `You are ${agent.name}, the ${agent.role} in a team of AI agents led by a Manager in the app 0rqestra. You do one task.`,
-    `Project goal: ${plan.goal}`,
+    `You are ${agent.name}, the ${agent.role} in an AI team in the app 0rqestra. You do one task. Project goal: ${plan.goal}`,
     handoffText(plan, task, resolved),
   ];
-  if (resolved.attachments.length) parts.push(`Referenced files:\n${fileBlocks(resolved.attachments)}`);
+  const mine = new Set(current.map((f) => f.path.toLowerCase()));
+  const refs = resolved.attachments.filter((a) => !mine.has(a.path.toLowerCase()));
+  if (refs.length) parts.push(refs.map((a) => `${attachmentHeader(a)}\n${a.content}`).join("\n\n"));
   if (problems.length) parts.push(`Your previous attempt was not approved. Fix these problems:\n${list(problems)}`);
+  if (current.length) parts.push(`Your last submitted version (change only what the problems need):\n${fileBlocks(current)}`);
   parts.push(
     [
-      "Work only from this handoff: do not redo research or reopen decisions it records. Meet every acceptance criterion.",
-      "You cannot run tools or commands, and nothing you write is executed now. Write the complete content of every file.",
-      "Answer with one short sentence about what you did, then every file in exactly this form:",
+      "Work from this handoff only: do not redo research or reopen its decisions. You have no tools (you cannot open files or",
+      "run commands, so do not try); ask for what is missing as shown below. Nothing is run. Answer with one",
+      "sentence, then each listed file, complete, exactly as:",
       '<orqestra-file path="the/file.name">',
-      "the complete file content",
+      "content",
       "</orqestra-file>",
-      "Use exactly the file names listed above, and no other files.",
       answerFormat(resolved.dependents),
-      WEB_RULES,
+      ...(isWeb(task) ? [WEB_RULES] : []),
     ].join("\n"),
   );
   return parts.join("\n\n");
 }
 
-export function reviewPrompt(plan: Plan, task: PlanTask, reviewer: AgentRef, author: AgentRef, files: { path: string; content: string }[], resolved: ResolvedHandoff, checks: string[], authorBrief?: ReturnBrief): string {
+export interface Change {
+  path: string;
+  content: string;
+  // A unified diff against the version before this answer; null for a new file or a very long one.
+  diff: string | null;
+  isNew: boolean;
+}
+
+// Below this size a changed file is also shown whole, since the context around an edit is cheap.
+export const FULL_FILE_CHARS = 1500;
+
+// Reviewers read the acceptance criteria, the checks and the change first; the whole file only
+// when it is new, short, or too long to compare.
+export function changesText(changes: Change[]): string {
+  return changes.map((c) => {
+    if (c.isNew) return `--- ${c.path} (new file) ---\n${c.content}`;
+    if (c.diff === null) return `--- ${c.path} (changed; too long to compare, whole file) ---\n${c.content}`;
+    return c.content.length <= FULL_FILE_CHARS ? `${c.diff}\n\n--- ${c.path} (whole file after the change) ---\n${c.content}` : c.diff;
+  }).join("\n\n");
+}
+
+// The files the author worked from, shown to the reviewer up to this size in total, so a review can
+// check facts against their source instead of wanting to open it.
+export const REVIEW_SOURCE_CHARS = 6000;
+
+export function reviewPrompt(plan: Plan, task: PlanTask, reviewer: AgentRef, author: AgentRef, changes: Change[], resolved: ResolvedHandoff, checks: string[], authorBrief?: ReturnBrief): string {
+  const claims = authorBrief ? claimsText(authorBrief) : "";
+  const changed = new Set(changes.map((c) => c.path.toLowerCase()));
+  const sources = resolved.attachments.filter((a) => !changed.has(a.path.toLowerCase()));
+  const fits = sources.reduce((n, a) => n + a.content.length, 0) <= REVIEW_SOURCE_CHARS;
   return [
-    `You are ${reviewer.name}, the ${reviewer.role} in a team of AI agents in the app 0rqestra. Review another agent's work.`,
-    `Project goal: ${plan.goal}`,
-    `The task was done by ${author.name} (${author.role}) from this handoff:`,
+    `You are ${reviewer.name}, the ${reviewer.role} in an AI team in the app 0rqestra. Review another agent's work. Project goal: ${plan.goal}`,
+    `${author.name} (${author.role}) did this task:`,
     handoffText(plan, task, resolved, true),
-    `Submitted changes (the latest version):\n${fileBlocks(files)}`,
     `Verification results so far:\n${list(checks)}`,
-    ...(authorBrief ? [`Evidence from the author:\n${briefText(authorBrief, "Author's brief")}`] : []),
+    `Submitted changes (the latest version):\n${changesText(changes)}`,
+    ...(sources.length && fits ? [`What the author worked from:\n${sources.map((a) => `${attachmentHeader(a)}\n${a.content}`).join("\n\n")}`] : []),
+    ...(claims ? [`What the author says:\n${claims}`] : []),
     [
-      "Check the submitted files against each acceptance criterion, the decisions and the rules, and look for missing parts,",
-      "placeholders and clear bugs. Approve work that is good enough for a first version; list only problems that must be",
-      "fixed, naming the criterion or rule each one breaks.",
-      "End your answer with exactly this, with nothing after it:",
+      // Without tools, a model that wants to open a file can write a tool call as text and stall
+      // (seen with Claude Code, 2026-11-20). Say plainly that everything to check is here.
+      "You have no tools: you cannot open files or run commands, so do not try. Judge only from this message; if something",
+      "cannot be checked from it, say so in a problem instead.",
+      "Check the change against each acceptance criterion, decision and rule; look for missing parts, placeholders and clear",
+      "bugs. Approve work good enough for a first version; list only problems that must be fixed, each with the criterion or",
+      "rule it breaks. End with exactly:",
       '<orqestra-review>{"approved": true, "problems": []}</orqestra-review>',
     ].join("\n"),
   ].join("\n\n");

@@ -86,7 +86,7 @@ export function followUpPrompt(plan: Plan, from: PlanTask, brief: ReturnBrief | 
     `You did task ${from.id} (${from.title}, ${from.role}) in the project "${plan.goal}". Your task was: ${from.goal}`,
     brief ? `Your brief: ${brief.summary}${brief.findings.length ? `\nYour findings:\n${brief.findings.map((f) => `- ${f.id} ${f.title}: ${f.detail}`).join("\n")}` : ""}` : "",
     `Task ${asker.id} (${asker.title}, ${asker.role}) needs one detail from you to continue: ${question}`,
-    "Answer only that, briefly and concretely, from what you know about your task. Do not write files. If you do not know, say so.",
+    "Answer only that, briefly and concretely, from what you know about your task. You have no tools (you cannot open files), so do not try; do not write files. If you do not know, say so.",
     "End with exactly: <orqestra-answer>your answer</orqestra-answer>",
   ].filter(Boolean).join("\n\n");
 }

@@ -4,7 +4,9 @@ import { deliveryProblems, parseFiles, parseReview, reviewPrompt, workerPrompt, 
 import { resolveHandoff, type ResolvedHandoff, type TaskOutput } from "./handoff";
 import { followUpPrompt, needKey, parseAnswer, resolveNeed } from "./context-request";
 import { completeBrief, parseBrief, parseNeeds, type ContextNeed, type ReturnBrief } from "./return-brief";
-import { writeFiles } from "./workspace";
+import { UsageLedger, type CallKind, type UsageEntry, type UsageTotals } from "./usage-ledger";
+import { outputProblems, unifiedDiff } from "./diff";
+import { readFiles, writeFiles } from "./workspace";
 
 // Runs an approved plan with the agents in the tree. Plain code, no AI: the order, the limits, the
 // retries and the choice of agent are decided here (docs/backend-plan.md, phase 3).
@@ -27,7 +29,9 @@ export type TeamEvent =
   | { type: "review"; taskId: string; reviewerId: string; approved: boolean; problems: string[] }
   | { type: "files"; taskId: string; files: { path: string; bytes: number }[] }
   | { type: "brief"; taskId: string; brief: ReturnBrief }
-  | { type: "run-finished"; status: "done" | "failed" | "stopped"; summary: string; files: { path: string; bytes: number }[]; calls: number; usage: { inputTokens: number; outputTokens: number } };
+  | { type: "usage"; entry: UsageEntry }
+  // usage: token sums over the requests that reported them; totals: the full breakdown (Stage 3).
+  | { type: "run-finished"; status: "done" | "failed" | "stopped"; summary: string; files: { path: string; bytes: number }[]; calls: number; usage: { inputTokens: number; outputTokens: number }; totals?: UsageTotals };
 
 export interface Limits {
   maxCalls: number;
@@ -75,7 +79,7 @@ class Stopped extends Error {}
 export class TeamRun {
   private readonly limits: Limits;
   private calls = 0;
-  private usage = { inputTokens: 0, outputTokens: 0 };
+  private readonly ledger = new UsageLedger();
   private stopped = false;
   private readonly active = new Set<{ stop(): void }>();
   private readonly status = new Map<string, TaskStatus>();
@@ -101,10 +105,13 @@ export class TeamRun {
   }
 
   // One request to one agent. Returns the full text, or throws with a message for the next attempt.
-  private async ask(agent: TeamAgent, prompt: string): Promise<string> {
+  // Every request is recorded once in the usage ledger (Stage 3), also when it fails or is stopped:
+  // only the final event of a reply counts, so streamed updates never add up twice.
+  private async ask(agent: TeamAgent, prompt: string, meta: { taskId: string; kind: CallKind; attempt: number }): Promise<string> {
     if (this.stopped) throw new Stopped();
     if (this.calls >= this.limits.maxCalls) throw new Error(`The limit of ${this.limits.maxCalls} agent requests for this run is reached.`);
     this.calls += 1;
+    const seq = this.ledger.open();
     const handle = this.o.adapters[agent.tool].chat({ provider: agent.tool, model: agent.model, effort: agent.effort, history: [], text: prompt, cwd: this.o.cwd, raw: true });
     this.active.add(handle);
     let last: ChatEvent | null = null;
@@ -112,13 +119,14 @@ export class TeamRun {
       for await (const event of handle.events) last = event;
     } finally {
       this.active.delete(handle);
+      const usage: Usage | null = last?.type === "completed" ? last.usage : null;
+      const outcome = last?.type === "completed" ? "completed" : last?.type === "cancelled" || this.stopped ? "cancelled" : "failed";
+      const entry = this.ledger.record(seq, { ...meta, agentId: agent.id, agentName: agent.name, role: agent.role, tool: agent.tool, model: agent.model, outcome }, usage);
+      if (entry) this.o.emit({ type: "usage", entry });
     }
     if (this.stopped || last?.type === "cancelled") throw new Stopped();
     if (last?.type === "failed") throw new Error(`${agent.name}: ${last.message}`);
     if (last?.type !== "completed") throw new Error(`${agent.name} gave no answer.`);
-    const usage: Usage | null = last.usage;
-    this.usage.inputTokens += usage?.inputTokens ?? 0;
-    this.usage.outputTokens += usage?.outputTokens ?? 0;
     return last.text;
   }
 
@@ -136,13 +144,16 @@ export class TeamRun {
     const asked = new Set<string>();
     let rounds = 0;
     let problems: string[] = [];
+    // The latest submitted version: a retry fixes it instead of starting over (Stage 3).
+    let current: { path: string; content: string }[] = [];
     for (let attempt = 1; attempt <= this.limits.maxAttempts; attempt += 1) {
       // A retry goes to the next agent with the same role, if there is one (escalation by priority).
       const worker = workers[(attempt - 1) % workers.length]!;
       this.set(task, "working", worker.id, attempt, problems.length ? `Fixing: ${problems[0]}` : undefined);
       let text: string;
       try {
-        text = await this.ask(worker, workerPrompt(plan, task, worker, resolved, problems));
+        if (attempt > 1) this.ledger.retries += 1;
+        text = await this.ask(worker, workerPrompt(plan, task, worker, resolved, problems, problems.length ? current : []), { taskId: task.id, kind: "worker", attempt });
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
@@ -163,17 +174,28 @@ export class TeamRun {
         continue;
       }
       const { summary, files } = parseFiles(text);
+      // Deterministic checks first (missing or extra files, empty files, broken JSON or JavaScript):
+      // a reviewer is only asked about output that passes them.
       const delivery = deliveryProblems(task, files);
-      if (delivery.length) {
-        problems = delivery;
+      const outgoing = delivery.length ? [] : files.map((f) => ({ path: task.deliverables.find((d) => d.toLowerCase() === f.path.replace(/\\/g, "/").toLowerCase())!, content: f.content }));
+      const invalid = delivery.length ? [] : outputProblems(outgoing);
+      if (delivery.length || invalid.length) {
+        problems = [...delivery, ...invalid];
+        if (outgoing.length) current = outgoing;
         continue;
       }
-      const outgoing = files.map((f) => ({ path: task.deliverables.find((d) => d.toLowerCase() === f.path.replace(/\\/g, "/").toLowerCase())!, content: f.content }));
+      // What the files were before this answer, so the reviewer can read the change.
+      const previous = new Map(readFiles(workspace, outgoing.map((f) => f.path), Number.MAX_SAFE_INTEGER).map((f) => [f.path.toLowerCase(), f.content]));
       if (this.o.writeGuard) {
         await this.o.writeGuard.authorize(outgoing.map((f) => f.path));
         if (this.stopped) throw new Stopped();
       }
       const saved = writeFiles(workspace, outgoing);
+      current = outgoing;
+      const changes = outgoing.map((f) => {
+        const before = previous.get(f.path.toLowerCase());
+        return { path: f.path, content: f.content, diff: before === undefined ? null : unifiedDiff(f.path, before, f.content), isNew: before === undefined };
+      });
       for (const f of saved) this.written.set(f.path.toLowerCase(), f);
       this.o.emit({ type: "files", taskId: task.id, files: saved });
       const observed = [`Delivered ${saved.map((f) => f.path).join(", ")}: the expected files, none empty, no others.`];
@@ -191,10 +213,11 @@ export class TeamRun {
       try {
         const checks = [
           `Delivery check passed: ${task.deliverables.join(", ")} delivered, none empty, no other files.`,
+          ...(outgoing.some((f) => /\.(json|c?js)$/i.test(f.path)) ? ["Syntax check passed for the JSON and JavaScript files (compiled, not run)."] : []),
           ...(attempt > 1 ? [`This is attempt ${attempt}; the problems found last time were sent to the author.`] : []),
           "No code was run: agents cannot run tools in this version, so any test results in the author's brief are agent-reported.",
         ];
-        reviewText = await this.ask(reviewer, reviewPrompt(plan, task, reviewer, worker, outgoing, resolved, checks, brief));
+        reviewText = await this.ask(reviewer, reviewPrompt(plan, task, reviewer, worker, changes, resolved, checks, brief), { taskId: task.id, kind: "review", attempt });
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
@@ -225,6 +248,7 @@ export class TeamRun {
   private async answerNeeds(task: PlanTask, worker: TeamAgent, needs: ContextNeed[], asked: Set<string>, resolved: ResolvedHandoff, round: number): Promise<string | null> {
     const { plan, agents, workspace } = this.o;
     const waiting = needs.map((n) => n.ref).join("; ");
+    this.ledger.contextRequests += needs.length;
     this.set(task, "waiting_context", worker.id, 0, `Waiting for context: ${waiting}`);
     if (round > MAX_CONTEXT_ROUNDS) {
       return this.escalate(task, `Still missing after ${MAX_CONTEXT_ROUNDS} rounds of questions: ${waiting}`);
@@ -252,7 +276,7 @@ export class TeamRun {
           blockers.push(`Task ${from.id} would know (${need.ref}), but no agent has its role.`);
           continue;
         }
-        const reply = parseAnswer(await this.ask(answerer, followUpPrompt(plan, from, briefs.get(from.id), task, r.question)));
+        const reply = parseAnswer(await this.ask(answerer, followUpPrompt(plan, from, briefs.get(from.id), task, r.question), { taskId: task.id, kind: "follow-up", attempt: 0 }));
         if (reply) resolved.provided.push(`You asked task ${from.id} (${from.title}): ${need.ref}\nAnswer from ${answerer.name}: ${reply}`);
         else blockers.push(`Task ${from.id} could not answer: ${need.ref}`);
       }
@@ -322,6 +346,7 @@ export class TeamRun {
   }
 
   private finish(status: "done" | "failed" | "stopped", summary: string): void {
-    this.o.emit({ type: "run-finished", status, summary, files: [...this.written.values()], calls: this.calls, usage: this.usage });
+    const totals = this.ledger.totals();
+    this.o.emit({ type: "run-finished", status, summary, files: [...this.written.values()], calls: this.calls, usage: { inputTokens: totals.inputTokens, outputTokens: totals.outputTokens }, totals });
   }
 }

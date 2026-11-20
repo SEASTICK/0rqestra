@@ -124,7 +124,7 @@ describe("Claude Code adapter", () => {
     const events = await collect(claude({}).chat(request({ model: "sonnet", history: [{ role: "user", text: "earlier" }] })));
     expect(events[0]).toEqual({ type: "started", model: "claude-test-model" });
     expect(deltas(events)).toBe("Hej där!");
-    expect(events.at(-1)).toEqual({ type: "completed", text: "Hej där!", usage: { inputTokens: 12, outputTokens: 3 }, limits: [] });
+    expect(events.at(-1)).toEqual({ type: "completed", text: "Hej där!", usage: { inputTokens: 12, outputTokens: 3, cachedInputTokens: 0 }, limits: [] });
     const log = readLog();
     expect(log.apiKeyReached).toBe(false);
     expect(log.openaiKeyReached).toBe(false);
@@ -165,6 +165,20 @@ describe("Claude Code adapter", () => {
     expect(events.at(-1)).toMatchObject({ type: "cancelled" });
   });
 
+  it("ends a reply that keeps writing tool calls as text, long before the time limit", async () => {
+    const t0 = Date.now();
+    const events = await collect(claude({ FAKE_MODE: "stall-fake-tool" }, { idleMs: 60_000, timeoutMs: 60_000 }).chat(request()));
+    expect(events.at(-1)).toMatchObject({ type: "failed", reason: "provider_error", message: "Claude Code tried to use a tool it does not have here, instead of answering." });
+    expect(Date.now() - t0).toBeLessThan(5000);
+  });
+
+  it("ends a reply that stops sending its answer", async () => {
+    const events = await collect(claude({ FAKE_MODE: "stall" }, { idleMs: 300 }).chat(request()));
+    expect(events.at(-1)).toMatchObject({ type: "failed", reason: "provider_error" });
+    expect((events.at(-1) as { message: string }).message).toMatch(/stopped sending its answer/);
+    expect((events.at(-1) as { text: string }).text).toBe("Starting the answer");
+  });
+
   it("rejects a model name that is not plain", async () => {
     const events = await collect(claude({}).chat(request({ model: "opus & calc" })));
     expect(events).toEqual([expect.objectContaining({ type: "failed", reason: "provider_error" })]);
@@ -191,7 +205,7 @@ describe("Codex adapter", () => {
     expect(events[0]).toEqual({ type: "started", model: "gpt-6.1-sol" });
     expect(deltas(events)).toBe("Hello world");
     expect(events.at(-1)).toEqual({
-      type: "completed", text: "Hello world", usage: { inputTokens: 100, outputTokens: 7 },
+      type: "completed", text: "Hello world", usage: { inputTokens: 100, outputTokens: 7, cachedInputTokens: 40 }, // the last update, not the sum of both
       limits: [{ label: "5-hour limit", usedPercent: 19, windowMinutes: 300 }],
     });
     const log = readLog();

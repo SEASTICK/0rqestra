@@ -104,19 +104,19 @@ describe("task handoffs at the adapter boundary", () => {
     expect(build1).toContain("- The user logs exercise, sets, reps and weight (confirmed in the chat)");
     expect(build1).toContain("- Adding a set shows it in the list");
     expect(build1).toContain("How it will be verified: Follow the code path");
-    expect(build1).toContain("--- notes.md ---\nExercises: squat, bench, deadlift");
-    expect(build1).toContain("research.md (a project file, excerpt below)");
+    expect(build1).toContain("--- notes.md (a project file: The user's exercise list) ---\nExercises: squat, bench, deadlift");
+    expect(build1).toContain("--- research.md (a project file, excerpt: Background only) ---");
     expect(build1).not.toContain("RESEARCH-END-MARKER");
     expect(build1).not.toContain("Style the page."); // another task's job stays out (only its name, for tagging findings)
     expect(build1).toContain("Tasks that use your result: t2 (Style it)");
-    expect(build1).toContain("do not redo research or reopen decisions");
+    expect(build1).toContain("do not redo research or reopen its decisions");
 
     // Builder of t2: its own decisions, t1's result, and t1's file in full; not t1's references.
     expect(build2).toContain("HANDOFF for task t2: Style it (Builder)");
     expect(build2).toContain("- Dark theme only");
     expect(build2).not.toContain("Save sets in localStorage");
     expect(build2).toContain("Task t1 (Build the page, Builder) delivered index.html: Made it.");
-    expect(build2).toContain("--- index.html ---\n<p>index.html content</p>");
+    expect(build2).toContain("--- index.html (from task t1: Style its class names) ---\n<p>index.html content</p>");
     expect(build2).not.toContain("squat, bench");
     expect(build2).toContain("- [project] Works offline");
 
@@ -126,10 +126,13 @@ describe("task handoffs at the adapter boundary", () => {
     expect(review1).toContain("- Adding a set shows it in the list");
     expect(review1).toContain("- [project] All interface text in Swedish");
     expect(review1).toContain("- Save sets in localStorage, not on a server");
-    expect(review1).toContain("Submitted changes (the latest version):\n--- index.html ---\n<p>index.html content</p>");
+    expect(review1).toContain("Submitted changes (the latest version):\n--- index.html (new file) ---\n<p>index.html content</p>");
     expect(review1).toContain("Verification results so far:\n- Delivery check passed: index.html delivered");
-    expect(review1).toContain("- notes.md (a project file): The user's exercise list");
-    expect(review1).not.toContain("squat, bench");
+    expect(review1).toContain("The author read: notes.md, research.md");
+    // The reviewer sees what the author worked from (small enough), so it can check facts against
+    // their source instead of trying to open a file it cannot open, and it is told it has no tools.
+    expect(review1).toContain("What the author worked from:\n--- notes.md (a project file: The user's exercise list) ---\nExercises: squat, bench, deadlift");
+    expect(review1).toContain("You have no tools: you cannot open files or run commands, so do not try.");
     expect(review1).not.toContain("do not redo research");
     expect(review1).not.toBe(build1);
   });
@@ -177,9 +180,9 @@ describe("task handoffs at the adapter boundary", () => {
     expect(finished.status).toBe("done");
     const [first, second] = codex.requests.map((r) => r.text);
     expect(first).toContain("HANDOFF for task a: Page (Builder)");
-    expect(first).toContain("--- notes.txt ---\nkeep tabs");
+    expect(first).toContain("--- notes.txt (a project file) ---\nkeep tabs");
     expect(first).toContain("Every file listed (index.html) is delivered and complete");
-    expect(second).toContain("--- index.html ---\n<p>index.html content</p>");
+    expect(second).toContain("--- index.html (from task a) ---\n<p>index.html content</p>");
     expect(second).toContain("Task a (Page, Builder) delivered index.html: Made it.");
     expect(claude.requests[0]!.text).toContain("Submitted changes (the latest version):");
   });
@@ -190,9 +193,9 @@ describe("the plan format the Manager and the Planner are shown", () => {
     const { PLAN_FORMAT } = await import("../providers/history.js");
     const json = /<orqestra-plan>\s*([\s\S]*?)\s*<\/orqestra-plan>/.exec(PLAN_FORMAT)![1]!;
     const plan = parsePlan(JSON.parse(json), ["Builder"]);
-    expect(plan.rules).toEqual(["Swedish user interface text", "Works offline; no accounts"]);
-    expect(plan.tasks[0]!.handoff!.acceptance).toContain("Adding a set shows it in the list");
-    expect(plan.tasks[1]!.handoff!.references).toEqual([{ file: "index.html", why: "Style its class names", full: true }]);
+    expect(plan.rules).toEqual(["Swedish interface text"]);
+    expect(plan.tasks[0]!.handoff!.acceptance).toContain("A new set shows in the list");
+    expect(plan.tasks[1]!.handoff!.references).toEqual([{ file: "index.html", why: "Its class names", full: false }]);
   });
 
 });

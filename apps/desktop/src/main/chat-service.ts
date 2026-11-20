@@ -1,7 +1,7 @@
-import { MAX_MESSAGE_CHARS } from "./providers/history";
+import { MAX_MESSAGE_CHARS, PLAN_NEEDED } from "./providers/history";
 import { EFFORT_NAME, MODEL_NAME } from "./providers/process";
 import { parseTeamMembers } from "./team/team-service";
-import { PROVIDER_IDS, type ChatEvent, type ChatHandle, type ChatTurn, type ProviderAdapter, type ProviderId, type ProviderStatus, type TeamMember } from "./providers/types";
+import { PROVIDER_IDS, type ChatEvent, type ChatHandle, type ChatTurn, type ProviderAdapter, type ProviderId, type ProviderStatus, type TeamMember, type Usage } from "./providers/types";
 
 // The chat between the window and the provider tools, free of Electron so it is unit-tested.
 // Everything that arrives from the window is validated here before any tool is started.
@@ -82,14 +82,25 @@ export class ChatService {
     if (this.running.has(payload.requestId)) throw new Error("This request is already running.");
     if ([...this.running.values()].some((r) => r.projectId === payload.projectId)) throw new Error("A reply is already being written in this project. Stop it or wait.");
     if (this.running.size >= MAX_RUNNING) throw new Error("Too many replies are running. Wait for one to finish.");
-    const handle = this.adapters[payload.provider].chat({
+    const request = {
       provider: payload.provider, model: payload.model, effort: payload.effort, history: payload.history, text: payload.text, cwd: this.cwd(), team: payload.team,
       teamNow: this.teamNowFor(payload.projectId),
-    });
+    };
+    const first = this.adapters[payload.provider].chat(request);
+    // stop() reaches whichever request is current (the second one, when the Manager asks to plan).
+    const current = { handle: first };
+    const handle: ChatHandle = { events: first.events, stop: () => current.handle.stop() };
     this.running.set(payload.requestId, { projectId: payload.projectId, handle });
     void (async () => {
       try {
-        for await (const event of handle.events) emit(payload.requestId, event);
+        const answer = await relayUntilPlanNeeded(first, (event) => emit(payload.requestId, event));
+        if (answer) {
+          // The light prompt was not enough: ask again with the planning instructions. The window
+          // never sees the marker; it gets the second reply, with both calls' usage added up.
+          const second = this.adapters[payload.provider].chat({ ...request, planMode: true });
+          current.handle = second;
+          for await (const event of second.events) emit(payload.requestId, event.type === "completed" ? { ...event, usage: addUsage(answer.usage, event.usage) } : event);
+        }
       } catch (error) {
         emit(payload.requestId, { type: "failed", reason: "crashed", message: error instanceof Error ? error.message : String(error), text: "" });
       } finally {
@@ -124,4 +135,43 @@ export class ChatService {
   get runningCount(): number {
     return this.running.size;
   }
+}
+
+// Passes a reply's events on, except when the whole reply is the "plan needed" marker: then nothing
+// of it is shown, and its completed event is returned so the caller can ask again. Text that could
+// still turn out to be the marker is held back until it is clear.
+export async function relayUntilPlanNeeded(handle: ChatHandle, emit: (event: ChatEvent) => void): Promise<Extract<ChatEvent, { type: "completed" }> | null> {
+  let held: ChatEvent[] = [];
+  let text = "";
+  let open = true;
+  for await (const event of handle.events) {
+    if (event.type === "completed" && event.text.trim() === PLAN_NEEDED) return event;
+    if (open && event.type === "delta") {
+      text += event.text;
+      if (PLAN_NEEDED.startsWith(text.trimStart())) {
+        held.push(event);
+        continue;
+      }
+      open = false;
+      for (const h of held) emit(h);
+      held = [];
+    }
+    if (open && event.type === "started") {
+      held.push(event);
+      continue;
+    }
+    if (open && event.type !== "delta") {
+      open = false;
+      for (const h of held) emit(h);
+      held = [];
+    }
+    emit(event);
+  }
+  return null;
+}
+
+export function addUsage(a: Usage | null, b: Usage | null): Usage | null {
+  if (!a || !b) return b ?? null;
+  const sum = (x: number | null | undefined, y: number | null | undefined) => (x == null || y == null ? null : x + y);
+  return { inputTokens: sum(a.inputTokens, b.inputTokens), outputTokens: sum(a.outputTokens, b.outputTokens), cachedInputTokens: sum(a.cachedInputTokens ?? 0, b.cachedInputTokens ?? 0) };
 }

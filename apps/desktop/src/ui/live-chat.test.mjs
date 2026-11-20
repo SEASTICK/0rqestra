@@ -335,3 +335,24 @@ describe('return briefs in the window', () => {
     expect(historyFor([{ id: 'x', kind: 'team', run }])[0].text).toBe(text);
   });
 });
+
+describe('usage in the run details', () => {
+  it('shows planning and each agent, marks missing usage Unavailable and totals Partial', async () => {
+    const { runUsage, planningUsage } = await import('./live-chat.mjs');
+    const entry = (seq, agentId, kind, inputTokens, outputTokens, cachedInputTokens = 0) => ({ seq, taskId: 't1', agentId, agentName: agentId === 'bu' ? 'Bob' : 'Vera', role: agentId === 'bu' ? 'Builder' : 'Code Reviewer', tool: 'x', model: null, kind, attempt: 1, outcome: 'completed', inputTokens, cachedInputTokens, outputTokens });
+    let run = newTeamRun('r', { goal: 'g', tasks: [{ id: 't1', title: 'T', role: 'Builder', deliverables: ['a'] }] }, planningUsage({ providerName: 'Claude Code', usage: { inputTokens: 5000, cachedInputTokens: 4000, outputTokens: 300 } }));
+    run = applyTeamEvent(run, { type: 'usage', entry: entry(1, 'bu', 'worker', 1000, 50, 600) });
+    run = applyTeamEvent(run, { type: 'usage', entry: entry(1, 'bu', 'worker', 1000, 50, 600) }); // the same request again
+    run = applyTeamEvent(run, { type: 'usage', entry: entry(2, 'rv', 'review', null, null) });
+    run = applyTeamEvent(run, { type: 'run-finished', status: 'done', summary: 's', files: [], calls: 2, usage: { inputTokens: 1000, outputTokens: 50 }, totals: { retries: 0, contextRequests: 0 } });
+    const u = runUsage(run);
+    expect(u.calls).toBe(3);
+    expect(u.rows).toEqual([
+      { label: 'Planning · Claude Code (Manager)', calls: 1, text: '5,000 in (4,000 cached) · 300 out' },
+      { label: 'Bob (Builder)', calls: 1, kinds: '1 work', text: '1,000 in (600 cached) · 50 out' },
+      { label: 'Vera (Code Reviewer)', calls: 1, kinds: '1 review', text: 'Unavailable' },
+    ]);
+    expect(u.total).toBe('6,000 in (4,600 cached) · 350 out · Partial');
+    expect(planningUsage({ planning: { status: 'done', plannerName: 'Pia', usage: null } })).toEqual({ by: 'Planner', name: 'Pia', usage: null });
+  });
+});

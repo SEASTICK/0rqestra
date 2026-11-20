@@ -1,10 +1,11 @@
 import fs from "node:fs";
+import { claudeUsage } from "./usage";
 import os from "node:os";
 import path from "node:path";
 import { buildPrompt } from "./history";
 import { findBinary, killTree, MODEL_NAME, onJsonLines, providerEnv, runShort, spawnTool, type ToolBinary } from "./process";
 import { toolEnvironment } from "./tool-env";
-import { EventQueue, type AuthMethod, type ChatEvent, type ChatHandle, type ChatRequest, type ModelOption, type ProviderAdapter, type ProviderStatus, type Usage } from "./types";
+import { EventQueue, type AuthMethod, type ChatEvent, type ChatHandle, type ChatRequest, type ModelOption, type ProviderAdapter, type ProviderStatus } from "./types";
 
 // Claude Code, signed in with the user's own Claude subscription, run in print mode with streamed
 // JSON. Launch profile A from docs/provider-integrations.md §1.4, probed on Windows with 2.1.325
@@ -17,7 +18,16 @@ export interface ClaudeOptions {
   settingsDir?: string;
   timeoutMs?: number;
   stopGraceMs?: number;
+  // How long a reply may go silent once it has started, and how long after it wrote a tool call as
+  // text (a stall seen on 2026-11-20), before it is ended as stalled.
+  idleMs?: number;
+  fakeToolIdleMs?: number;
 }
+
+// Claude Code given no tools can write a tool call as plain text, then stop sending anything
+// without ending the reply (no "result" event). Seen on 2026-11-20 with a reviewer that wanted to
+// open a file it was not given: `<invoke name="Bash">` repeated, then silence until the time limit.
+export const FAKE_TOOL_CALL = /<invoke name=|<function_calls>|<\/invoke>/;
 
 // Claude Code takes aliases that follow the newest model of each family; there is no list command.
 export const CLAUDE_MODELS: ModelOption[] = [
@@ -66,18 +76,6 @@ export function claudeArgs(settingsFile: string, model: string | null): string[]
     "--no-session-persistence",
     ...(model && model !== "default" ? ["--model", model] : []),
   ];
-}
-
-function usageFrom(result: Record<string, unknown>): Usage | null {
-  const models = result.modelUsage;
-  if (!models || typeof models !== "object") return null;
-  let input = 0;
-  let output = 0;
-  for (const usage of Object.values(models as Record<string, { inputTokens?: number; outputTokens?: number }>)) {
-    input += usage?.inputTokens ?? 0;
-    output += usage?.outputTokens ?? 0;
-  }
-  return { inputTokens: input, outputTokens: output };
 }
 
 export class ClaudeCodeAdapter implements ProviderAdapter {
@@ -191,6 +189,7 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
       if (finished) return;
       finished = true;
       clearTimeout(timeout);
+      clearInterval(watchdog);
       queue.push(event);
       queue.end();
       child.stdin?.end();
@@ -199,6 +198,32 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
       killTree(child);
       finish({ type: "failed", reason: "timeout", message: "No answer within the time limit.", text });
     }, this.options.timeoutMs ?? 10 * 60_000);
+    // Two ways a started reply never ends, both ended long before the overall time limit:
+    // - it goes silent (thinking can take a while, so the wait starts once the answer has begun);
+    // - it writes tool calls as text over and over (no tools here), seen on 2026-11-20: more than
+    //   1,100 pieces of `<invoke name="Bash">cat sources.md</invoke>` in a minute, never ending.
+    let lastOutput = 0;
+    let firstFake = 0;
+    const idleMs = this.options.idleMs ?? 90_000;
+    const fakeToolMs = this.options.fakeToolIdleMs ?? 15_000;
+    const stalled = (): string | null => {
+      if (!lastOutput) return null;
+      const faked = FAKE_TOOL_CALL.test(text);
+      if (faked && !firstFake) firstFake = Date.now();
+      if (faked && ((text.match(/<invoke name=/g)?.length ?? 0) >= 3 || Date.now() - firstFake >= fakeToolMs)) {
+        return "Claude Code tried to use a tool it does not have here, instead of answering.";
+      }
+      const quiet = Date.now() - lastOutput;
+      return quiet >= (faked ? fakeToolMs : idleMs) ? `Claude Code stopped sending its answer (nothing for ${Math.round(quiet / 1000)} seconds).` : null;
+    };
+    const endStalled = () => {
+      const why = finished ? null : stalled();
+      if (!why) return;
+      killTree(child);
+      finish({ type: "failed", reason: "provider_error", text, message: why });
+    };
+    const watchdog = setInterval(endStalled, Math.min(2000, Math.max(50, Math.floor(Math.min(idleMs, fakeToolMs) / 4))));
+    watchdog.unref?.();
 
     control.stop = () => {
       if (finished) return;
@@ -220,14 +245,18 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
       else finish({ type: "failed", reason: "crashed", message: `Claude Code stopped without an answer (exit ${code}). ${stderr.trim().slice(-300)}`.trim(), text });
     });
     if (child.stdout) onJsonLines(child.stdout, (event) => {
+      // Any event after the answer text has begun counts as output for the stall guard.
+      if (sawDelta) lastOutput = Date.now();
       if (event.type === "system" && event.subtype === "init") {
         queue.push({ type: "started", model: typeof event.model === "string" ? event.model : null });
       } else if (event.type === "stream_event") {
         const delta = (event.event as { delta?: { type?: string; text?: string } } | undefined)?.delta;
         if (delta?.type === "text_delta" && typeof delta.text === "string") {
           sawDelta = true;
+          lastOutput = Date.now();
           text += delta.text;
           queue.push({ type: "delta", text: delta.text });
+          endStalled();
         }
       } else if (event.type === "assistant") {
         const content = (event.message as { content?: { type?: string; text?: string }[] } | undefined)?.content ?? [];
@@ -244,11 +273,11 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
           return finish({ type: "failed", reason: limit ? "usage_limit" : "provider_error", message, text });
         }
         const answer = text || (typeof event.result === "string" ? event.result : "");
-        finish({ type: "completed", text: answer, usage: usageFrom(event), limits: [] });
+        finish({ type: "completed", text: answer, usage: claudeUsage(event), limits: [] });
       }
     });
 
-    const prompt = request.raw ? request.text : buildPrompt(request.history, request.text, request.team, request.teamNow);
+    const prompt = request.raw ? request.text : buildPrompt(request.history, request.text, request.team, request.teamNow, request.planMode ? "plan" : "auto");
     child.stdin?.on("error", () => {});
     child.stdin?.write(`${JSON.stringify({ type: "user", message: { role: "user", content: prompt } })}\n`);
   }

@@ -1,5 +1,5 @@
 import { EFFORT_NAME, MODEL_NAME } from "../providers/process";
-import type { ChatEvent, ChatHandle, TeamMember } from "../providers/types";
+import type { ChatEvent, ChatHandle, TeamMember, Usage } from "../providers/types";
 import { extractPlan, plannerPrompt } from "./planner";
 import { listFiles } from "./workspace";
 import { PROVIDER_IDS, type ProviderAdapter, type ProviderId } from "../providers/types";
@@ -109,7 +109,7 @@ export class TeamService {
 
   // Asks the Planner for a plan from the Manager's brief. Resolves with a validated plan, or throws with a
   // message the window can show.
-  async plan(raw: unknown): Promise<{ plan: Plan; summary: string }> {
+  async plan(raw: unknown): Promise<{ plan: Plan; summary: string; usage: Usage | null }> {
     const v = (raw ?? {}) as Record<string, unknown>;
     if (typeof v.requestId !== "string" || !ID.test(v.requestId)) throw new Error("Invalid request id.");
     if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
@@ -133,7 +133,8 @@ export class TeamService {
     if (last?.type === "failed") throw new Error(`${planner!.name}: ${last.message}`);
     if (last?.type !== "completed") throw new Error(`${planner!.name} gave no answer.`);
     const { summary, value } = extractPlan(last.text);
-    return { plan: parsePlan(value, [...new Set(agents.map((a) => a.role))]), summary };
+    // The Planner's usage, so the run can show what planning cost (Stage 3).
+    return { plan: parsePlan(value, [...new Set(agents.map((a) => a.role))]), summary, usage: last.usage ?? null };
   }
 
   stopPlan(requestId: unknown): boolean {

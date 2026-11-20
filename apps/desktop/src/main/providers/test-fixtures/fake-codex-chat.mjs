@@ -58,7 +58,9 @@ lines.on("line", (line) => {
 
 function finishTurn(status, text, error) {
   if (text) notify("item/completed", { item: { type: "agentMessage", text } });
-  notify("thread/tokenUsage/updated", { tokenUsage: { total: { inputTokens: 100, outputTokens: 7 } } });
+  // Codex sends usage again while a turn streams, with running totals; only the last one counts.
+  notify("thread/tokenUsage/updated", { tokenUsage: { last: { inputTokens: 60, cachedInputTokens: 20, outputTokens: 3 }, total: { inputTokens: 60, cachedInputTokens: 20, outputTokens: 3 } } });
+  notify("thread/tokenUsage/updated", { tokenUsage: { last: { inputTokens: 100, cachedInputTokens: 40, outputTokens: 7 }, total: { inputTokens: 100, cachedInputTokens: 40, outputTokens: 7 } } });
   notify("account/rateLimits/updated", { rateLimits: { primary: { usedPercent: 19, windowDurationMins: 300 } } });
   notify("turn/completed", { turn: { id: "tu-1", status, ...(error ? { error } : {}) } });
 }
