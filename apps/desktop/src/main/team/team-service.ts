@@ -37,8 +37,27 @@ export function parseTeamMembers(value: unknown): TeamMember[] {
   return raw.map((member: unknown) => {
     const m = member as Record<string, unknown> | null;
     if (!m || typeof m.name !== "string" || !m.name.trim() || m.name.length > 48 || typeof m.role !== "string" || !ROLE.test(m.role)) throw new Error("Invalid team.");
-    return { name: m.name.trim(), role: m.role, ready: m.ready === true };
+    const tool = m.tool === "claude" || m.tool === "codex" ? m.tool : null;
+    const model = typeof m.model === "string" && MODEL_NAME.test(m.model) ? m.model : null;
+    return { name: m.name.trim(), role: m.role, ready: m.ready === true, ...(tool ? { tool } : {}), ...(model ? { model } : {}) };
   });
+}
+
+// The Manager may name the agent for a task. A name that matches a working agent with the task's role
+// becomes that task's first agent; any other name is dropped (the role's usual agent does the task).
+export function assignAgents(plan: Plan, agents: TeamAgent[]): Plan {
+  return {
+    ...plan,
+    tasks: plan.tasks.map((t) => {
+      if (!t.agent) return t;
+      const match = agents.find((a) => a.role === t.role && a.name.toLowerCase() === t.agent!.toLowerCase());
+      if (match) return { ...t, agent: match.name, agentId: match.id };
+      const rest = { ...t };
+      delete rest.agent;
+      delete rest.why;
+      return rest;
+    }),
+  };
 }
 
 export type TeamEmit = (runId: string, event: TeamEvent) => void;
@@ -63,7 +82,7 @@ export class TeamService {
     if (typeof v.runId !== "string" || !ID.test(v.runId)) throw new Error("Invalid run id.");
     if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
     const agents = parseAgents(v.agents);
-    const plan = parsePlan(v.plan, [...new Set(agents.map((a) => a.role))]);
+    const plan = assignAgents(parsePlan(v.plan, [...new Set(agents.map((a) => a.role))]), agents);
     // A handoff that refers to a project file that is not there is refused now, before anything
     // starts, instead of sending the task without it.
     const missing = missingProjectFiles(plan, listFiles(this.workspaceFor(v.projectId)));
@@ -160,7 +179,7 @@ export class TeamService {
     if (last?.type !== "completed") throw new Error(`${planner!.name} gave no answer.`);
     const { summary, value } = extractPlan(last.text);
     // The Planner's usage, so the run can show what planning cost (Stage 3).
-    return { plan: parsePlan(value, [...new Set(agents.map((a) => a.role))]), summary, usage: last.usage ?? null };
+    return { plan: assignAgents(parsePlan(value, [...new Set(agents.map((a) => a.role))]), agents), summary, usage: last.usage ?? null };
   }
 
   stopPlan(requestId: unknown): boolean {

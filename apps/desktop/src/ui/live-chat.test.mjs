@@ -175,7 +175,7 @@ describe('plans and team runs', () => {
   });
 
   it('lists the team for the Manager and the working agents for a run', () => {
-    expect(teamMembers(graph)).toEqual([{ name: 'Backup builder', role: 'Builder', ready: true }, { name: 'Code builder', role: 'Builder', ready: true }, { name: 'Reviewer', role: 'Code Reviewer', ready: false }]);
+    expect(teamMembers(graph)).toEqual([{ name: 'Backup builder', role: 'Builder', ready: true, tool: 'claude', model: 'opus' }, { name: 'Code builder', role: 'Builder', ready: true, tool: 'codex', model: 'gpt-6.1-sol' }, { name: 'Reviewer', role: 'Code Reviewer', ready: false }]);
     expect(teamAgents(graph).map((a) => [a.id, a.tool, a.model])).toEqual([['b2', 'claude', 'opus'], ['b1', 'codex', 'gpt-6.1-sol']]);
     expect(planAssignments(parsePlan(reply).plan, graph).map((t) => t.agent?.id)).toEqual(['b1', 'b1']);
   });
@@ -207,10 +207,10 @@ describe('setting up the team', () => {
     { id: 'r', name: 'A fresh pair of eyes', role: 'Code Reviewer', provider: 'Google', model: 'Gemini (demo)' },
   ], edges: [] };
 
-  it('puts builders on one tool and reviewers on the other, and the Manager on Claude Code', () => {
+  it('gives each role the tool that suits it: planning and reviews on Claude, building on Codex', () => {
     const { graph, changed } = autoTeam(demoGraph, [claude, codex]);
     const tool = (id) => graph.nodes.find((n) => n.id === id).agent.tool;
-    expect([tool('m'), tool('p'), tool('b'), tool('r')]).toEqual(['claude', 'codex', 'codex', 'claude']);
+    expect([tool('m'), tool('p'), tool('b'), tool('r')]).toEqual(['claude', 'claude', 'codex', 'claude']);
     expect(graph.nodes.find((n) => n.id === 'b')).toMatchObject({ provider: 'Codex', model: 'GPT-6.1 Sol', agent: { model: 'gpt-6.1-sol', effort: null } });
     expect(changed.map((c) => c.id)).toEqual(['m', 'p', 'b', 'r']);
   });
@@ -643,5 +643,48 @@ describe('undo', () => {
   });
   it('tells the Manager when changes were undone', () => {
     expect(historyFor([team('r1', { summary: 'Klart.', undone: { restored: [], removed: [] } })])[0].text).toContain('(done, then the user undid its changes)');
+  });
+});
+
+import { mixTeam, planTools, usesOneTool } from './live-chat.mjs';
+
+describe('Claude and ChatGPT work together', () => {
+  const claude = { provider: 'claude', name: 'Claude Code', installed: true, signedIn: true, subscription: true, models: [{ id: 'opus', label: 'Opus', isDefault: true }] };
+  const codex = { provider: 'codex', name: 'Codex', installed: true, signedIn: true, subscription: true, models: [{ id: 'gpt-6.2-sol', label: 'GPT-6.2 Sol', isDefault: true }] };
+  const on = (tool, model) => ({ agent: { tool, model, effort: null } });
+  const allClaude = { nodes: [
+    { id: 'm', name: 'Manager', role: 'Manager', priority: 1, ...on('claude', 'opus') },
+    { id: 'p', name: 'Architect', role: 'Planner', priority: 1, ...on('claude', 'opus') },
+    { id: 'b', name: 'Builder one', role: 'Builder', priority: 1, ...on('claude', 'opus') },
+    { id: 'b2', name: 'Builder two', role: 'Builder', priority: 2, ...on('claude', 'opus') },
+    { id: 'r', name: 'Eyes', role: 'Code Reviewer', priority: 1, ...on('claude', 'opus') },
+  ], edges: [] };
+
+  it('notices a team on one tool while both are connected, and moves the builders to Codex', () => {
+    expect(usesOneTool(allClaude, [claude, codex])).toBe(true);
+    expect(usesOneTool(allClaude, [claude])).toBe(false);
+    const { graph, changed } = mixTeam(allClaude, [claude, codex]);
+    // Two builders: one on each tool, so the Manager can choose per task.
+    expect(changed.map((c) => c.id)).toEqual(['b']);
+    expect(graph.nodes.map((n) => n.agent.tool)).toEqual(['claude', 'claude', 'codex', 'claude', 'claude']);
+    expect(usesOneTool(graph, [claude, codex])).toBe(false);
+    expect(mixTeam(allClaude, [claude]).changed).toEqual([]);
+  });
+
+  it('uses the agent the Manager named for a task, and says which tools the plan uses', () => {
+    const graph = { nodes: [...allClaude.nodes.slice(0, 2), { ...allClaude.nodes[2], ...on('codex', 'gpt-6.2-sol') }, allClaude.nodes[3], allClaude.nodes[4]], edges: [] };
+    const plan = { goal: 'g', tasks: [
+      { id: 't1', title: 'Logic', role: 'Builder', goal: 'g', dependsOn: [], deliverables: ['a.js'], agent: 'builder ONE', why: 'Logic and data' },
+      { id: 't2', title: 'Look', role: 'Builder', goal: 'g', dependsOn: [], deliverables: ['a.css'], agent: 'Builder two', why: 'Design' },
+      { id: 't3', title: 'Other', role: 'Builder', goal: 'g', dependsOn: [], deliverables: ['b.js'], agent: 'Eyes' },
+    ] };
+    const a = planAssignments(plan, graph);
+    expect(a.map((t) => [t.agent.id, t.chosen])).toEqual([['b', true], ['b2', true], ['b', false]]);
+    expect(planTools(a)).toEqual(['ChatGPT', 'Claude']);
+  });
+
+  it('reads the chosen agent and why from the plan', () => {
+    const text = `Plan.\n<orqestra-plan>\n${JSON.stringify({ goal: 'g', tasks: [{ id: 't1', title: 'T', role: 'Builder', goal: 'x', deliverables: ['a.js'], agent: 'Builder one', why: 'Fast at logic' }] })}\n</orqestra-plan>`;
+    expect(parsePlan(text).plan.tasks[0]).toMatchObject({ agent: 'Builder one', why: 'Fast at logic' });
   });
 });

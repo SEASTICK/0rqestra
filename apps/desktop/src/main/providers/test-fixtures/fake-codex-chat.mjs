@@ -66,6 +66,23 @@ function finishTurn(status, text, error) {
 }
 
 function startTurn() {
+  // FAKE_REPLIES: a JSON list of replies used in turn (for trying the window by hand), as in fake-claude-chat.
+  if (mode === "stream" && process.env.FAKE_REPLIES) {
+    const replies = JSON.parse(fs.readFileSync(process.env.FAKE_REPLIES, "utf8"));
+    const counter = `${process.env.FAKE_REPLIES}.count`;
+    const n = fs.existsSync(counter) ? Number(fs.readFileSync(counter, "utf8")) : 0;
+    fs.writeFileSync(counter, String(n + 1));
+    const text = replies[Math.min(n, replies.length - 1)];
+    const chunks = text.match(/[\s\S]{1,24}/g) ?? [];
+    let i = 0;
+    setTimeout(() => {
+      timer = setInterval(() => {
+        if (i < chunks.length) notify("item/agentMessage/delta", { delta: chunks[i++] });
+        else { clearInterval(timer); finishTurn("completed", text); }
+      }, 50);
+    }, Number(process.env.FAKE_DELAY_MS ?? 0));
+    return;
+  }
   if (mode === "stream") {
     notify("item/agentMessage/delta", { delta: "Hello" });
     notify("item/agentMessage/delta", { delta: " world" });

@@ -88,3 +88,32 @@ describe("a direct request to one agent", () => {
     expect(() => service().prepareDirect({ runId: "../x", projectId: "p1", agentId: "b1", request: "x", agents: [agent] })).toThrow(/run id/);
   });
 });
+
+describe("the Manager chooses the agent for each task", () => {
+  it("keeps a named agent with the task's role, and drops other names", async () => {
+    const { assignAgents } = await import("./team-service.js");
+    const { parsePlan } = await import("./plan.js");
+    const claudeBuilder = { ...agent, id: "b2", name: "Claude builder", tool: "claude" as const, model: null };
+    const plan = parsePlan({ goal: "g", tasks: [
+      { id: "t1", title: "x", role: "Builder", goal: "y", dependsOn: [], deliverables: ["a.txt"], agent: "claude BUILDER", why: "UI work" },
+      { id: "t2", title: "x", role: "Builder", goal: "y", dependsOn: [], deliverables: ["b.txt"], agent: "Nobody", why: "?" },
+    ] }, ["Builder"]);
+    const out = assignAgents(plan, [agent as never, claudeBuilder as never]);
+    expect(out.tasks[0]).toMatchObject({ agent: "Claude builder", agentId: "b2", why: "UI work" });
+    expect(out.tasks[1]!.agent).toBeUndefined();
+    expect(out.tasks[1]!.agentId).toBeUndefined();
+    expect(out.tasks[1]!.why).toBeUndefined();
+  });
+
+  it("tells the Manager which tool each agent runs on, and to use both", async () => {
+    const { teamSection } = await import("../providers/history.js");
+    const text = teamSection([
+      { name: "Code builder", role: "Builder", ready: true, tool: "codex", model: "gpt-6.2-sol" },
+      { name: "Fresh eyes", role: "Code Reviewer", ready: true, tool: "claude", model: "opus" },
+    ]);
+    expect(text).toContain("- Builder: Code builder — Codex (gpt-6.2-sol) (can work)");
+    expect(text).toContain("Claude Code (Claude): planning");
+    expect(text).toContain("make them work together");
+    expect(teamSection([{ name: "A", role: "Builder", ready: true, tool: "claude", model: null }])).not.toContain("work together");
+  });
+});

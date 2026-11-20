@@ -262,6 +262,8 @@ export function parsePlan(raw) {
       // The task's handoff goes to the main process as written; it is validated there.
       ...(t?.handoff && typeof t.handoff === 'object' && !Array.isArray(t.handoff) ? { handoff: t.handoff } : {}),
       ...(typeof t?.product === 'string' && t.product.trim() ? { product: t.product.trim().toLowerCase() } : {}),
+      ...(text(t?.agent, 48) ? { agent: text(t.agent, 48) } : {}),
+      ...(text(t?.why, 160) ? { why: text(t.why, 160) } : {}),
     }));
     if (parsed.some((t) => !t.id || !t.title || !t.role || !t.goal || !t.deliverables.length)) return { body: source, plan: null };
     const rules = Array.isArray(value?.rules) ? value.rules.filter((r) => typeof r === 'string') : [];
@@ -275,7 +277,7 @@ const byPriority = (a, b) => (Number(a.priority) || 0) - (Number(b.priority) || 
 
 // Who is in the team, as the Manager sees it.
 export function teamMembers(graph) {
-  return (graph?.nodes || []).filter((n) => n.role !== 'Manager').map((n) => ({ name: String(n.name).slice(0, 48), role: n.role, ready: isRealAgent(n) }));
+  return (graph?.nodes || []).filter((n) => n.role !== 'Manager').map((n) => ({ name: String(n.name).slice(0, 48), role: n.role, ready: isRealAgent(n), ...(isRealAgent(n) ? { tool: n.agent.tool, ...(n.agent.model ? { model: n.agent.model } : {}) } : {}) }));
 }
 
 // The agents that can work, as the main process needs them.
@@ -287,9 +289,19 @@ export function teamAgents(graph) {
 }
 
 // Which agent each task will start with (the highest priority real agent with that role).
+// The agent the Manager named for the task (when it has the task's role), else the role's first agent.
 export function planAssignments(plan, graph) {
   const agents = teamAgents(graph);
-  return plan.tasks.map((t) => ({ ...t, agent: agents.filter((a) => a.role === t.role).sort(byPriority)[0] || null }));
+  return plan.tasks.map((t) => {
+    const named = typeof t.agent === 'string' ? agents.find((a) => a.role === t.role && a.name.toLowerCase() === t.agent.toLowerCase()) : null;
+    return { ...t, chosen: Boolean(named), agent: named || agents.filter((a) => a.role === t.role).sort(byPriority)[0] || null };
+  });
+}
+
+export const TOOL_LABEL = { claude: 'Claude', codex: 'ChatGPT', gemini: 'Gemini' };
+// Which tools a plan uses, for the plan card ("Claude and ChatGPT work together").
+export function planTools(assignments) {
+  return [...new Set(assignments.map((a) => a.agent?.tool).filter(Boolean))].map((t) => TOOL_LABEL[t] || t);
 }
 
 // What planning this run cost (Stage 3): the Planner's call, or the Manager's reply that held the
@@ -346,24 +358,61 @@ export function settleTeamRun(run) {
 // work is checked by a different provider. Agents the user already set to a real tool are kept.
 
 const TOOL_ORDER = ['codex', 'claude', 'gemini'];
-const CHECKING_ROLES = ['Code Reviewer', 'Security Reviewer', 'Reviewer', 'Tester'];
+// Which tool each role starts on when both are connected (the Manager still picks per task).
+export const PREFERRED_TOOL = { Manager: 'claude', Planner: 'claude', Designer: 'claude', Writer: 'claude', 'Code Reviewer': 'claude', Reviewer: 'claude', 'Security Reviewer': 'codex', Builder: 'codex', Tester: 'codex', Debugger: 'codex' };
 
 export function firstModel(status) {
   const models = status?.models || [];
   return (models.find((m) => m.isDefault) || models[0] || null)?.id ?? null;
 }
 
+// The tool for the n-th agent of a role: the role's preferred tool first, then the other, in turn, so a
+// role with several agents has some on each tool and the Manager can pick per task.
+function toolFor(role, ready, nth) {
+  const preferred = ready.find((t) => t.provider === PREFERRED_TOOL[role]) || ready[0];
+  const others = ready.filter((t) => t !== preferred);
+  return nth % 2 === 0 || !others.length ? preferred : others[(Math.floor(nth / 2)) % others.length];
+}
+
 export function autoTeam(graph, statuses) {
   const ready = readyProviders(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
   if (!ready.length) return { graph, changed: [] };
-  const main = ready[0];
-  const other = ready[1] || ready[0];
   const changed = [];
-  const nodes = (graph?.nodes || []).map((n) => {
+  const seen = {};
+  const nodes = [...(graph?.nodes || [])].sort(byPriority).map((n) => {
+    const nth = n.role === 'Manager' ? 0 : (seen[n.role] = (seen[n.role] ?? -1) + 1);
     if (isRealAgent(n)) return n;
-    const status = n.role !== 'Manager' && CHECKING_ROLES.includes(n.role) ? other : n.role === 'Manager' ? (ready.find((t) => t.provider === 'claude') || main) : main;
+    const status = toolFor(n.role, ready, nth);
     changed.push({ id: n.id, name: n.name, tool: status.name });
     return { ...n, ...nodeFieldsFor({ provider: status.provider, model: firstModel(status), effort: null }, status) };
+  });
+  const order = new Map((graph?.nodes || []).map((n, i) => [n.id, i]));
+  return { graph: { ...graph, nodes: nodes.sort((a, b) => order.get(a.id) - order.get(b.id)) }, changed: changed.sort((a, b) => order.get(a.id) - order.get(b.id)) };
+}
+
+// When both tools are connected but every agent runs on the same one: move the roles that suit the other
+// tool there (Builder and Tester to Codex, Planner, Designer and reviews to Claude), so they work together.
+export function usesOneTool(graph, statuses) {
+  const ready = readyProviders(statuses);
+  const tools = new Set((graph?.nodes || []).filter((n) => n.role !== 'Manager' && isRealAgent(n)).map((n) => n.agent.tool));
+  return ready.length > 1 && tools.size === 1;
+}
+
+export function mixTeam(graph, statuses) {
+  const ready = readyProviders(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
+  if (ready.length < 2) return { graph, changed: [] };
+  const changed = [];
+  const seen = {};
+  const want = new Map();
+  for (const n of [...(graph?.nodes || [])].sort(byPriority)) {
+    if (n.role === 'Manager' || !isRealAgent(n)) continue;
+    want.set(n.id, toolFor(n.role, ready, (seen[n.role] = (seen[n.role] ?? -1) + 1)));
+  }
+  const nodes = (graph?.nodes || []).map((n) => {
+    const target = want.get(n.id);
+    if (!target || target.provider === n.agent.tool) return n;
+    changed.push({ id: n.id, name: n.name, tool: target.name });
+    return { ...n, ...nodeFieldsFor({ provider: target.provider, model: firstModel(target), effort: null }, target) };
   });
   return { graph: { ...graph, nodes }, changed };
 }

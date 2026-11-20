@@ -32,6 +32,9 @@ export interface TeamMember {
   role: string;
   // True when the agent runs on Claude Code or Codex; an agent without a tool cannot work yet.
   ready: boolean;
+  // The tool and model it runs on, so the Manager can give each task to the agent best suited for it.
+  tool?: ProviderId | null;
+  model?: string | null;
 }
 
 // Every input token (cached ones included), output tokens, and how many input tokens came from the

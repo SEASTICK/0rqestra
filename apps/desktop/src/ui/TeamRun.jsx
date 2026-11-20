@@ -1,7 +1,7 @@
 // The Manager's plan, and the team working on it, as cards in the chat.
 import React from 'react';
 import { ActivityLog, Working } from './Activity.jsx';
-import { directReply, elapsed, runUsage, textParts } from './live-chat.mjs';
+import { directReply, elapsed, planTools, runUsage, textParts, TOOL_LABEL } from './live-chat.mjs';
 
 const STATUS_LABEL = {
   waiting: 'Waiting', working: 'Working', waiting_context: 'Waiting for context', reviewing: 'In review', done: 'Done', unverified: 'Done, not reviewed',
@@ -14,14 +14,16 @@ export function PlanCard({ plan, assignments, startedRunId, busy, onStart, onTre
   return (
     <div className="plan-card" role="group" aria-label="Plan">
       <div className="plan-head"><span className="plan-eyebrow">{plannedBy ? `PLAN BY ${plannedBy.toUpperCase()}` : 'PLAN'}</span><strong>{plan.goal}</strong>{summary && <small className="plan-summary">{summary}</small>}</div>
+      {planTools(assignments).length > 1 && <div className="plan-together"><span className="tool-chip tool-claude">Claude</span><span className="tool-chip tool-codex">ChatGPT</span><span>work together on this plan — the Manager chose who does what.</span></div>}
       {plan.products?.length > 0 && <div className="plan-products"><span>Products</span>{plan.products.map((p) => <span key={p.id} className="plan-product"><strong>{p.name}</strong>{p.folder ? <code>{p.folder}/</code> : null}</span>)}</div>}
       <ol className="plan-tasks">
         {assignments.map((t) => (
           <li key={t.id} className="plan-task">
             <div className="plan-task-main">
               <strong>{t.title}</strong>
-              <span className={`plan-agent ${t.agent ? '' : 'is-missing'}`}>{t.role} · {t.agent ? t.agent.name : 'no working agent'}</span>
+              <span className={`plan-agent ${t.agent ? '' : 'is-missing'}`}>{t.role} · {t.agent ? t.agent.name : 'no working agent'}{t.agent?.tool && <span className={`tool-chip tool-${t.agent.tool}`}>{TOOL_LABEL[t.agent.tool] || t.agent.tool}</span>}</span>
             </div>
+            {t.chosen && t.why && <div className="plan-why">Why {t.agent.name}: {t.why}</div>}
             <div className="plan-task-goal">{t.goal}</div>
             <div className="plan-files">{t.deliverables.map((d) => <code key={d}>{d}</code>)}{t.dependsOn.length > 0 && <span>after {t.dependsOn.join(', ')}</span>}</div>
           </li>
@@ -53,7 +55,7 @@ function UsageDetails({ run }) {
   );
 }
 
-export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPreview, onUndo }) {
+export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPreview, onUndo, toolOf = () => null }) {
   const running = run.status === 'running';
   const tokens = run.usage && (run.usage.inputTokens || run.usage.outputTokens) ? ` · ${run.usage.inputTokens} in · ${run.usage.outputTokens} out tokens` : '';
   return (
@@ -71,7 +73,7 @@ export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPre
             <span className={`team-chip chip-${t.status}`}>{STATUS_LABEL[t.status] || t.status}</span>
             <div className="team-task-main">
               <strong>{t.title}</strong>
-              <span>{t.role}{t.agentId || t.plannedAgentId ? ` · ${nameOf(t.agentId || t.plannedAgentId)}` : ''}{t.attempt > 1 ? ` · attempt ${t.attempt}` : ''}</span>
+              <span>{t.role}{t.agentId || t.plannedAgentId ? ` · ${nameOf(t.agentId || t.plannedAgentId)}` : ''}{toolOf(t.agentId || t.plannedAgentId) && <span className={`tool-chip tool-${toolOf(t.agentId || t.plannedAgentId)}`}>{TOOL_LABEL[toolOf(t.agentId || t.plannedAgentId)]}</span>}{t.attempt > 1 ? ` · attempt ${t.attempt}` : ''}</span>
               {t.note && <small>{t.note}</small>}
               {t.brief?.summary && <small className="team-brief">{t.brief.summary}{t.brief.unresolved?.length ? ` · Open: ${t.brief.unresolved.slice(0, 2).join('; ')}` : ''}</small>}
               {t.review && !t.review.approved && t.review.problems.length > 0 && <small className="team-problems">Review: {t.review.problems.slice(0, 3).join(' · ')}</small>}

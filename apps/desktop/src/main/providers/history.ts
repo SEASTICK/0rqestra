@@ -71,6 +71,8 @@ export const PLAN_RULES = [
   "Name what the user will see in \"products\" (at most 6; a short lowercase id, a name for the user, and the folder its files",
   "go in) and set \"product\" on each task that builds it; the user sees each product in the tree while the team works.",
   "A plan that only writes documents or code with nothing to look at has no products.",
+  "You may give a task to one agent by name: \"agent\": \"<its name>\" and \"why\": \"<a few words>\" (it must have the task's role);",
+  "without it, the role's agent with the highest priority does the task.",
 ].join("\n");
 
 const PLANNING = [
@@ -97,12 +99,28 @@ export function hasWorkingPlanner(team: TeamMember[]): boolean {
   return team.some((m) => m.ready && m.role === "Planner");
 }
 
+// What each tool is known to be good at, as a guide for the Manager (it still decides per task).
+export const TOOL_STRENGTHS = [
+  "What the tools are good at (a guide; you decide per task):",
+  "- Claude Code (Claude): planning and structure, user interfaces and design, clear text, careful reviews, larger refactors.",
+  "- Codex (ChatGPT): implementing features, algorithms and data handling, debugging, tests, precise changes to existing code.",
+].join("\n");
+
+const TOOL_NAME: Record<string, string> = { claude: "Claude Code", codex: "Codex" };
+
 export function teamSection(team: TeamMember[]): string {
   const working = team.filter((m) => m.ready);
   const notSetUp = team.filter((m) => !m.ready);
   const lines = ["Your team:"];
-  lines.push(working.length ? working.map((m) => `- ${m.role}: ${m.name} (can work)`).join("\n") : "- No agent can work yet; no agent in the tree runs on Claude Code or Codex.");
+  lines.push(working.length
+    ? working.map((m) => `- ${m.role}: ${m.name}${m.tool ? ` — ${TOOL_NAME[m.tool] ?? m.tool}${m.model ? ` (${m.model})` : ""}` : ""} (can work)`).join("\n")
+    : "- No agent can work yet; no agent in the tree runs on Claude Code or Codex.");
   if (notSetUp.length) lines.push(`Agents without a tool, which cannot work yet: ${notSetUp.map((m) => `${m.name} (${m.role})`).join(", ")}.`);
+  const tools = new Set(working.map((m) => m.tool).filter(Boolean));
+  if (tools.size > 1) {
+    lines.push(TOOL_STRENGTHS);
+    lines.push("Your team has both tools: make them work together. Give each task to the agent best suited for it, name it in the task's \"agent\" with a short \"why\", and spread the work over both tools when it fits. Reviews go to an agent on the other tool automatically.");
+  }
   return lines.join("\n");
 }
 

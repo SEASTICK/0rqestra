@@ -47,6 +47,9 @@ export interface PlanTask {
   // chooses which files to change, or only answers; `agentId` is that agent.
   open?: boolean;
   agentId?: string;
+  // The agent the Manager (or Planner) chose for this task, by name, and in a few words why.
+  agent?: string;
+  why?: string;
 }
 
 // Something the user can see, such as a web page: it becomes a node in the tree as soon as the run starts.
@@ -187,7 +190,9 @@ export function parsePlan(value: unknown, roles: string[]): Plan {
     const handoff = parseHandoff(t.handoff, id);
     const product = typeof t.product === "string" && t.product.trim() ? t.product.trim().toLowerCase() : null;
     if (product !== null && !productIds.has(product)) throw new Error(`Task ${id} builds the product ${product}, which the plan does not name.`);
-    return { id, title, role, goal: taskGoal, dependsOn: dependsOn as string[], deliverables: deliverables as string[], ...(product ? { product } : {}), ...(handoff ? { handoff } : {}) };
+    const agent = str(t.agent, 48);
+    const why = str(t.why, 160);
+    return { id, title, role, goal: taskGoal, dependsOn: dependsOn as string[], deliverables: deliverables as string[], ...(agent ? { agent } : {}), ...(why ? { why } : {}), ...(product ? { product } : {}), ...(handoff ? { handoff } : {}) };
   });
   const ids = new Set(tasks.map((t) => t.id));
   if (ids.size !== tasks.length) throw new Error("Two tasks have the same id.");

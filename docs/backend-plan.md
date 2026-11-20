@@ -314,6 +314,25 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-20: Claude and ChatGPT work together, and the Manager decides who does what.**
+- The Manager (and the Planner) now see which tool and model each agent runs on, and, when the team has
+  both, a short guide to what each is good at (Claude Code: planning, interfaces and design, text, careful
+  reviews; Codex: implementing, logic and data, debugging, tests, precise changes). They are told to make
+  the two work together.
+- A plan task may name its agent (`"agent"`, with a short `"why"`). The main process keeps a name that
+  matches a working agent with the task's role and makes it the task's first agent; any other name is
+  dropped, and the role's usual agent does the task. The plan card shows each task's agent with a
+  Claude/ChatGPT label and the reason, and says when both tools work on the plan; the run card shows the
+  tool of the agent on each task. Reviews still go to an agent on the other tool when there is one.
+- **Set up the team** gives each role the tool that suits it (Planner, reviews and the Manager on Claude,
+  Builder and Tester on Codex), and spreads several agents of one role over both tools. When both tools are
+  connected but the whole team runs on one, the chat and the tree offer **Use both**, which moves agents
+  the same way (Undo restores).
+- Verified with unit tests and in the real Electron app with the stand-in tools: a team on Claude only was
+  mixed with Use both, the Manager's plan gave the logic to the Codex builder and the design to the Claude
+  builder with reasons, and the run used both (one Codex request, Claude for the design and the reviews).
+  **Not verified:** how well the real Manager chooses, and whether it names agents reliably.
+
 **Status 2026-11-20: undo a run's changes.** Before a run writes a file for the first time, the main
 process keeps the file as it was (or notes that it did not exist) in `<project>/history/<runId>/`
 (`main/team/history.ts`; the newest 20 runs are kept). **Undo changes** on the run card puts those
