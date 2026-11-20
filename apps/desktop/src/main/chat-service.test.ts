@@ -151,3 +151,48 @@ describe("light chat and the plan-needed fallback (Stage 3)", () => {
     expect(emitted.map(([, e]) => (e.type === "delta" ? e.text : e.type))).toEqual(["<orq", "estra is the app", "completed"]);
   });
 });
+
+describe("Auto picks the model", () => {
+  it("uses a light model for quick questions and a stronger one for work, files and long questions", async () => {
+    const { autoModel, isQuick } = await import("./chat-service.js");
+    const claude = [{ provider: "claude", models: [{ id: "default", isDefault: true }, { id: "opus" }, { id: "sonnet" }, { id: "haiku" }] }] as never;
+    const codex = [{ provider: "codex", models: [{ id: "gpt-6.2-sol", isDefault: true }, { id: "gpt-6.2-mini" }] }] as never;
+    expect(isQuick("Vad är huvudstaden i Norge?", [], false)).toBe(true);
+    expect(isQuick("Bygg en träningslogg", [], false)).toBe(false);
+    expect(isQuick("Vad ser du här?", [], true)).toBe(false);
+    expect(isQuick("x".repeat(500), [], false)).toBe(false);
+    expect(autoModel("claude", { text: "Vad är 2+2?", history: [] }, false, claude)).toBe("haiku");
+    expect(autoModel("claude", { text: "Skriv en uppsats om Rom", history: [] }, false, claude)).toBe("sonnet");
+    expect(autoModel("codex", { text: "Vad är 2+2?", history: [] }, false, codex)).toBe("gpt-6.2-mini");
+    expect(autoModel("codex", { text: "Fixa buggen", history: [] }, false, codex)).toBe("gpt-6.2-sol");
+    expect(autoModel("codex", { text: "Hej", history: [] }, false, [{ provider: "codex", models: [{ id: "gpt-6.2-sol", isDefault: true }] }] as never)).toBe("gpt-6.2-sol");
+  });
+
+  it("asks the tool with the chosen model, and with the stronger one when it then has to plan", async () => {
+    const asked: (string | null)[] = [];
+    const replies = ["<orqestra-plan-needed/>", "Plan."];
+    const adapter = { id: "claude", status: async () => ({ provider: "claude", name: "Claude Code", installed: true, version: "1", signedIn: true, plan: null, subscription: true, models: [{ id: "sonnet" }, { id: "haiku" }], limits: [], problem: null }), chat: (r: { model: string | null }) => {
+      asked.push(r.model);
+      const text = replies.shift()!;
+      return { events: (async function* () { yield { type: "completed", text, usage: null, limits: [] }; })(), stop() {} };
+    } };
+    const { ChatService } = await import("./chat-service.js");
+    const service = new ChatService({ claude: adapter, codex: adapter } as never, () => "/tmp");
+    await service.providers(true);
+    const done = new Promise<void>((resolve) => service.start({ ...valid, model: "auto", text: "Hej då" }, (_id, e) => { if (e.type === "completed") resolve(); }));
+    await done;
+    expect(asked).toEqual(["haiku", "sonnet"]);
+  });
+
+  it("passes the project's memory on, within limits", async () => {
+    const { parseSend } = await import("./chat-service.js");
+    expect(parseSend({ ...valid, memory: ["Appen ska vara på svenska"] }).memory).toEqual(["Appen ska vara på svenska"]);
+    expect(() => parseSend({ ...valid, memory: ["x".repeat(301)] })).toThrow(/memory/);
+    expect(() => parseSend({ ...valid, memory: Array(41).fill("x") })).toThrow(/memory/);
+    const { buildPrompt } = await import("./providers/history.js");
+    const prompt = buildPrompt([], "Hej", undefined, null, "auto", ["Appen ska vara på svenska"]);
+    expect(prompt).toContain("What you remember about this project");
+    expect(prompt).toContain("- Appen ska vara på svenska");
+    expect(prompt).toContain("<orqestra-remember>");
+  });
+});

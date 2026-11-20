@@ -314,6 +314,22 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-20: Auto picks the model per message, and the project has a memory.**
+- **Auto** (the default when no model is chosen) lets the main process pick the Manager's model per
+  message: a quick question (short, nothing attached, no work asked for, by the same word check that
+  decides planning) gets a light, fast model (Claude: Haiku; Codex: a "mini" model when it has one), and
+  work, files and longer questions a stronger one (Claude: Sonnet; Codex: its default). When a reply that
+  looked quick turns out to need a plan, the planning request uses the stronger model. The reply's label
+  says "Auto → <model>". A model chosen by hand is used as before.
+- **Project memory.** The Manager saves lasting facts and decisions with
+  `<orqestra-remember>…</orqestra-remember>` (hidden in the reply; a line under it says what was saved).
+  They are kept with the project (at most 40, no duplicates) and sent with every message, so the Manager
+  keeps to them. **Memory** in the project's header shows them; the user can remove or add facts.
+- Verified with unit tests and in the real Electron app with the stand-in Claude Code: a quick question
+  started it with `--model haiku`, a request for work with `--model sonnet` and both saved facts in the
+  prompt; the Memory dialog removed and added facts. **Not verified:** how well the real Manager decides
+  what to remember.
+
 **Status 2026-11-20: a chat like Claude's, attachments, and the model per task.**
 - **Formatted replies.** Replies are drawn from Markdown (`ui/markdown.mjs` reads it into plain data,
   `ui/Markdown.jsx` draws it with React; no HTML is ever parsed): headings, lists, quotes, tables, inline

@@ -502,3 +502,14 @@
 .message-user .attach-chip{background:light-dark(#ffffff, #3a3a3a)}
 .composer-footer{justify-content:flex-start;gap:6px}
 .composer-footer>.send-button{margin-left:auto}
+/* Project memory (Memory.jsx) and the note under a reply that saved something. */
+.memory-saved{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12.5px;color:var(--shell-muted)}
+.memory-button{margin-right:6px}
+.memory-dialog{min-width:min(520px,80vw)}
+.memory-empty{font-size:13.5px;color:var(--shell-muted);margin:8px 0 14px}
+.memory-list{list-style:none;margin:6px 0 14px;padding:0;display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto}
+.memory-list li{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--shell-line);border-radius:9px;font-size:13.5px;line-height:1.45;color:var(--shell-text)}
+.memory-list button{border:0;background:none;color:var(--shell-muted);font-size:17px;line-height:1;padding:0 2px}
+.memory-add{display:flex;gap:8px}
+.memory-add input{flex:1;min-width:0;font:inherit;font-size:14px;padding:9px 12px;border:1px solid var(--shell-line);border-radius:10px;background:var(--shell-bg);color:var(--shell-text)}
+.memory-count{display:block;margin-top:8px;font-size:11.5px;color:var(--shell-muted)}

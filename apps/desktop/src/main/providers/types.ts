@@ -28,6 +28,8 @@ export interface ChatRequest {
   planMode?: boolean;
   // Files and images the user added to this message (main/attachments.ts).
   attachments?: Attachment[];
+  // Lasting facts and decisions saved for this project (project memory).
+  memory?: string[];
 }
 
 export interface TeamMember {

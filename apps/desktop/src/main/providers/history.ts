@@ -153,7 +153,19 @@ export function wantsTeamWork(text: string, history: ChatTurn[] = []): boolean {
   return Boolean(last && last.text.includes("<orqestra-question>"));
 }
 
-export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember[], teamNow?: string | null, mode: "auto" | "plan" = "auto"): string {
+// Project memory: lasting facts and decisions the Manager saved earlier, and how it saves new ones.
+export const REMEMBER_TAG = "orqestra-remember";
+export const MAX_MEMORY = 40;
+export function memorySection(memory: string[]): string {
+  const lines = [
+    `When the user tells you something that should hold for this whole project (a decision, a preference, a name, a fact about them or the`,
+    `project), save it: end your reply with <${REMEMBER_TAG}>one short sentence</${REMEMBER_TAG}> (one tag per fact, only new facts).`,
+  ];
+  if (memory.length) lines.unshift(`What you remember about this project (saved earlier; follow it unless the user changes it):\n${memory.map((m) => `- ${m}`).join("\n")}`);
+  return lines.join("\n");
+}
+
+export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember[], teamNow?: string | null, mode: "auto" | "plan" = "auto", memory: string[] = []): string {
   const kept: string[] = [];
   let used = 0;
   for (const turn of history.slice(-MAX_HISTORY_TURNS).reverse()) {
@@ -168,6 +180,7 @@ export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember
     parts.push(plan ? (hasWorkingPlanner(team) ? HANDOFF : PLANNING) : LIGHT, teamSection(team));
   }
   if (teamNow) parts.push(teamNow);
+  parts.push(memorySection(memory));
   if (kept.length) parts.push(`Conversation so far:\n${kept.join("\n\n")}`);
   parts.push(`User: ${text.trim()}`);
   return parts.join("\n\n");

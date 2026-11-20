@@ -702,3 +702,24 @@ describe('the model for each task', () => {
     expect(teamMembers(graph, statuses)[0]).toMatchObject({ tool: 'codex', models: ['gpt-6.2-sol', 'gpt-6.2-mini'] });
   });
 });
+
+import { addMemory, parseRemember } from './live-chat.mjs';
+
+describe('project memory', () => {
+  it('reads the facts the Manager saved and hides the tags', () => {
+    expect(parseRemember('Klart!\n<orqestra-remember>Appen heter Lyftlogg.</orqestra-remember>\n<orqestra-remember>  Mörkt tema  </orqestra-remember>')).toEqual({ text: 'Klart!', facts: ['Appen heter Lyftlogg.', 'Mörkt tema'] });
+    expect(parseRemember('Inget att spara.')).toEqual({ text: 'Inget att spara.', facts: [] });
+    expect(visibleText('Svar <orqestra-reme')).toBe('Svar ');
+  });
+  it('keeps each fact once and the newest when full', () => {
+    let m = addMemory([], ['A', 'B'], 1);
+    m = addMemory(m, ['a', 'C'], 2);
+    expect(m.map((x) => x.text)).toEqual(['A', 'B', 'C']);
+    for (let i = 0; i < 50; i++) m = addMemory(m, [`F${i}`], 3 + i);
+    expect(m).toHaveLength(40);
+    expect(m.at(-1).text).toBe('F49');
+  });
+  it('does not repeat the tags to the Manager', () => {
+    expect(historyFor([{ kind: 'assistant', status: 'done', text: 'Ok.\n<orqestra-remember>X</orqestra-remember>' }])[0].text).toBe('Ok.');
+  });
+});

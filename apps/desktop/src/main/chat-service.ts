@@ -1,4 +1,4 @@
-import { MAX_MESSAGE_CHARS, PLAN_NEEDED } from "./providers/history";
+import { MAX_MEMORY, MAX_MESSAGE_CHARS, PLAN_NEEDED, wantsTeamWork } from "./providers/history";
 import { MAX_PER_MESSAGE, type Attachment } from "./attachments";
 import { EFFORT_NAME, MODEL_NAME } from "./providers/process";
 import { parseTeamMembers } from "./team/team-service";
@@ -22,6 +22,7 @@ export interface SendPayload {
   text: string;
   team: TeamMember[];
   attachments?: string[];
+  memory?: string[];
 }
 
 export function parseSend(value: unknown): SendPayload {
@@ -47,7 +48,31 @@ export function parseSend(value: unknown): SendPayload {
   const team = parseTeamMembers(v.team);
   const attachments = v.attachments ?? [];
   if (!Array.isArray(attachments) || attachments.length > MAX_PER_MESSAGE || !attachments.every((a) => typeof a === "string")) throw new Error("Invalid attachments.");
-  return { requestId: v.requestId, projectId: v.projectId, provider: v.provider as ProviderId, model, effort, history: turns, text: v.text, team, ...(attachments.length ? { attachments: attachments as string[] } : {}) };
+  const memory = v.memory ?? [];
+  if (!Array.isArray(memory) || memory.length > MAX_MEMORY || !memory.every((m) => typeof m === "string" && m.trim() && m.length <= 300)) throw new Error("Invalid project memory.");
+  return { requestId: v.requestId, projectId: v.projectId, provider: v.provider as ProviderId, model, effort, history: turns, text: v.text, team, ...(attachments.length ? { attachments: attachments as string[] } : {}), ...(memory.length ? { memory: (memory as string[]).map((m) => m.trim()) } : {}) };
+}
+
+export const AUTO = "auto";
+
+// A quick question: short, no work asked for, nothing attached, not answering the Manager's questions.
+export function isQuick(text: string, history: ChatTurn[], hasAttachments: boolean): boolean {
+  return !hasAttachments && text.trim().length <= 400 && !wantsTeamWork(text, history);
+}
+
+// The model "Auto" picks from what the tool offers: for Claude Code, Haiku for quick questions and Sonnet
+// otherwise; for Codex, a "mini" model for quick questions when there is one, and its default otherwise.
+export function autoModel(provider: ProviderId, payload: { text: string; history: ChatTurn[] }, hasAttachments: boolean, statuses: ProviderStatus[]): string | null {
+  const quick = isQuick(payload.text, payload.history, hasAttachments);
+  const offered = statuses.find((s) => s.provider === provider)?.models ?? [];
+  const has = (id: string) => offered.length === 0 || offered.some((m) => m.id === id);
+  if (provider === "claude") {
+    const want = quick ? "haiku" : "sonnet";
+    return has(want) ? want : null;
+  }
+  const light = offered.find((m) => /mini|nano|fast|lite/i.test(m.id));
+  if (quick && light) return light.id;
+  return offered.find((m) => m.isDefault)?.id ?? null;
 }
 
 export type Emit = (requestId: string, event: ChatEvent) => void;
@@ -93,10 +118,13 @@ export class ChatService {
       if (!found) throw new Error("An attached file is no longer available. Attach it again.");
       return found;
     });
+    // "Auto": a quick question gets a light, fast model; work, files and longer questions a stronger one.
+    const model = payload.model === AUTO ? autoModel(payload.provider, payload, attachments.length > 0, this.statusCache?.value ?? []) : payload.model;
     const request = {
-      provider: payload.provider, model: payload.model, effort: payload.effort, history: payload.history, text: payload.text, cwd: this.cwd(), team: payload.team,
+      provider: payload.provider, model, effort: payload.effort, history: payload.history, text: payload.text, cwd: this.cwd(), team: payload.team,
       teamNow: this.teamNowFor(payload.projectId),
       ...(attachments.length ? { attachments } : {}),
+      ...(payload.memory?.length ? { memory: payload.memory } : {}),
     };
     const first = this.adapters[payload.provider].chat(request);
     // stop() reaches whichever request is current (the second one, when the Manager asks to plan).
@@ -109,7 +137,9 @@ export class ChatService {
         if (answer) {
           // The light prompt was not enough: ask again with the planning instructions. The window
           // never sees the marker; it gets the second reply, with both calls' usage added up.
-          const second = this.adapters[payload.provider].chat({ ...request, planMode: true });
+          // Planning needs the stronger model when "Auto" chose a light one for what looked like a quick question.
+          const planModel = payload.model === AUTO ? autoModel(payload.provider, { text: payload.text, history: payload.history }, true, this.statusCache?.value ?? []) : request.model;
+          const second = this.adapters[payload.provider].chat({ ...request, model: planModel, planMode: true });
           current.handle = second;
           for await (const event of second.events) emit(payload.requestId, event.type === "completed" ? { ...event, usage: addUsage(answer.usage, event.usage) } : event);
         }

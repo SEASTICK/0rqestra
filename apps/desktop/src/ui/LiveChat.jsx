@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Working } from './Activity.jsx';
 import { Markdown } from './Markdown.jsx';
+import { parseRemember } from './live-chat.mjs';
 import { answersFor, FAILURE_HELP, parsePlan, parsePlanRequest, parseQuestion, readyProviders, usageLine, visibleText } from './live-chat.mjs';
 
 export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
@@ -12,12 +13,13 @@ export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
   const set = (patch) => onChange({ provider: target.provider, model: target.model, effort: target.effort, ...patch });
   return (
     <span className="chat-target">
-      <select aria-label="Who answers" className="chat-select" value={target.provider} onChange={(e) => set({ provider: e.target.value, model: null, effort: null })}>
+      <select aria-label="Who answers" className="chat-select" value={target.provider} onChange={(e) => set({ provider: e.target.value, model: 'auto', effort: null })}>
         {(!current || ready.length === 0) && <option value="none">{ready.length ? 'Choose a tool…' : 'No tool connected'}</option>}
         {ready.map((s) => <option key={s.provider} value={s.provider}>{s.name}</option>)}
       </select>
       {current && current.models.length > 0 && (
         <select aria-label="Model" className="chat-select" value={target.model ?? ''} onChange={(e) => set({ model: e.target.value, effort: null })}>
+          <option value="auto" title="A light, fast model for quick questions; a stronger one for work, files and longer questions">Auto</option>
           {current.models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
         </select>
       )}
@@ -33,11 +35,16 @@ export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
 }
 
 export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPlan, renderPlanRequest }) {
-  const label = [m.providerName, m.model && m.model !== 'default' ? m.model : null, m.effort].filter(Boolean).join(' · ');
+  // "Auto" shows which model it chose once the tool says so.
+  const modelName = m.model && m.model !== 'default' && m.model !== 'auto' ? m.model : null;
+  const label = [m.providerName, m.auto ? `Auto${modelName ? ` → ${modelName}` : ''}` : modelName, m.effort].filter(Boolean).join(' · ');
   const usage = m.status === 'done' ? usageLine(m) : '';
-  const asked = m.status === 'done' ? parseQuestion(m.text) : { body: visibleText(m.text), question: null, questions: [] };
-  const planned = m.status === 'done' && !asked.question ? parsePlan(m.text) : { body: asked.body, plan: null };
-  const requested = m.status === 'done' && !asked.question && !planned.plan ? parsePlanRequest(m.text) : { body: planned.body, brief: null };
+  // Facts saved to project memory are not part of the reply's text.
+  const remembered = m.status === 'done' ? parseRemember(m.text) : { text: m.text, facts: [] };
+  const source = remembered.text;
+  const asked = m.status === 'done' ? parseQuestion(source) : { body: visibleText(source), question: null, questions: [] };
+  const planned = m.status === 'done' && !asked.question ? parsePlan(source) : { body: asked.body, plan: null };
+  const requested = m.status === 'done' && !asked.question && !planned.plan ? parsePlanRequest(source) : { body: planned.body, brief: null };
   const body = requested.brief ? requested.body : planned.plan ? planned.body : asked.body;
   // Teams answers (m.readOnly) are informational: no plan, plan request or question in them is offered.
   const question = m.readOnly ? null : asked.question;
@@ -64,6 +71,7 @@ export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPl
       {brief && renderPlanRequest && renderPlanRequest(brief, m)}
       {question && !m.answered && <QuestionCard questions={questions} disabled={busy} onAnswer={(choices) => onAnswer(m.id, answersFor(questions, choices), answeredSummary(questions, choices))}/>}
       {question && m.answered && <div className="question-answered-list">{(m.answered.items || [{ question: question.question, answer: m.answered.kind === 'skip' ? 'Skipped — the Manager decides' : m.answered.label }]).map((item, i) => <div key={i} className="question-answered"><span>{item.question}</span><strong>{item.answer}</strong></div>)}</div>}
+      {remembered.facts.length > 0 && <div className="memory-saved"><Icon name="spark" size={13}/> Saved to project memory: {remembered.facts.join(' · ')}</div>}
       {usage && <div className="live-note">{usage}</div>}
     </div>
   );

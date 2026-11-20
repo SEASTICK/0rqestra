@@ -38,6 +38,8 @@ export function effectiveTarget(target, statuses) {
   const status = readyProviders(statuses).find((s) => s.provider === target.provider);
   if (!status) return NO_TOOL;
   const models = status.models || [];
+  // "Auto" (also when nothing was chosen): the main process picks a light or strong model per message.
+  if (target.model === 'auto' || target.model === null || target.model === undefined) return { provider: status.provider, model: 'auto', effort: null, name: status.name, modelLabel: 'Auto' };
   const model = models.find((m) => m.id === target.model) || models.find((m) => m.isDefault) || models[0] || null;
   const effort = model && (model.efforts || []).includes(target.effort) ? target.effort : null;
   return { provider: status.provider, model: model ? model.id : null, effort, name: status.name, modelLabel: model ? model.label : 'Default' };
@@ -54,7 +56,7 @@ export function historyFor(messages, max = 40) {
       ? { role: 'assistant', text: teamRunText(m.run) }
       // A request the user gave one agent directly is shown to the Manager as such, not as a request to it.
       // Attachments are sent once, with their message; later turns only say they were there.
-      : { role: m.kind === 'user' ? 'user' : 'assistant', text: `${m.to ? `(To ${m.to}, not to you) ` : ''}${String(m.text).slice(0, 20000)}${m.attachments?.length ? `\n[Attached earlier: ${m.attachments.map((a) => a.name).join(', ')}]` : ''}` }));
+      : { role: m.kind === 'user' ? 'user' : 'assistant', text: `${m.to ? `(To ${m.to}, not to you) ` : ''}${(m.kind === 'user' ? String(m.text) : parseRemember(m.text).text).slice(0, 20000)}${m.attachments?.length ? `\n[Attached earlier: ${m.attachments.map((a) => a.name).join(', ')}]` : ''}` }));
 }
 
 // A finished team run as the Manager sees it in its next turn: the outcome, and each task's return
@@ -79,7 +81,7 @@ export function teamRunText(run) {
 
 export function newAssistant(id, target) {
   return {
-    id, kind: 'assistant', text: '', status: 'streaming', startedAt: Date.now(),
+    id, kind: 'assistant', text: '', status: 'streaming', startedAt: Date.now(), ...(target.model === 'auto' ? { auto: true } : {}),
     provider: target.provider, providerName: target.name, model: target.model, effort: target.effort,
   };
 }
@@ -202,7 +204,7 @@ export function parseQuestion(raw) {
 }
 
 // While a reply is still being written, question and plan markup is hidden until it is complete.
-const OPEN_TAGS = [OPEN_TAG, '<orqestra-plan>', '<orqestra-plan-request>'];
+const OPEN_TAGS = [OPEN_TAG, '<orqestra-plan>', '<orqestra-plan-request>', '<orqestra-remember>'];
 export function visibleText(raw) {
   const source = String(raw ?? '');
   const starts = OPEN_TAGS.map((tag) => source.indexOf(tag)).filter((i) => i >= 0);
@@ -829,4 +831,23 @@ export function undoableRunId(messages) {
     return run.id;
   }
   return null;
+}
+
+// ---- Project memory: facts the Manager saves with <orqestra-remember>…</orqestra-remember> ------------
+export const MAX_MEMORY = 40;
+const REMEMBER = /<orqestra-remember>([\s\S]*?)<\/orqestra-remember>/g;
+export function parseRemember(raw) {
+  const source = String(raw ?? '');
+  const facts = [...source.matchAll(REMEMBER)].map((m) => m[1].replace(/\s+/g, ' ').trim().slice(0, 300)).filter(Boolean);
+  return { text: source.replace(REMEMBER, '').replace(/\n{3,}/g, '\n\n').trim(), facts };
+}
+
+// Adds facts to a project's memory: no duplicates (ignoring case), the newest kept when it is full.
+export function addMemory(memory, facts, now = Date.now()) {
+  const list = [...(memory || [])];
+  for (const fact of facts) {
+    if (list.some((m) => m.text.toLowerCase() === fact.toLowerCase())) continue;
+    list.push({ id: `m${now.toString(36)}${list.length}`, text: fact, at: now });
+  }
+  return list.slice(-MAX_MEMORY);
 }
