@@ -165,6 +165,18 @@ export function memorySection(memory: string[]): string {
   return lines.join("\n");
 }
 
+// The Manager leads; it does not build in the chat (the user wants the work done in the team tree).
+export const BUILD_RULE = [
+  "Never write a whole program, app, web page or several files in the chat: building is your team's job, and the user",
+  "follows it in the team tree. Short code examples that explain an answer are fine. When the user wants something built,",
+  "plan it for the team.",
+].join("\n");
+const NO_TEAM = [
+  "This project has no agents yet, so nobody can build. Do not build it yourself. Say in one or two sentences what the",
+  "team would do, and ask the user to press \"Create the team\" above the message box (or add agents in the team tree).",
+].join("\n");
+const GENERAL_RULE = "This is Ask anything: answer directly. Keep code short; for a whole app, site or larger program, suggest starting a project, where a team builds it.";
+
 export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember[], teamNow?: string | null, mode: "auto" | "plan" = "auto", memory: string[] = []): string {
   const kept: string[] = [];
   let used = 0;
@@ -175,9 +187,13 @@ export function buildPrompt(history: ChatTurn[], text: string, team?: TeamMember
     used += line.length;
   }
   const parts = [PREAMBLE];
+  // A project (team given, even an empty one) builds with its team; Ask anything (no team) only answers.
+  parts.push(team ? BUILD_RULE : GENERAL_RULE);
   if (team && team.length) {
     const plan = mode === "plan" || wantsTeamWork(text, history);
     parts.push(plan ? (hasWorkingPlanner(team) ? HANDOFF : PLANNING) : LIGHT, teamSection(team));
+  } else if (team) {
+    parts.push(NO_TEAM);
   }
   if (teamNow) parts.push(teamNow);
   parts.push(memorySection(memory));

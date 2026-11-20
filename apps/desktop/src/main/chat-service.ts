@@ -20,7 +20,8 @@ export interface SendPayload {
   effort: string | null;
   history: ChatTurn[];
   text: string;
-  team: TeamMember[];
+  // Absent for Ask anything (no project); empty for a project whose team has no agents yet.
+  team?: TeamMember[] | undefined;
   attachments?: string[];
   memory?: string[];
 }
@@ -45,12 +46,13 @@ export function parseSend(value: unknown): SendPayload {
     }
     return { role: t.role, text: t.text };
   });
-  const team = parseTeamMembers(v.team);
+  // No team at all (Ask anything) is not the same as a project whose team has no agents yet.
+  const team = v.team === undefined ? undefined : parseTeamMembers(v.team);
   const attachments = v.attachments ?? [];
   if (!Array.isArray(attachments) || attachments.length > MAX_PER_MESSAGE || !attachments.every((a) => typeof a === "string")) throw new Error("Invalid attachments.");
   const memory = v.memory ?? [];
   if (!Array.isArray(memory) || memory.length > MAX_MEMORY || !memory.every((m) => typeof m === "string" && m.trim() && m.length <= 300)) throw new Error("Invalid project memory.");
-  return { requestId: v.requestId, projectId: v.projectId, provider: v.provider as ProviderId, model, effort, history: turns, text: v.text, team, ...(attachments.length ? { attachments: attachments as string[] } : {}), ...(memory.length ? { memory: (memory as string[]).map((m) => m.trim()) } : {}) };
+  return { requestId: v.requestId, projectId: v.projectId, provider: v.provider as ProviderId, model, effort, history: turns, text: v.text, ...(team ? { team } : {}), ...(attachments.length ? { attachments: attachments as string[] } : {}), ...(memory.length ? { memory: (memory as string[]).map((m) => m.trim()) } : {}) };
 }
 
 export const AUTO = "auto";
@@ -121,7 +123,7 @@ export class ChatService {
     // "Auto": a quick question gets a light, fast model; work, files and longer questions a stronger one.
     const model = payload.model === AUTO ? autoModel(payload.provider, payload, attachments.length > 0, this.statusCache?.value ?? []) : payload.model;
     const request = {
-      provider: payload.provider, model, effort: payload.effort, history: payload.history, text: payload.text, cwd: this.cwd(), team: payload.team,
+      provider: payload.provider, model, effort: payload.effort, history: payload.history, text: payload.text, cwd: this.cwd(), ...(payload.team ? { team: payload.team } : {}),
       teamNow: this.teamNowFor(payload.projectId),
       ...(attachments.length ? { attachments } : {}),
       ...(payload.memory?.length ? { memory: payload.memory } : {}),

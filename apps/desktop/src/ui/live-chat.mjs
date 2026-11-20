@@ -856,3 +856,28 @@ export function addMemory(memory, facts, now = Date.now()) {
   }
   return list.slice(-MAX_MEMORY);
 }
+
+// A project with only its Manager gets a starting team in one click: a Planner, two Builders and a
+// reviewer, each on the tool that suits it (autoTeam spreads the Builders over both tools when both are
+// connected). Connected to the Manager; the window then arranges them.
+export const STARTER_TEAM = [
+  { id: 'planner', name: 'The architect', role: 'Planner' },
+  { id: 'builder', name: 'Code builder', role: 'Builder' },
+  { id: 'builder-2', name: 'Interface builder', role: 'Builder' },
+  { id: 'reviewer', name: 'Fresh eyes', role: 'Code Reviewer' },
+];
+
+export function onlyManager(graph) {
+  return (graph?.nodes || []).every((n) => n.role === 'Manager');
+}
+
+export function starterTeam(graph, statuses) {
+  if (!onlyManager(graph) || !readyProviders(statuses).length) return { graph, changed: [] };
+  const manager = (graph.nodes || []).find((n) => n.role === 'Manager');
+  const added = STARTER_TEAM.map((a, i) => ({ ...a, priority: a.id === 'builder-2' ? 2 : 1, x: 100 + i * 280, y: 300, agent: null }));
+  const edges = [...(graph.edges || []), ...(manager ? added.map((a) => ({ id: `e-${a.id}`, from: manager.id, to: a.id })) : [])];
+  const { graph: next } = autoTeam({ ...graph, nodes: [...graph.nodes, ...added], edges }, statuses);
+  // The Manager is left as it was: the chat's own choice (Auto, or a model picked by hand) stays in force.
+  const nodes = next.nodes.map((n) => (n.role === 'Manager' ? graph.nodes.find((m) => m.id === n.id) || n : n));
+  return { graph: { ...next, nodes }, changed: added.map((a) => a.id) };
+}

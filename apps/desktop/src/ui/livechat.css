@@ -528,3 +528,6 @@
 .panel-header .chat-new{margin-left:auto;margin-right:4px}
 .welcome-general h2{font-size:30px;margin:10px 0 6px}
 .welcome-general .suggestions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;max-width:640px;width:100%}
+/* Back to the newest message when you have scrolled up while a reply is written. */
+.chat-scroll{position:relative}
+.jump-latest{position:sticky;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;width:36px;height:36px;margin:-36px auto 0;border-radius:50%;border:1px solid var(--shell-line);background:var(--shell-card);color:var(--shell-text);font-size:17px;box-shadow:0 4px 14px #0000001f;z-index:3}

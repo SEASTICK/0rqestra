@@ -314,6 +314,23 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-20: the Manager leads, the team builds; the chat no longer pulls you down.**
+- Found with Philip's own run: in a project whose tree had only the Manager, the window sent an empty team,
+  which was taken as "no team" (as in Ask anything), so the Manager got no planning instructions and wrote
+  the whole app in the chat. Now a project always sends its team (also when empty), and Ask anything none.
+- A project's Manager is told never to write a whole program, app, page or several files in the chat
+  (short examples are fine): building is the team's job, followed in the team tree. With no agents yet it
+  says so and asks the user to press **Create the team**. Ask anything is told to answer directly, keep code
+  short, and suggest a project for a whole app.
+- **Create the team** (above the message box in a project with only its Manager, when a tool is
+  connected) adds a starting team: a Planner, two Builders and a reviewer on the tools that suit them (the
+  Builders on both tools when both are connected), connected to the Manager and arranged. The Manager's own
+  tool and model are left as chosen.
+- The chat follows a reply only while you are at the bottom. Scrolled up, it stays where you are and a
+  round ↓ button brings you back; sending a message always goes to the bottom.
+- Verified with unit tests and in the real Electron app with the stand-in tools (the rules in the
+  Manager's prompt, the team created, the team then in the prompt, scrolling up during a long reply).
+
 **Status 2026-11-20: several chats per project, and Ask anything.**
 - **Ask anything** is first in the sidebar: a place for questions that belong to no project (quick
   answers, study help, writing). Its Manager gets no team, so it answers rather than plans; it has its own

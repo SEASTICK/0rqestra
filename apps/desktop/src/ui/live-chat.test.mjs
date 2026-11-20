@@ -728,3 +728,26 @@ describe('project memory', () => {
     expect(historyFor([{ kind: 'assistant', status: 'done', text: 'Ok.\n<orqestra-remember>X</orqestra-remember>' }])[0].text).toBe('Ok.');
   });
 });
+
+import { onlyManager, starterTeam } from './live-chat.mjs';
+
+describe('a starting team for a project with only its Manager', () => {
+  const claude = { provider: 'claude', name: 'Claude Code', installed: true, signedIn: true, subscription: true, models: [{ id: 'sonnet', label: 'Sonnet', isDefault: true }] };
+  const codex = { provider: 'codex', name: 'Codex', installed: true, signedIn: true, subscription: true, models: [{ id: 'gpt-6.2-sol', label: 'GPT-6.2 Sol', isDefault: true }] };
+  const lone = { nodes: [{ id: 'manager', name: 'Manager', role: 'Manager', priority: 1, x: 410, y: 75, agent: null }], edges: [] };
+  it('adds a Planner, two Builders on both tools and a reviewer, connected to the Manager', () => {
+    expect(onlyManager(lone)).toBe(true);
+    const { graph, changed } = starterTeam(lone, [claude, codex]);
+    expect(changed).toEqual(['planner', 'builder', 'builder-2', 'reviewer']);
+    const tool = (id) => graph.nodes.find((n) => n.id === id).agent.tool;
+    expect(['planner', 'builder', 'builder-2', 'reviewer'].map(tool)).toEqual(['claude', 'codex', 'claude', 'claude']);
+    expect(graph.nodes.find((n) => n.id === 'manager').agent).toBeNull();
+    expect(graph.edges.map((e) => `${e.from}>${e.to}`)).toEqual(['manager>planner', 'manager>builder', 'manager>builder-2', 'manager>reviewer']);
+    expect(onlyManager(graph)).toBe(false);
+  });
+  it('does nothing without a connected tool or when the project already has agents', () => {
+    expect(starterTeam(lone, []).changed).toEqual([]);
+    const { graph } = starterTeam(lone, [claude]);
+    expect(starterTeam(graph, [claude]).changed).toEqual([]);
+  });
+});

@@ -6,7 +6,9 @@ const valid = { requestId: "req-00001", projectId: "p1", provider: "claude", mod
 
 describe("parseSend", () => {
   it("accepts a valid request and normalises empty model and effort", () => {
-    expect(parseSend(valid)).toEqual({ ...valid, history: [{ role: "user", text: "hi" }], team: [] });
+    // No team sent: Ask anything. An empty team: a project without agents yet.
+    expect(parseSend(valid)).toEqual({ ...valid, history: [{ role: "user", text: "hi" }] });
+    expect(parseSend({ ...valid, team: [] }).team).toEqual([]);
     expect(parseSend({ ...valid, team: [{ name: " Code builder ", role: "Builder", ready: true }] }).team).toEqual([{ name: "Code builder", role: "Builder", ready: true }]);
     expect(parseSend({ ...valid, model: "", effort: undefined })).toMatchObject({ model: null, effort: null });
   });
@@ -194,5 +196,18 @@ describe("Auto picks the model", () => {
     expect(prompt).toContain("What you remember about this project");
     expect(prompt).toContain("- Appen ska vara på svenska");
     expect(prompt).toContain("<orqestra-remember>");
+  });
+});
+
+describe("the Manager builds with its team, not in the chat", () => {
+  it("tells a project's Manager to plan, and to ask for a team when there is none", async () => {
+    const { buildPrompt } = await import("./providers/history.js");
+    const empty = buildPrompt([], "Bygg en matlogg", []);
+    expect(empty).toContain("Never write a whole program");
+    expect(empty).toContain("no agents yet");
+    expect(empty).toContain("Create the team");
+    const general = buildPrompt([], "Vad är en loop?");
+    expect(general).toContain("This is Ask anything");
+    expect(general).not.toContain("no agents yet");
   });
 });
