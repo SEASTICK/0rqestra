@@ -1,7 +1,7 @@
 // The Manager's plan, and the team working on it, as cards in the chat.
 import React from 'react';
 import { ActivityLog, Working } from './Activity.jsx';
-import { elapsed } from './live-chat.mjs';
+import { directReply, elapsed, textParts } from './live-chat.mjs';
 
 const STATUS_LABEL = {
   waiting: 'Waiting', working: 'Working', reviewing: 'In review', done: 'Done', unverified: 'Done, not reviewed',
@@ -45,10 +45,11 @@ export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPre
     <div className={`team-card team-${run.status}`} role="status" aria-live="polite">
       <div className="team-head">
         {running
-          ? <Working label={RUN_LABEL.running} since={run.startedAt} className="team-working" />
+          ? <Working label={run.direct ? `${run.direct.name} is working` : RUN_LABEL.running} since={run.startedAt} className="team-working" />
           : <><span className="team-dot"/><strong>{RUN_LABEL[run.status] || run.status}</strong>{run.startedAt && run.endedAt ? <span className="team-took">in {elapsed(run.endedAt - run.startedAt)}</span> : null}</>}
         <span className="team-goal">{run.goal}</span>
       </div>
+      {run.direct && <DirectReply run={run} nameOf={nameOf} />}
       <ul className="team-tasks">
         {run.tasks.map((t) => (
           <li key={t.id} className={`team-task task-${t.status}`}>
@@ -76,6 +77,15 @@ export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPre
       </div>
     </div>
   );
+}
+
+// A request the user gave one agent directly: who answered, and what it said (files as one line each).
+function DirectReply({ run }) {
+  const reply = directReply(run);
+  if (!reply) return null;
+  return <div className="direct-reply"><span className="direct-who">{run.direct.name}</span>
+    {textParts(reply).map((p, i) => p.type === 'text' ? <p key={i}>{p.text}</p> : p.type === 'file' ? <div key={i} className="agent-file"><code>{p.path}</code><span>{p.lines} {p.lines === 1 ? 'line' : 'lines'}</span></div> : null)}
+  </div>;
 }
 
 // While the Planner turns the Manager's brief into a plan, and when that did not work.

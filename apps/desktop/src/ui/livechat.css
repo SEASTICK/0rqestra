@@ -407,3 +407,14 @@
 .agent-failed{margin:6px 0 0;font-size:12.5px;color:light-dark(#a4472c, #e59a82)}
 .agent-node{cursor:pointer}
 .team-head .working-line{white-space:nowrap;flex-shrink:0}
+/* Asking one agent directly (AgentPanel) and its reply in the chat (TeamRunCard). */
+.agent-ask{border-top:1px solid var(--shell-line);padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px;background:var(--shell-card)}
+.agent-ask textarea{resize:none;font:inherit;font-size:13.5px;line-height:1.45;padding:9px 11px;border:1px solid var(--shell-line);border-radius:10px;background:var(--shell-bg);color:var(--shell-text)}
+.agent-ask textarea:focus{outline:2px solid light-dark(#cfcfcf, #555555);outline-offset:0}
+.agent-ask-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.agent-ask-foot small{font-size:11.5px;color:var(--shell-muted)}
+.message-to{font-size:11.5px;font-weight:600;color:var(--shell-muted);margin-bottom:4px;letter-spacing:.2px}
+.direct-reply{padding:12px 16px;border-bottom:1px solid var(--shell-line);display:flex;flex-direction:column;gap:6px}
+.direct-reply p{margin:0;font-size:14px;line-height:1.55;color:var(--shell-text);white-space:pre-wrap}
+.direct-who{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--shell-muted)}
+.team-took{white-space:nowrap;flex-shrink:0}

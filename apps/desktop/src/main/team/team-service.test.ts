@@ -77,3 +77,14 @@ describe("planning by the Planner", () => {
     await expect(service(answer("")).plan({ ...request, brief: "  " })).rejects.toThrow(/brief/);
   });
 });
+
+describe("a direct request to one agent", () => {
+  const service = () => new TeamService({ codex: new Hanging(), claude: new Hanging() as unknown as ProviderAdapter }, () => "/tmp/orq-never-written", () => "/tmp");
+  it("builds the plan for that agent and checks the request", () => {
+    const prepared = service().prepareDirect({ runId: "r1", projectId: "p1", agentId: "b1", request: "Gör rubriken större", agents: [agent] });
+    expect(prepared.plan.tasks[0]).toMatchObject({ open: true, agentId: "b1", role: "Builder", goal: "Gör rubriken större" });
+    expect(() => service().prepareDirect({ runId: "r1", projectId: "p1", agentId: "nobody", request: "x", agents: [agent] })).toThrow(/does not run on Claude Code or Codex/);
+    expect(() => service().prepareDirect({ runId: "r1", projectId: "p1", agentId: "b1", request: "", agents: [agent] })).toThrow(/Write what/);
+    expect(() => service().prepareDirect({ runId: "../x", projectId: "p1", agentId: "b1", request: "x", agents: [agent] })).toThrow(/run id/);
+  });
+});

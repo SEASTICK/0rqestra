@@ -1,4 +1,4 @@
-import type { Plan, PlanTask } from "./plan";
+import { MAX_OPEN_FILES, safeRelativePath, type Plan, type PlanTask } from "./plan";
 import { WEB_RULES } from "../providers/history";
 
 // What the agents are asked, and how their answers are read. Agents have no tools, so they hand over
@@ -10,7 +10,8 @@ export interface AgentRef {
   role: string;
 }
 
-export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, context: { path: string; content: string }[], problems: string[]): string {
+export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, context: { path: string; content: string }[], problems: string[], files: string[] = []): string {
+  if (task.open) return openPrompt(task, agent, context, problems, files);
   const parts = [
     `You are ${agent.name}, the ${agent.role} in a team of AI agents led by a Manager in the app 0rqestra. You do one task.`,
     `Project goal: ${plan.goal}`,
@@ -32,6 +33,31 @@ export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, contex
       "the complete file content",
       "</orqestra-file>",
       "Use exactly the file names listed above, and no other files.",
+      WEB_RULES,
+    ].join("\n"),
+  );
+  return parts.join("\n\n");
+}
+
+// A request the user gave this agent directly. It sees the project's files and decides what to change.
+function openPrompt(task: PlanTask, agent: AgentRef, context: { path: string; content: string }[], problems: string[], files: string[]): string {
+  const parts = [
+    `You are ${agent.name}, the ${agent.role} in a team of AI agents in the app 0rqestra. The user asks you directly, without a plan from the Manager.`,
+    `The request: ${task.goal}`,
+    `Files in the project: ${files.length ? files.join(", ") : "none yet"}.`,
+  ];
+  if (context.length) parts.push(`Their content:\n${context.map((f) => `--- ${f.path} ---\n${f.content}`).join("\n\n")}`);
+  if (problems.length) parts.push(`Your previous attempt was not approved. Fix these problems:\n${problems.map((p) => `- ${p}`).join("\n")}`);
+  parts.push(
+    [
+      "You cannot run tools or commands, and nothing you write is executed now.",
+      "Start with one or two sentences for the user about what you did, in the language of the request.",
+      `If the request needs files changed or created, then give each of them complete (at most ${MAX_OPEN_FILES}), in exactly this form:`,
+      '<orqestra-file path="the/file.name">',
+      "the complete file content",
+      "</orqestra-file>",
+      "Change only what the request needs and keep the rest of each file as it is. Use plain relative file names.",
+      "If the request is only a question, answer it and give no files.",
       WEB_RULES,
     ].join("\n"),
   );
@@ -79,6 +105,18 @@ export function parseReview(text: string): { approved: boolean; problems: string
 // Checks that an answer delivers exactly the files the task owns. Returns the problems, if any.
 export function deliveryProblems(task: PlanTask, files: { path: string; content: string }[]): string[] {
   const problems: string[] = [];
+  if (task.open) {
+    if (files.length > MAX_OPEN_FILES) problems.push(`Deliver at most ${MAX_OPEN_FILES} files.`);
+    const seen = new Set<string>();
+    for (const f of files) {
+      const safe = safeRelativePath(f.path);
+      if (!safe) problems.push(`${f.path} is not a plain relative file name.`);
+      else if (seen.has(safe.toLowerCase())) problems.push(`${f.path} was delivered twice.`);
+      else if (!f.content.trim()) problems.push(`${f.path} is empty.`);
+      if (safe) seen.add(safe.toLowerCase());
+    }
+    return problems;
+  }
   const wanted = new Map(task.deliverables.map((d) => [d.toLowerCase(), d]));
   const seen = new Set<string>();
   for (const f of files) {

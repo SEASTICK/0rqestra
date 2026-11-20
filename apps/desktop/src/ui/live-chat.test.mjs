@@ -556,3 +556,27 @@ describe("an agent's work", () => {
     expect(textParts('')).toEqual([]);
   });
 });
+
+import { directPlanFor, directReply } from './live-chat.mjs';
+
+describe('asking one agent directly', () => {
+  it('makes the same one-task plan as the main process, and finds the reply', () => {
+    const plan = directPlanFor('  Gör   rubriken större ', { id: 'b', role: 'Builder' });
+    expect(plan).toEqual({ goal: 'Gör rubriken större', products: [], tasks: [{ id: 't1', title: 'Gör rubriken större', role: 'Builder', goal: 'Gör   rubriken större', dependsOn: [], deliverables: [], open: true, agentId: 'b' }] });
+    let run = newTeamRun('d1', plan, 0, { agentId: 'b', name: 'Code builder' });
+    expect(directReply(run)).toBeNull();
+    run = applyTeamEvent(run, { type: 'output', taskId: 't1', agentId: 'b', kind: 'work', attempt: 1, text: 'Klart, större nu.', done: true }, 1);
+    expect(directReply(run)).toBe('Klart, större nu.');
+    expect(directReply(newTeamRun('x', plan, 0))).toBeNull();
+  });
+});
+
+describe('the Manager sees direct requests for what they are', () => {
+  it('marks them in its history', () => {
+    const run = { status: 'done', summary: 'Klart.', files: [{ path: 'index.html' }], direct: { agentId: 'b', name: 'Code builder' } };
+    expect(historyFor([{ kind: 'user', text: 'Gör rubriken större', to: 'Code builder' }, { kind: 'team', run }])).toEqual([
+      { role: 'user', text: '(To Code builder, not to you) Gör rubriken större' },
+      { role: 'assistant', text: 'Code builder (asked directly) (done): Klart. Files: index.html.' },
+    ]);
+  });
+});

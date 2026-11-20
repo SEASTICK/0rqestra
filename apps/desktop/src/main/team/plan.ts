@@ -18,6 +18,10 @@ export interface PlanTask {
   deliverables: string[];
   // The product this task builds (one of Plan.products), when it builds one.
   product?: string;
+  // A request the user gave one agent directly (see directPlan): the agent sees the project's files and
+  // chooses which files to change, or only answers; `agentId` is that agent.
+  open?: boolean;
+  agentId?: string;
 }
 
 // Something the user can see, such as a web page: it becomes a node in the tree as soon as the run starts.
@@ -108,4 +112,19 @@ export function parsePlan(value: unknown, roles: string[]): Plan {
     for (const t of next) done.add(t.id);
   }
   return { goal, tasks, products };
+}
+
+export const MAX_DIRECT_CHARS = 4000;
+export const MAX_OPEN_FILES = 8;
+
+// A one-task plan for a request the user gave one agent directly, from the agent's panel in the tree.
+export function directPlan(request: unknown, agent: { id: string; name: string; role: string }): Plan {
+  const text = str(request, MAX_DIRECT_CHARS);
+  if (!text) throw new Error(`Write what ${agent.name} should do (at most ${MAX_DIRECT_CHARS} characters).`);
+  const short = text.replace(/\s+/g, " ");
+  return {
+    goal: short.length > 160 ? `${short.slice(0, 157)}…` : short,
+    tasks: [{ id: "t1", title: short.length > 80 ? `${short.slice(0, 77)}…` : short, role: agent.role, goal: text, dependsOn: [], deliverables: [], open: true, agentId: agent.id }],
+    products: [],
+  };
 }

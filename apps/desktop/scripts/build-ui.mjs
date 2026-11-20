@@ -7,6 +7,7 @@
 // proper bundler; that is a separate step.
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
@@ -84,6 +85,13 @@ const body = Object.entries(modules)
   .map(([key, code]) => `${JSON.stringify(key)}:function(module,exports,require){\n${code}\n}`)
   .join(',\n');
 const bundle = `/* 0rqestra interface. Third-party notices: THIRD-PARTY-LICENSE.txt */\n(()=>{'use strict';const modules={${body}};const cache={};const aliases=${JSON.stringify(aliases)};function require(name){if(name==='./app.css')return {};name=aliases[name]||name;if(cache[name])return cache[name].exports;if(!modules[name])throw Error('Unknown module '+name);const m=cache[name]={exports:{}};modules[name](m,m.exports,require);return m.exports;}require('app');})();\n`;
+// Parse the whole bundle once: a syntax error (such as a name declared twice in one component) would
+// otherwise only show at start as a blank window.
+try {
+  new vm.Script(bundle, { filename: 'app.js' });
+} catch (error) {
+  throw new Error(`The interface bundle does not parse: ${error.message}`, { cause: error });
+}
 fs.writeFileSync(path.join(outdir, 'app.js'), bundle);
 fs.copyFileSync(path.join(vendor, 'THIRD-PARTY-LICENSE.txt'), path.join(outdir, 'THIRD-PARTY-LICENSE.txt'));
 // App icon for the window (dist/icon.ico on Windows, dist/icon.png elsewhere) and the page favicon.

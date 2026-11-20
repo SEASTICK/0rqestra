@@ -37,10 +37,9 @@ export function registerTeamIpc(
   };
   // Returns { ok: true, runId } or { ok: false, reason, message } when coordination refuses or is
   // unavailable; in that case nothing has started.
-  ipcMain.handle("team:start", async (event, payload: unknown) => {
-    guard(event);
-    const sender = event.sender;
-    const prepared = service.prepare(payload);
+  // Starts a prepared run, after Teams coordination (if any) allowed it. Returns { ok: true, runId, plan },
+  // or { ok: false, reason, message } when coordination refuses or is unavailable (nothing has started).
+  const launch = async (sender: Electron.WebContents, prepared: ReturnType<TeamService["prepare"]>) => {
     const decision = gate ? await gate({ runId: prepared.runId, localProjectId: prepared.projectId, plan: prepared.plan }) : { kind: "solo" as const };
     if (decision.kind !== "solo" && decision.kind !== "granted") return { ok: false, reason: decision.kind, message: decision.message };
     try {
@@ -48,11 +47,20 @@ export function registerTeamIpc(
         const window = getWindow();
         if (window && !window.isDestroyed() && window.webContents === sender && !sender.isDestroyed()) sender.send("team:event", { runId: id, event: teamEvent });
       }, decision.kind === "granted" ? decision.guard : undefined);
-      return { ok: true, runId };
+      return { ok: true, runId, plan: prepared.plan };
     } catch (error) {
       if (decision.kind === "granted") await decision.guard.release();
       throw error;
     }
+  };
+  ipcMain.handle("team:start", async (event, payload: unknown) => {
+    guard(event);
+    return launch(event.sender, service.prepare(payload));
+  });
+  // A request the user gives one agent directly, from its panel in the tree.
+  ipcMain.handle("team:direct", async (event, payload: unknown) => {
+    guard(event);
+    return launch(event.sender, service.prepareDirect(payload));
   });
   ipcMain.handle("team:plan", (event, payload: unknown) => {
     guard(event);

@@ -51,8 +51,9 @@ export function historyFor(messages, max = 40) {
     .filter((m) => m.kind === 'user' || (m.kind === 'assistant' && m.status === 'done' && m.text) || (m.kind === 'team' && m.run && m.run.status !== 'running'))
     .slice(-max)
     .map((m) => (m.kind === 'team'
-      ? { role: 'assistant', text: `Team run (${m.run.status}): ${m.run.summary || ''} Files: ${(m.run.files || []).map((f) => f.path).join(', ') || 'none'}.` }
-      : { role: m.kind === 'user' ? 'user' : 'assistant', text: String(m.text).slice(0, 20000) }));
+      ? { role: 'assistant', text: `${m.run.direct ? `${m.run.direct.name} (asked directly)` : 'Team run'} (${m.run.status}): ${m.run.summary || ''} Files: ${(m.run.files || []).map((f) => f.path).join(', ') || 'none'}.` }
+      // A request the user gave one agent directly is shown to the Manager as such, not as a request to it.
+      : { role: m.kind === 'user' ? 'user' : 'assistant', text: `${m.to ? `(To ${m.to}, not to you) ` : ''}${String(m.text).slice(0, 20000)}` }));
 }
 
 export function newAssistant(id, target) {
@@ -268,8 +269,8 @@ export function planAssignments(plan, graph) {
   return plan.tasks.map((t) => ({ ...t, agent: agents.filter((a) => a.role === t.role).sort(byPriority)[0] || null }));
 }
 
-export function newTeamRun(id, plan, now = Date.now()) {
-  return { id, status: 'running', startedAt: now, log: [], goal: plan.goal, products: plan.products || [], tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, role: t.role, deliverables: t.deliverables, ...(t.product ? { product: t.product } : {}), status: 'waiting', agentId: null, attempt: 0, note: null, review: null, files: [] })), summary: null, files: [], calls: 0, usage: null };
+export function newTeamRun(id, plan, now = Date.now(), direct = null) {
+  return { id, status: 'running', startedAt: now, log: [], ...(direct ? { direct } : {}), goal: plan.goal, products: plan.products || [], tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, role: t.role, deliverables: t.deliverables, ...(t.product ? { product: t.product } : {}), status: 'waiting', agentId: null, attempt: 0, note: null, review: null, files: [] })), summary: null, files: [], calls: 0, usage: null };
 }
 
 function applyTeamEventCore(run, event) {
@@ -653,4 +654,23 @@ export function textParts(text) {
   const after = source.slice(at).trim();
   if (after) parts.push({ type: 'text', text: after });
   return parts;
+}
+
+// A request the user gives one agent directly (from its panel). The same one-task plan the main
+// process builds (main/team/plan.ts directPlan), so the run card can show it at once.
+export function directPlanFor(request, agent) {
+  const text = String(request ?? '').trim();
+  const short = text.replace(/\s+/g, ' ');
+  return {
+    goal: short.length > 160 ? `${short.slice(0, 157)}…` : short,
+    tasks: [{ id: 't1', title: short.length > 80 ? `${short.slice(0, 77)}…` : short, role: agent.role, goal: text, dependsOn: [], deliverables: [], open: true, agentId: agent.id }],
+    products: [],
+  };
+}
+
+// The agent's own words in a direct run, for the run card (its last finished answer).
+export function directReply(run) {
+  if (!run?.direct) return null;
+  const answers = (run.outputs || []).filter((o) => o.kind === 'work' && o.done && !o.failed && o.agentId === run.direct.agentId);
+  return answers.length ? answers[answers.length - 1].text : null;
 }

@@ -273,6 +273,19 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-20: ask one agent directly.** The agent's panel in the tree has a box to ask that agent
+directly, without the Manager and without a plan to approve ("make the heading bigger", "what is on
+the page?"). The main process makes a one-task plan for that agent (`directPlan`, `team:direct`): the
+agent reads the project's files (up to the context limit) and delivers the files it changes or
+creates (at most 8, plain relative names inside the project folder), which another agent reviews as
+usual; a question is only answered, with nothing written or reviewed. The chat shows "To <agent>"
+and a card with the agent's reply, its files and the activity; the Manager's history marks such
+requests as not addressed to it. An agent without a tool cannot be asked, and nothing can be asked
+while the team works. In a Teams project the reservation grows when the files are written, as for
+other runs. Verified with unit tests and in the real Electron app with the stand-in tools.
+The interface build now also parses the whole bundle, so a syntax error (a name declared twice, as
+the end-to-end test found) stops the build instead of showing a blank window.
+
 **Status 2026-11-19: what each agent is doing.** A click on an agent in the tree opens a panel beside
 it: **Now** shows what the agent is writing while it writes (text, each file it delivers with its line
 count, "writing…" until the file is complete) and how long it has worked; **Earlier** lists its

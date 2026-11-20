@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EventQueue, type ChatEvent, type ChatRequest, type ProviderAdapter, type ProviderId, type ProviderStatus } from "../providers/types.js";
-import { parsePlan, safeRelativePath, type Plan } from "./plan.js";
+import { directPlan, parsePlan, safeRelativePath, type Plan } from "./plan.js";
 import { deliveryProblems, parseFiles, parseReview } from "./prompts.js";
 import { agentsFor, reviewerFor, TeamRun, type TeamAgent, type TeamEvent } from "./runner.js";
 import { readFiles, writeFiles } from "./workspace.js";
@@ -310,5 +310,49 @@ describe("existing files", () => {
     expect(codex.prompts[0]).toContain("--- index.html ---\n<h1>Old</h1>");
     expect(codex.prompts[0]).toContain("--- notes.txt ---\nkeep tabs");
     expect(fs.readFileSync(path.join(dir, "index.html"), "utf8")).toBe("<h1>New</h1>");
+  });
+});
+
+describe("a request given to one agent directly", () => {
+  it("becomes a one-task plan for that agent", () => {
+    const plan = directPlan("  Gör rubriken större  ", builder);
+    expect(plan).toMatchObject({ goal: "Gör rubriken större", products: [], tasks: [{ id: "t1", role: "Builder", goal: "Gör rubriken större", deliverables: [], open: true, agentId: "b1" }] });
+    expect(() => directPlan("  ", builder)).toThrow(/Write what Code builder should do/);
+    expect(() => directPlan("x".repeat(4001), builder)).toThrow();
+  });
+
+  it("lets the agent read the project and change the files it chooses, then reviews them", async () => {
+    fs.writeFileSync(path.join(dir, "index.html"), "<h1>Logg</h1>");
+    const other: TeamAgent = { ...builder, id: "b2", name: "Other builder", priority: 0 };
+    const codex = new ScriptedTool("codex", () => `Rubriken är större.\n<orqestra-file path="index.html">\n<h1 style="font-size:3em">Logg</h1>\n</orqestra-file>\n<orqestra-file path="css/new.css">\nh1{}\n</orqestra-file>`);
+    const claude = new ScriptedTool("claude", () => approve);
+    const { events, finished } = await run(directPlan("Gör rubriken större", builder), [other, builder, reviewer], codex, claude);
+    expect(finished.status).toBe("done");
+    // The agent the user asked works first, even when another one has a higher priority.
+    expect(events.find((e) => e.type === "task" && e.status === "working")).toMatchObject({ agentId: "b1" });
+    expect(codex.prompts[0]).toContain("The user asks you directly");
+    expect(codex.prompts[0]).toContain("--- index.html ---\n<h1>Logg</h1>");
+    expect(fs.readFileSync(path.join(dir, "index.html"), "utf8")).toBe('<h1 style="font-size:3em">Logg</h1>');
+    expect(fs.readFileSync(path.join(dir, "css", "new.css"), "utf8")).toBe("h1{}");
+    expect(claude.prompts[0]).toContain("Review another agent's work");
+  });
+
+  it("only answers when the request is a question, without writing or reviewing", async () => {
+    const codex = new ScriptedTool("codex", () => "Sidan har en rubrik och en lista.");
+    const claude = new ScriptedTool("claude", () => approve);
+    const { events, finished } = await run(directPlan("Vad finns på sidan?", builder), [builder, reviewer], codex, claude);
+    expect(finished.status).toBe("done");
+    expect(events.find((e) => e.type === "task" && e.status === "done")).toMatchObject({ note: "Answered without changing files." });
+    expect(claude.prompts).toEqual([]);
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  it("refuses files outside the project folder", async () => {
+    const codex = new ScriptedTool("codex", () => '<orqestra-file path="../evil.sh">\nrm -rf\n</orqestra-file>');
+    const claude = new ScriptedTool("claude", () => approve);
+    const { finished } = await run(directPlan("Gör något", builder), [builder, reviewer], codex, claude);
+    expect(finished.status).toBe("failed");
+    expect(codex.prompts[1]).toContain("../evil.sh is not a plain relative file name.");
+    expect(fs.existsSync(path.join(dir, "..", "evil.sh"))).toBe(false);
   });
 });

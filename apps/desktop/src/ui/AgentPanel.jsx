@@ -29,13 +29,24 @@ function Earlier({ item, open: startOpen, Icon }) {
   </li>;
 }
 
-export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure }) {
+// Ask this agent directly: no Manager and no plan to approve. It reads the project and changes what is
+// needed (another agent reviews it), or only answers a question.
+function AskAgent({ node, canAsk, busy, onAsk }) {
+  const [text, setText] = useState('');
+  const send = () => { if (text.trim() && canAsk && !busy && onAsk(text)) setText(''); };
+  return <form className="agent-ask" onSubmit={(e) => { e.preventDefault(); send(); }}>
+    <textarea rows={2} maxLength={4000} aria-label={`Ask ${node.name} directly`} disabled={!canAsk} placeholder={canAsk ? `Ask ${node.name} directly… for example: make the heading bigger` : 'Set this agent to Claude Code or Codex to ask it directly.'} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
+    <div className="agent-ask-foot"><small>{busy ? 'The team is working; ask when it is done.' : 'Goes straight to this agent. Changed files are reviewed.'}</small><button type="submit" className="shell-button primary" disabled={!canAsk || busy || !text.trim()}>Send</button></div>
+  </form>;
+}
+
+export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure, onAsk, canAsk = false, busy = false }) {
   const work = agentWork(messages, node.id);
   const scroller = useRef(null);
   const liveText = work.live?.text;
   // Follow the text while the agent writes, like a terminal.
   useEffect(() => { if (liveText && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; }, [liveText]);
-  const busy = ['working', 'reviewing', 'planning'].includes(state);
+  const active = ['working', 'reviewing', 'planning'].includes(state);
   const runtime = node.agent ? [node.agent.tool === 'claude' ? 'Claude Code' : node.agent.tool === 'codex' ? 'Codex' : node.agent.tool, node.agent.model, node.agent.effort].filter(Boolean).join(' · ') : 'No tool yet';
   return <aside className="agent-panel" aria-label={`What ${node.name} is doing`} onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
     <div className="agent-panel-head">
@@ -54,7 +65,7 @@ export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure }
         <h4>Now</h4>
         {work.live
           ? <><Working label={`${work.live.kind === 'review' ? 'Reviewing' : 'Writing'} “${work.live.taskTitle}”`} since={work.live.startedAt} /><Answer text={work.live.text} live Icon={Icon} /></>
-          : busy
+          : active
             ? <Working label={STATE_LABEL[state]} />
             : <p className="agent-muted">{STATE_LABEL[state] || 'Idle'}{state === 'queued' ? '' : ' — not working on anything right now.'}</p>}
       </section>
@@ -69,5 +80,6 @@ export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure }
           : <p className="agent-muted">Nothing yet. When the team works, what {node.name} writes shows here.</p>}
       </section>
     </div>
+    {onAsk && <AskAgent node={node} canAsk={canAsk} busy={busy} onAsk={onAsk} />}
   </aside>;
 }

@@ -1,5 +1,5 @@
 import type { ChatEvent, ProviderAdapter, ProviderId, Usage } from "../providers/types";
-import { REVIEW_ROLES, type Plan, type PlanTask } from "./plan";
+import { REVIEW_ROLES, safeRelativePath, type Plan, type PlanTask } from "./plan";
 import { deliveryProblems, parseFiles, parseReview, reviewPrompt, workerPrompt, type AgentRef } from "./prompts";
 import { listFiles, readFiles, writeFiles } from "./workspace";
 
@@ -132,13 +132,15 @@ export class TeamRun {
 
   private async runTask(task: PlanTask): Promise<void> {
     const { plan, agents, workspace } = this.o;
-    const workers = agentsFor(task.role, agents);
+    // A direct request goes to the agent the user asked first, then to others with its role.
+    const workers = task.agentId ? [...agents.filter((a) => a.id === task.agentId), ...agentsFor(task.role, agents).filter((a) => a.id !== task.agentId)] : agentsFor(task.role, agents);
     // What the agent gets to read: the files of the tasks it depends on, existing files its goal names,
     // and its own files if they already exist (so a later plan can change them).
     const existing = listFiles(workspace);
     const mentioned = existing.filter((f) => task.goal.includes(f) || task.deliverables.some((d) => d.toLowerCase() === f.toLowerCase()));
     const fromDeps = plan.tasks.filter((t) => task.dependsOn.includes(t.id)).flatMap((t) => t.deliverables);
-    const context = readFiles(workspace, [...new Set([...fromDeps, ...mentioned])], this.limits.contextChars);
+    // A direct request may touch any file, so the agent reads the whole project (up to the limit).
+    const context = readFiles(workspace, task.open ? existing : [...new Set([...fromDeps, ...mentioned])], this.limits.contextChars);
     let problems: string[] = [];
     for (let attempt = 1; attempt <= this.limits.maxAttempts; attempt += 1) {
       // A retry goes to the next agent with the same role, if there is one (escalation by priority).
@@ -146,7 +148,7 @@ export class TeamRun {
       this.set(task, "working", worker.id, attempt, problems.length ? `Fixing: ${problems[0]}` : undefined);
       let text: string;
       try {
-        text = await this.ask(worker, workerPrompt(plan, task, worker, context, problems), { taskId: task.id, kind: "work", attempt });
+        text = await this.ask(worker, workerPrompt(plan, task, worker, context, problems, existing), { taskId: task.id, kind: "work", attempt });
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
@@ -159,7 +161,14 @@ export class TeamRun {
         problems = delivery;
         continue;
       }
-      const outgoing = files.map((f) => ({ path: task.deliverables.find((d) => d.toLowerCase() === f.path.replace(/\\/g, "/").toLowerCase())!, content: f.content }));
+      // Only an answer, no files: nothing to write or review.
+      if (task.open && !files.length) {
+        this.set(task, "done", worker.id, attempt, "Answered without changing files.");
+        return;
+      }
+      const outgoing = task.open
+        ? files.map((f) => ({ path: safeRelativePath(f.path)!, content: f.content }))
+        : files.map((f) => ({ path: task.deliverables.find((d) => d.toLowerCase() === f.path.replace(/\\/g, "/").toLowerCase())!, content: f.content }));
       if (this.o.writeGuard) {
         await this.o.writeGuard.authorize(outgoing.map((f) => f.path));
         if (this.stopped) throw new Stopped();

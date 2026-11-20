@@ -3,7 +3,7 @@ import type { ChatEvent, ChatHandle, TeamMember } from "../providers/types";
 import { extractPlan, plannerPrompt } from "./planner";
 import { listFiles } from "./workspace";
 import { PROVIDER_IDS, type ProviderAdapter, type ProviderId } from "../providers/types";
-import { parsePlan, type Plan } from "./plan";
+import { directPlan, parsePlan, type Plan } from "./plan";
 import { TeamRun, type TeamAgent, type TeamEvent } from "./runner";
 
 // Team runs between the window and the runner, free of Electron so it is unit-tested. The plan came
@@ -66,6 +66,20 @@ export class TeamService {
     if (this.runs.has(runId)) throw new Error("This run already exists.");
     if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
     return { runId, projectId, plan, agents };
+  }
+
+  // A request the user gives one agent directly, from its panel in the tree: a one-task plan for that agent.
+  prepareDirect(raw: unknown): { runId: string; projectId: string; plan: Plan; agents: TeamAgent[] } {
+    const v = (raw ?? {}) as Record<string, unknown>;
+    if (typeof v.runId !== "string" || !ID.test(v.runId)) throw new Error("Invalid run id.");
+    if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
+    const agents = parseAgents(v.agents);
+    const agent = agents.find((a) => a.id === v.agentId);
+    if (!agent) throw new Error("This agent does not run on Claude Code or Codex yet. Set its tool first.");
+    const plan = directPlan(v.request, agent);
+    if (this.runs.has(v.runId)) throw new Error("This run already exists.");
+    if ([...this.runs.values()].some((r) => r.projectId === v.projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
+    return { runId: v.runId, projectId: v.projectId, plan, agents };
   }
 
   start(raw: unknown, emit: TeamEmit, writeGuard?: { authorize(paths: string[]): Promise<void> }): string {
