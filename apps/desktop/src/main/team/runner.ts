@@ -1,12 +1,12 @@
 import type { ChatEvent, ProviderAdapter, ProviderId, Usage } from "../providers/types";
-import { REVIEW_ROLES, type Plan, type PlanTask } from "./plan";
+import { REVIEW_ROLES, safeRelativePath, type Plan, type PlanTask } from "./plan";
 import { deliveryProblems, parseFiles, parseReview, reviewPrompt, workerPrompt, type AgentRef } from "./prompts";
 import { resolveHandoff, type ResolvedHandoff, type TaskOutput } from "./handoff";
 import { followUpPrompt, needKey, parseAnswer, resolveNeed } from "./context-request";
 import { completeBrief, parseBrief, parseNeeds, type ContextNeed, type ReturnBrief } from "./return-brief";
 import { UsageLedger, type CallKind, type UsageEntry, type UsageTotals } from "./usage-ledger";
 import { outputProblems, unifiedDiff } from "./diff";
-import { readFiles, writeFiles } from "./workspace";
+import { listFiles, readFiles, writeFiles } from "./workspace";
 
 // Runs an approved plan with the agents in the tree. Plain code, no AI: the order, the limits, the
 // retries and the choice of agent are decided here (docs/backend-plan.md, phase 3).
@@ -30,6 +30,9 @@ export type TeamEvent =
   | { type: "files"; taskId: string; files: { path: string; bytes: number }[] }
   | { type: "brief"; taskId: string; brief: ReturnBrief }
   | { type: "usage"; entry: UsageEntry }
+  // What an agent writes, while it writes (done: false, the latest part) and when it is done (the whole
+  // answer, cut to OUTPUT_CHARS). Shown when the user opens the agent in the tree.
+  | { type: "output"; taskId: string; agentId: string; kind: "work" | "review"; attempt: number; text: string; done: boolean; failed?: string }
   // usage: token sums over the requests that reported them; totals: the full breakdown (Stage 3).
   | { type: "run-finished"; status: "done" | "failed" | "stopped"; summary: string; files: { path: string; bytes: number }[]; calls: number; usage: { inputTokens: number; outputTokens: number }; totals?: UsageTotals };
 
@@ -41,6 +44,9 @@ export interface Limits {
 }
 
 // Decision A5: 25 launches per request (retries and reviews count) and 2 retries per task.
+export const OUTPUT_CHARS = 12_000;
+export const OUTPUT_EVERY_MS = 400;
+
 export const DEFAULT_LIMITS: Limits = { maxCalls: 25, maxAttempts: 3, maxParallel: 2, contextChars: 60_000 };
 
 export interface RunOptions {
@@ -54,6 +60,8 @@ export interface RunOptions {
   // Coordinated runs (Teams phase 5): every write is authorised against the run's reservation
   // first. A refusal stops the run's writing; nothing is written without it.
   writeGuard?: { authorize(paths: string[]): Promise<void> };
+  // Keeps the files as they were before this run first writes them, for Undo (history.ts).
+  snapshot?: { before(paths: string[]): void };
 }
 
 const byPriority = (a: TeamAgent, b: TeamAgent) => a.priority - b.priority || a.name.localeCompare(b.name);
@@ -115,8 +123,20 @@ export class TeamRun {
     const handle = this.o.adapters[agent.tool].chat({ provider: agent.tool, model: agent.model, effort: agent.effort, history: [], text: prompt, cwd: this.o.cwd, raw: true });
     this.active.add(handle);
     let last: ChatEvent | null = null;
+    let text = "";
+    let sentAt = 0;
+    const output = (done: boolean, failed?: string) => this.o.emit({ type: "output", taskId: meta.taskId, agentId: agent.id, kind: meta.kind === "review" ? "review" : "work", attempt: meta.attempt, done,
+      text: done ? text.slice(0, OUTPUT_CHARS) : text.slice(-OUTPUT_CHARS), ...(failed ? { failed: failed.slice(0, 500) } : {}) });
+    // At once, so the window shows the agent as thinking from the moment it got the task.
+    output(false);
     try {
-      for await (const event of handle.events) last = event;
+      for await (const event of handle.events) {
+        last = event;
+        if (event.type === "delta") {
+          text += event.text;
+          if (Date.now() - sentAt >= OUTPUT_EVERY_MS) { sentAt = Date.now(); output(false); }
+        }
+      }
     } finally {
       this.active.delete(handle);
       const usage: Usage | null = last?.type === "completed" ? last.usage : null;
@@ -124,6 +144,8 @@ export class TeamRun {
       const entry = this.ledger.record(seq, { ...meta, agentId: agent.id, agentName: agent.name, role: agent.role, tool: agent.tool, model: agent.model, outcome }, usage);
       if (entry) this.o.emit({ type: "usage", entry });
     }
+    if (last?.type === "completed") text = last.text || text;
+    output(true, last?.type === "failed" ? last.message : last?.type === "completed" ? undefined : this.stopped || last?.type === "cancelled" ? "Stopped." : "No answer.");
     if (this.stopped || last?.type === "cancelled") throw new Stopped();
     if (last?.type === "failed") throw new Error(`${agent.name}: ${last.message}`);
     if (last?.type !== "completed") throw new Error(`${agent.name} gave no answer.`);
@@ -132,7 +154,11 @@ export class TeamRun {
 
   private async runTask(task: PlanTask): Promise<void> {
     const { plan, agents, workspace } = this.o;
-    const workers = agentsFor(task.role, agents);
+    // A direct request goes to the agent the user asked first, then to others with its role.
+    const workers = task.agentId ? [...agents.filter((a) => a.id === task.agentId), ...agentsFor(task.role, agents).filter((a) => a.id !== task.agentId)] : agentsFor(task.role, agents);
+    // A direct request (no plan, no handoff) may touch any file, so its agent reads the project (up to the limit).
+    const existing = task.open ? listFiles(workspace) : [];
+    const openContext = task.open ? readFiles(workspace, existing, this.limits.contextChars) : [];
     // The handoff, with its references resolved now that the tasks before it have finished. A
     // reference that cannot be resolved stops the task here: no agent is asked without it.
     const resolved = resolveHandoff(plan, task, workspace, this.outputs, this.limits.contextChars);
@@ -153,7 +179,7 @@ export class TeamRun {
       let text: string;
       try {
         if (attempt > 1) this.ledger.retries += 1;
-        text = await this.ask(worker, workerPrompt(plan, task, worker, resolved, problems, problems.length ? current : []), { taskId: task.id, kind: "worker", attempt });
+        text = await this.ask(worker, workerPrompt(plan, task, worker, resolved, problems, problems.length ? current : [], { context: openContext, files: existing }), { taskId: task.id, kind: "worker", attempt });
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
@@ -177,7 +203,14 @@ export class TeamRun {
       // Deterministic checks first (missing or extra files, empty files, broken JSON or JavaScript):
       // a reviewer is only asked about output that passes them.
       const delivery = deliveryProblems(task, files);
-      const outgoing = delivery.length ? [] : files.map((f) => ({ path: task.deliverables.find((d) => d.toLowerCase() === f.path.replace(/\\/g, "/").toLowerCase())!, content: f.content }));
+      // A direct request answered without files: nothing to write or review.
+      if (!delivery.length && task.open && !files.length) {
+        this.set(task, "done", worker.id, attempt, "Answered without changing files.");
+        return;
+      }
+      const outgoing = delivery.length ? [] : task.open
+        ? files.map((f) => ({ path: safeRelativePath(f.path)!, content: f.content }))
+        : files.map((f) => ({ path: task.deliverables.find((d) => d.toLowerCase() === f.path.replace(/\\/g, "/").toLowerCase())!, content: f.content }));
       const invalid = delivery.length ? [] : outputProblems(outgoing);
       if (delivery.length || invalid.length) {
         problems = [...delivery, ...invalid];
@@ -190,6 +223,7 @@ export class TeamRun {
         await this.o.writeGuard.authorize(outgoing.map((f) => f.path));
         if (this.stopped) throw new Stopped();
       }
+      this.o.snapshot?.before(outgoing.map((f) => f.path));
       const saved = writeFiles(workspace, outgoing);
       current = outgoing;
       const changes = outgoing.map((f) => {
@@ -212,7 +246,7 @@ export class TeamRun {
       let reviewText: string;
       try {
         const checks = [
-          `Delivery check passed: ${task.deliverables.join(", ")} delivered, none empty, no other files.`,
+          `Delivery check passed: ${outgoing.map((f) => f.path).join(", ")} delivered, none empty${task.open ? "" : ", no other files"}.`,
           ...(outgoing.some((f) => /\.(json|c?js)$/i.test(f.path)) ? ["Syntax check passed for the JSON and JavaScript files (compiled, not run)."] : []),
           ...(attempt > 1 ? [`This is attempt ${attempt}; the problems found last time were sent to the author.`] : []),
           "No code was run: agents cannot run tools in this version, so any test results in the author's brief are agent-reported.",

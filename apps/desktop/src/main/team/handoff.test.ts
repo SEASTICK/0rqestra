@@ -195,7 +195,7 @@ describe("the plan format the Manager and the Planner are shown", () => {
     const plan = parsePlan(JSON.parse(json), ["Builder"]);
     expect(plan.rules).toEqual(["Swedish interface text"]);
     expect(plan.tasks[0]!.handoff!.acceptance).toContain("A new set shows in the list");
-    expect(plan.tasks[1]!.handoff!.references).toEqual([{ file: "index.html", why: "Its class names", full: false }]);
+    expect(plan.tasks[1]!.handoff!.references).toEqual([{ file: "workout-log/index.html", why: "Its class names", full: false }]);
   });
 
 });

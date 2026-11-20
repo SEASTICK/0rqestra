@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EventQueue, type ChatEvent, type ChatRequest, type ProviderAdapter, type ProviderId, type ProviderStatus } from "../providers/types.js";
-import { parsePlan, safeRelativePath, type Plan } from "./plan.js";
+import { directPlan, parsePlan, safeRelativePath, type Plan } from "./plan.js";
 import { deliveryProblems, parseFiles, parseReview } from "./prompts.js";
 import { agentsFor, reviewerFor, TeamRun, type TeamAgent, type TeamEvent } from "./runner.js";
 import { readFiles, writeFiles } from "./workspace.js";
@@ -22,6 +22,25 @@ const planValue = {
 };
 
 describe("plan", () => {
+  it("reads the products a plan names and the tasks that build them", () => {
+    const plan = parsePlan({ ...planValue, products: [{ id: "Workout-Log", name: "Workout log", folder: "web" }, { id: "docs", name: "Notes" }], tasks: [{ ...planValue.tasks[0], product: "workout-log" }, planValue.tasks[1]] }, roles);
+    expect(plan.products).toEqual([{ id: "workout-log", name: "Workout log", folder: "web" }, { id: "docs", name: "Notes", folder: "" }]);
+    expect(plan.tasks[0]!.product).toBe("workout-log");
+    expect("product" in plan.tasks[1]!).toBe(false);
+    expect(parsePlan(planValue, roles).products).toEqual([]);
+  });
+
+  it("refuses products that are unclear", () => {
+    const withProducts = (products: unknown, product?: string) => ({ ...planValue, products, tasks: [{ ...planValue.tasks[0], ...(product ? { product } : {}) }, planValue.tasks[1]] });
+    expect(() => parsePlan(withProducts([{ id: "a", name: "A" }], "b"), roles)).toThrow(/product b/);
+    expect(() => parsePlan(withProducts([{ id: "a", name: "A", folder: "x" }, { id: "a", name: "B", folder: "y" }]), roles)).toThrow(/same id/);
+    expect(() => parsePlan(withProducts([{ id: "a", name: "A", folder: "x" }, { id: "b", name: "B", folder: "X" }]), roles)).toThrow(/same folder/);
+    expect(() => parsePlan(withProducts([{ id: "a", name: "A", folder: "../out" }]), roles)).toThrow(/plain folder/);
+    expect(() => parsePlan(withProducts([{ id: "has space", name: "A" }]), roles)).toThrow(/needs an id/);
+    expect(() => parsePlan(withProducts(Array.from({ length: 7 }, (_, i) => ({ id: `p${i}`, name: "P", folder: `f${i}` }))), roles)).toThrow(/at most 6/);
+    expect(() => parsePlan(withProducts("nope"), roles)).toThrow(/at most 6/);
+  });
+
   it("accepts a valid plan", () => {
     expect(parsePlan(planValue, roles).tasks.map((t) => t.deliverables)).toEqual([["index.html"], ["css/style.css"]]);
   });
@@ -142,6 +161,19 @@ describe("team run", () => {
     expect(claude.prompts[0]).toContain("Review another agent's work");
     const order = events.filter((e) => e.type === "task" && e.status === "working").map((e) => (e as { taskId: string }).taskId);
     expect(order).toEqual(["t1", "t2"]);
+  });
+
+  it("tells the window what each agent wrote, for its task, as author or reviewer", async () => {
+    const codex = new ScriptedTool("codex", deliverOwned);
+    const claude = new ScriptedTool("claude", (_p, n) => (n === 1 ? new Error("Overloaded") : approve));
+    const { events } = await run(plan, [builder, reviewer], codex, claude);
+    const all = events.filter((e): e is Extract<TeamEvent, { type: "output" }> => e.type === "output");
+    // Each request starts with an empty "thinking" output, then the answer.
+    expect(all[0]).toMatchObject({ taskId: "t1", agentId: "b1", done: false, text: "" });
+    const outputs = all.filter((o) => o.done);
+    expect(outputs[0]).toMatchObject({ taskId: "t1", agentId: "b1", kind: "work", attempt: 1, done: true, text: file("index.html", "<h1>Log</h1>") });
+    expect(outputs[1]).toMatchObject({ taskId: "t1", agentId: "r1", kind: "review", attempt: 1, done: true, failed: "Overloaded" });
+    expect(outputs.find((o) => o.kind === "review" && !o.failed)).toMatchObject({ agentId: "r1", text: approve });
   });
 
   it("sends the reviewer's problems back to the author and stops after the attempt limit", async () => {
@@ -278,5 +310,66 @@ describe("existing files", () => {
     expect(codex.prompts[0]).toContain("--- index.html (your current version) ---\n<h1>Old</h1>");
     expect(codex.prompts[0]).toContain("--- notes.txt (a project file) ---\nkeep tabs");
     expect(fs.readFileSync(path.join(dir, "index.html"), "utf8")).toBe("<h1>New</h1>");
+  });
+});
+
+describe("a request given to one agent directly", () => {
+  it("becomes a one-task plan for that agent", () => {
+    const plan = directPlan("  Gör rubriken större  ", builder);
+    expect(plan).toMatchObject({ goal: "Gör rubriken större", products: [], tasks: [{ id: "t1", role: "Builder", goal: "Gör rubriken större", deliverables: [], open: true, agentId: "b1" }] });
+    expect(() => directPlan("  ", builder)).toThrow(/Write what Code builder should do/);
+    expect(() => directPlan("x".repeat(4001), builder)).toThrow();
+  });
+
+  it("lets the agent read the project and change the files it chooses, then reviews them", async () => {
+    fs.writeFileSync(path.join(dir, "index.html"), "<h1>Logg</h1>");
+    const other: TeamAgent = { ...builder, id: "b2", name: "Other builder", priority: 0 };
+    const codex = new ScriptedTool("codex", () => `Rubriken är större.\n<orqestra-file path="index.html">\n<h1 style="font-size:3em">Logg</h1>\n</orqestra-file>\n<orqestra-file path="css/new.css">\nh1{}\n</orqestra-file>`);
+    const claude = new ScriptedTool("claude", () => approve);
+    const { events, finished } = await run(directPlan("Gör rubriken större", builder), [other, builder, reviewer], codex, claude);
+    expect(finished.status).toBe("done");
+    // The agent the user asked works first, even when another one has a higher priority.
+    expect(events.find((e) => e.type === "task" && e.status === "working")).toMatchObject({ agentId: "b1" });
+    expect(codex.prompts[0]).toContain("The user asks you directly");
+    expect(codex.prompts[0]).toContain("--- index.html ---\n<h1>Logg</h1>");
+    expect(fs.readFileSync(path.join(dir, "index.html"), "utf8")).toBe('<h1 style="font-size:3em">Logg</h1>');
+    expect(fs.readFileSync(path.join(dir, "css", "new.css"), "utf8")).toBe("h1{}");
+    expect(claude.prompts[0]).toContain("Review another agent's work");
+  });
+
+  it("only answers when the request is a question, without writing or reviewing", async () => {
+    const codex = new ScriptedTool("codex", () => "Sidan har en rubrik och en lista.");
+    const claude = new ScriptedTool("claude", () => approve);
+    const { events, finished } = await run(directPlan("Vad finns på sidan?", builder), [builder, reviewer], codex, claude);
+    expect(finished.status).toBe("done");
+    expect(events.find((e) => e.type === "task" && e.status === "done")).toMatchObject({ note: "Answered without changing files." });
+    expect(claude.prompts).toEqual([]);
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  it("refuses files outside the project folder", async () => {
+    const codex = new ScriptedTool("codex", () => '<orqestra-file path="../evil.sh">\nrm -rf\n</orqestra-file>');
+    const claude = new ScriptedTool("claude", () => approve);
+    const { finished } = await run(directPlan("Gör något", builder), [builder, reviewer], codex, claude);
+    expect(finished.status).toBe("failed");
+    expect(codex.prompts[1]).toContain("../evil.sh is not a plain relative file name.");
+    expect(fs.existsSync(path.join(dir, "..", "evil.sh"))).toBe(false);
+  });
+});
+
+describe("undo after a team run", () => {
+  it("keeps the files as they were before the run wrote them", async () => {
+    const { RunSnapshot, undoRun } = await import("./history.js");
+    fs.mkdirSync(path.join(dir, "ws"));
+    const ws = path.join(dir, "ws");
+    fs.writeFileSync(path.join(ws, "index.html"), "<h1>Old</h1>");
+    const codex = new ScriptedTool("codex", () => file("index.html", "<h1>New</h1>"));
+    const claude = new ScriptedTool("claude", () => approve);
+    const events: TeamEvent[] = [];
+    const team = new TeamRun({ plan: directPlan("Byt rubrik", builder), agents: [builder, reviewer], adapters: { codex, claude }, workspace: ws, cwd: dir, emit: (e) => void events.push(e), snapshot: new RunSnapshot(ws, "run1", "Byt rubrik") });
+    await team.start();
+    expect(fs.readFileSync(path.join(ws, "index.html"), "utf8")).toBe("<h1>New</h1>");
+    expect(undoRun(ws, "run1")).toEqual({ restored: ["index.html"], removed: [] });
+    expect(fs.readFileSync(path.join(ws, "index.html"), "utf8")).toBe("<h1>Old</h1>");
   });
 });

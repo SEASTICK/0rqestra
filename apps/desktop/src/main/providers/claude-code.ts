@@ -5,7 +5,7 @@ import path from "node:path";
 import { buildPrompt } from "./history";
 import { findBinary, killTree, MODEL_NAME, onJsonLines, providerEnv, runShort, spawnTool, type ToolBinary } from "./process";
 import { toolEnvironment } from "./tool-env";
-import { EventQueue, type AuthMethod, type ChatEvent, type ChatHandle, type ChatRequest, type ModelOption, type ProviderAdapter, type ProviderStatus } from "./types";
+import { EventQueue, type AuthMethod, type ChatEvent, type ChatHandle, type ChatRequest, type ModelOption, type ProviderAdapter, type ProviderStatus, type RateLimit } from "./types";
 
 // Claude Code, signed in with the user's own Claude subscription, run in print mode with streamed
 // JSON. Launch profile A from docs/provider-integrations.md §1.4, probed on Windows with 2.1.325
@@ -76,6 +76,33 @@ export function claudeArgs(settingsFile: string, model: string | null): string[]
     "--no-session-persistence",
     ...(model && model !== "default" ? ["--model", model] : []),
   ];
+}
+
+// Claude Code reports the subscription's usage windows during a reply ("rate_limit_event"): the 5-hour
+// session window and the weekly one, as a fraction used. Newer versions list every window, older ones
+// only the window that limits right now. Unknown shapes give nothing rather than a wrong number.
+const CLAUDE_WINDOWS: Record<string, { label: string; minutes: number }> = {
+  five_hour: { label: "5-hour limit", minutes: 300 },
+  seven_day: { label: "7-day limit", minutes: 7 * 1440 },
+};
+
+export function limitsFromClaude(info: unknown, known: Map<string, RateLimit> = new Map()): Map<string, RateLimit> {
+  const next = new Map(known);
+  if (!info || typeof info !== "object") return next;
+  const record = (kind: string, raw: unknown) => {
+    const w = CLAUDE_WINDOWS[kind];
+    const v = raw as { utilization?: unknown; resetsAt?: unknown } | null;
+    if (!w || !v || typeof v.utilization !== "number" || !Number.isFinite(v.utilization) || v.utilization < 0) return;
+    const usedPercent = v.utilization > 5 ? v.utilization : v.utilization * 100;
+    next.set(kind, { label: w.label, usedPercent: Math.round(usedPercent * 10) / 10, windowMinutes: w.minutes, resetsAt: typeof v.resetsAt === "number" ? v.resetsAt : null });
+  };
+  const i = info as Record<string, unknown>;
+  for (const holder of [i, i.windows, i.rateLimits]) {
+    if (!holder || typeof holder !== "object") continue;
+    for (const kind of Object.keys(CLAUDE_WINDOWS)) record(kind, (holder as Record<string, unknown>)[kind]);
+  }
+  if (typeof i.rateLimitType === "string") record(i.rateLimitType, i);
+  return next;
 }
 
 export class ClaudeCodeAdapter implements ProviderAdapter {
@@ -183,6 +210,7 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
     });
     let finished = false;
     let sawDelta = false;
+    let windows = new Map<string, RateLimit>();
     let fullText = "";
     let stderr = "";
     const finish = (event: ChatEvent) => {
@@ -261,6 +289,8 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
       } else if (event.type === "assistant") {
         const content = (event.message as { content?: { type?: string; text?: string }[] } | undefined)?.content ?? [];
         fullText += content.filter((b) => b.type === "text" && typeof b.text === "string").map((b) => b.text).join("");
+      } else if (event.type === "rate_limit_event") {
+        windows = limitsFromClaude(event.rate_limit_info, windows);
       } else if (event.type === "result") {
         if (!sawDelta && fullText) {
           text = fullText;
@@ -273,7 +303,7 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
           return finish({ type: "failed", reason: limit ? "usage_limit" : "provider_error", message, text });
         }
         const answer = text || (typeof event.result === "string" ? event.result : "");
-        finish({ type: "completed", text: answer, usage: claudeUsage(event), limits: [] });
+        finish({ type: "completed", text: answer, usage: claudeUsage(event), limits: [...windows.values()] });
       }
     });
 

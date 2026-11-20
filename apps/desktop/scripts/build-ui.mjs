@@ -7,6 +7,7 @@
 // proper bundler; that is a separate step.
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
@@ -50,6 +51,9 @@ modules.liveChat = compile('live-chat.mjs', plain);
 modules.agentRuntime = compile('AgentRuntime.jsx', jsx);
 modules.teamRun = compile('TeamRun.jsx', jsx);
 modules.previewUI = compile('Preview.jsx', jsx);
+modules.treeLayout = compile('tree-layout.mjs', plain);
+modules.activityUI = compile('Activity.jsx', jsx);
+modules.agentPanelUI = compile('AgentPanel.jsx', jsx);
 modules.camera = compile('camera.mjs', plain);
 modules.treeRules = compile('tree-rules.mjs', plain);
 modules.updateGate = compile('update-gate.mjs', plain);
@@ -66,7 +70,7 @@ modules.accountWelcome = compile('AccountWelcome.jsx', jsx);
 modules.accountUI = compile('account-ui.mjs', plain);
 
 const aliases = {
-  './UpdateDialog.jsx': 'updateUI', './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './storage-keys.mjs': 'storageKeys', './Shell.jsx': 'shell', './theme.mjs': 'theme', './launch.mjs': 'launch', './LiveChat.jsx': 'liveChatUI', './live-chat.mjs': 'liveChat', './AgentRuntime.jsx': 'agentRuntime', './TeamRun.jsx': 'teamRun', './Preview.jsx': 'previewUI', './AccountsSetup.jsx': 'accountsUI', './account-setup.mjs': 'accountSetup', './TeamsPage.jsx': 'teamsUI', './FriendsPage.jsx': 'friendsUI', './teams-ui.mjs': 'teamsText', './TeamBridge.jsx': 'teamBridge', './team-catchup.mjs': 'teamCatchUp', './migrate-demo.mjs': 'migrateDemo', './AccountWelcome.jsx': 'accountWelcome', './account-ui.mjs': 'accountUI', 'react-dom/client': 'react-dom-client',
+  './UpdateDialog.jsx': 'updateUI', './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './storage-keys.mjs': 'storageKeys', './Shell.jsx': 'shell', './theme.mjs': 'theme', './launch.mjs': 'launch', './LiveChat.jsx': 'liveChatUI', './live-chat.mjs': 'liveChat', './AgentRuntime.jsx': 'agentRuntime', './TeamRun.jsx': 'teamRun', './Preview.jsx': 'previewUI', './tree-layout.mjs': 'treeLayout', './Activity.jsx': 'activityUI', './AgentPanel.jsx': 'agentPanelUI', './AccountsSetup.jsx': 'accountsUI', './account-setup.mjs': 'accountSetup', './TeamsPage.jsx': 'teamsUI', './FriendsPage.jsx': 'friendsUI', './teams-ui.mjs': 'teamsText', './TeamBridge.jsx': 'teamBridge', './team-catchup.mjs': 'teamCatchUp', './migrate-demo.mjs': 'migrateDemo', './AccountWelcome.jsx': 'accountWelcome', './account-ui.mjs': 'accountUI', 'react-dom/client': 'react-dom-client',
   'next/dist/compiled/react': 'react', 'next/dist/compiled/react-dom': 'react-dom', 'next/dist/compiled/scheduler': 'scheduler',
 };
 // Every local import must resolve inside the bundle. A missing entry above compiles fine but throws
@@ -82,6 +86,13 @@ const body = Object.entries(modules)
   .map(([key, code]) => `${JSON.stringify(key)}:function(module,exports,require){\n${code}\n}`)
   .join(',\n');
 const bundle = `/* 0rqestra interface. Third-party notices: THIRD-PARTY-LICENSE.txt */\n(()=>{'use strict';const modules={${body}};const cache={};const aliases=${JSON.stringify(aliases)};function require(name){if(name==='./app.css')return {};name=aliases[name]||name;if(cache[name])return cache[name].exports;if(!modules[name])throw Error('Unknown module '+name);const m=cache[name]={exports:{}};modules[name](m,m.exports,require);return m.exports;}require('app');})();\n`;
+// Parse the whole bundle once: a syntax error (such as a name declared twice in one component) would
+// otherwise only show at start as a blank window.
+try {
+  new vm.Script(bundle, { filename: 'app.js' });
+} catch (error) {
+  throw new Error(`The interface bundle does not parse: ${error.message}`, { cause: error });
+}
 fs.writeFileSync(path.join(outdir, 'app.js'), bundle);
 fs.copyFileSync(path.join(vendor, 'THIRD-PARTY-LICENSE.txt'), path.join(outdir, 'THIRD-PARTY-LICENSE.txt'));
 // App icon for the window (dist/icon.ico on Windows, dist/icon.png elsewhere) and the page favicon.

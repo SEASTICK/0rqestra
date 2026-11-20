@@ -124,7 +124,10 @@ describe("Claude Code adapter", () => {
     const events = await collect(claude({}).chat(request({ model: "sonnet", history: [{ role: "user", text: "earlier" }] })));
     expect(events[0]).toEqual({ type: "started", model: "claude-test-model" });
     expect(deltas(events)).toBe("Hej där!");
-    expect(events.at(-1)).toEqual({ type: "completed", text: "Hej där!", usage: { inputTokens: 12, outputTokens: 3, cachedInputTokens: 0 }, limits: [] });
+    expect(events.at(-1)).toEqual({ type: "completed", text: "Hej där!", usage: { inputTokens: 12, outputTokens: 3, cachedInputTokens: 0 }, limits: [
+      { label: "5-hour limit", usedPercent: 31, windowMinutes: 300, resetsAt: 1795050000 },
+      { label: "7-day limit", usedPercent: 40, windowMinutes: 10080, resetsAt: 1795500000 },
+    ] });
     const log = readLog();
     expect(log.apiKeyReached).toBe(false);
     expect(log.openaiKeyReached).toBe(false);
@@ -257,5 +260,23 @@ describe("Codex adapter", () => {
     expect(await codex({ FAKE_AUTH: "none" }).status()).toMatchObject({ installed: true, signedIn: false, authMethod: null });
     expect(await codex({}).status()).toMatchObject({ signedIn: true, authMethod: "subscription" });
     expect(await codex({ FAKE_AUTH: "apikey" }).status()).toMatchObject({ signedIn: true, subscription: false, authMethod: "api_key" });
+  });
+});
+
+describe("Claude Code usage windows", () => {
+  it("reads every window, the limiting one, and ignores what it cannot read", async () => {
+    const { limitsFromClaude } = await import("./claude-code.js");
+    const all = limitsFromClaude({ windows: { five_hour: { utilization: 0.5 }, seven_day: { utilization: 1.2, resetsAt: 9 }, seven_day_opus: { utilization: 0.1 } } });
+    expect([...all.values()]).toEqual([
+      { label: "5-hour limit", usedPercent: 50, windowMinutes: 300, resetsAt: null },
+      { label: "7-day limit", usedPercent: 120, windowMinutes: 10080, resetsAt: 9 },
+    ]);
+    expect([...limitsFromClaude({ rateLimitType: "seven_day", utilization: 0.07 }).values()]).toEqual([{ label: "7-day limit", usedPercent: 7, windowMinutes: 10080, resetsAt: null }]);
+    expect([...limitsFromClaude({ rateLimitType: "five_hour", utilization: 42 }).values()][0]!.usedPercent).toBe(42);
+    expect(limitsFromClaude({ status: "allowed" }).size).toBe(0);
+    expect(limitsFromClaude({ rateLimitType: "five_hour", utilization: "high" }).size).toBe(0);
+    expect(limitsFromClaude(null).size).toBe(0);
+    const before = limitsFromClaude({ rateLimitType: "five_hour", utilization: 0.1 });
+    expect([...limitsFromClaude({ rateLimitType: "seven_day", utilization: 0.2 }, before).keys()]).toEqual(["five_hour", "seven_day"]);
   });
 });

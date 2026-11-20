@@ -41,6 +41,19 @@ export interface PlanTask {
   deliverables: string[];
   // Missing on plans made before handoffs existed; the runner then builds one from the task.
   handoff?: Handoff;
+  // The product this task builds (one of Plan.products), when it builds one.
+  product?: string;
+  // A request the user gave one agent directly (see directPlan): the agent sees the project's files and
+  // chooses which files to change, or only answers; `agentId` is that agent.
+  open?: boolean;
+  agentId?: string;
+}
+
+// Something the user can see, such as a web page: it becomes a node in the tree as soon as the run starts.
+export interface PlanProduct {
+  id: string;
+  name: string;
+  folder: string;
 }
 
 export interface Plan {
@@ -48,6 +61,26 @@ export interface Plan {
   tasks: PlanTask[];
   // Project rules every agent must follow.
   rules?: string[];
+  products?: PlanProduct[];
+}
+
+export const MAX_PRODUCTS = 6;
+const PRODUCT_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+function parseProducts(value: unknown): PlanProduct[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > MAX_PRODUCTS) throw new Error(`A plan can name at most ${MAX_PRODUCTS} products.`);
+  const products = value.map((raw: unknown, index: number) => {
+    const p = (raw ?? {}) as Record<string, unknown>;
+    const id = typeof p.id === "string" ? p.id.trim().toLowerCase() : "";
+    const name = str(p.name, 60);
+    const folder = p.folder === undefined || p.folder === null || p.folder === "" || p.folder === "." ? "" : safeRelativePath(p.folder);
+    if (!PRODUCT_ID.test(id) || !name || folder === null) throw new Error(`Product ${index + 1} needs an id, a name and a plain folder name.`);
+    return { id, name, folder };
+  });
+  if (new Set(products.map((p) => p.id)).size !== products.length) throw new Error("Two products have the same id.");
+  if (new Set(products.map((p) => p.folder.toLowerCase())).size !== products.length) throw new Error("Two products use the same folder.");
+  return products;
 }
 
 export const MAX_HANDOFF_ITEMS = 10;
@@ -129,6 +162,8 @@ export function parsePlan(value: unknown, roles: string[]): Plan {
   const goal = str(v.goal, 1000);
   if (!goal) throw new Error("The plan has no goal.");
   if (!Array.isArray(v.tasks) || v.tasks.length < 1 || v.tasks.length > MAX_TASKS) throw new Error(`A plan needs 1 to ${MAX_TASKS} tasks.`);
+  const products = parseProducts(v.products);
+  const productIds = new Set(products.map((p) => p.id));
   const owners = new Map<string, string>();
   const tasks: PlanTask[] = v.tasks.map((raw: unknown, index: number) => {
     const t = (raw ?? {}) as Record<string, unknown>;
@@ -150,7 +185,9 @@ export function parsePlan(value: unknown, roles: string[]): Plan {
       owners.set(key, id);
     }
     const handoff = parseHandoff(t.handoff, id);
-    return { id, title, role, goal: taskGoal, dependsOn: dependsOn as string[], deliverables: deliverables as string[], ...(handoff ? { handoff } : {}) };
+    const product = typeof t.product === "string" && t.product.trim() ? t.product.trim().toLowerCase() : null;
+    if (product !== null && !productIds.has(product)) throw new Error(`Task ${id} builds the product ${product}, which the plan does not name.`);
+    return { id, title, role, goal: taskGoal, dependsOn: dependsOn as string[], deliverables: deliverables as string[], ...(product ? { product } : {}), ...(handoff ? { handoff } : {}) };
   });
   const ids = new Set(tasks.map((t) => t.id));
   if (ids.size !== tasks.length) throw new Error("Two tasks have the same id.");
@@ -165,7 +202,7 @@ export function parsePlan(value: unknown, roles: string[]): Plan {
     for (const t of next) done.add(t.id);
   }
   const rules = list(v.rules, "The plan's rules", 400);
-  const plan: Plan = { goal, tasks, ...(rules.length ? { rules } : {}) };
+  const plan: Plan = { goal, tasks, products, ...(rules.length ? { rules } : {}) };
   // References stay inside the task's scope: an earlier task it depends on, its own files, or a file
   // already in the project (checked against the folder before the run starts).
   for (const t of tasks) {
@@ -195,4 +232,19 @@ export function missingProjectFiles(plan: Plan, existing: string[]): { taskId: s
     }
   }
   return missing;
+}
+
+export const MAX_DIRECT_CHARS = 4000;
+export const MAX_OPEN_FILES = 8;
+
+// A one-task plan for a request the user gave one agent directly, from the agent's panel in the tree.
+export function directPlan(request: unknown, agent: { id: string; name: string; role: string }): Plan {
+  const text = str(request, MAX_DIRECT_CHARS);
+  if (!text) throw new Error(`Write what ${agent.name} should do (at most ${MAX_DIRECT_CHARS} characters).`);
+  const short = text.replace(/\s+/g, " ");
+  return {
+    goal: short.length > 160 ? `${short.slice(0, 157)}…` : short,
+    tasks: [{ id: "t1", title: short.length > 80 ? `${short.slice(0, 77)}…` : short, role: agent.role, goal: text, dependsOn: [], deliverables: [], open: true, agentId: agent.id }],
+    products: [],
+  };
 }

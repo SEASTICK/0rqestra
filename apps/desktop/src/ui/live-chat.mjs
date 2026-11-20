@@ -52,14 +52,17 @@ export function historyFor(messages, max = 40) {
     .slice(-max)
     .map((m) => (m.kind === 'team'
       ? { role: 'assistant', text: teamRunText(m.run) }
-      : { role: m.kind === 'user' ? 'user' : 'assistant', text: String(m.text).slice(0, 20000) }));
+      // A request the user gave one agent directly is shown to the Manager as such, not as a request to it.
+      : { role: m.kind === 'user' ? 'user' : 'assistant', text: `${m.to ? `(To ${m.to}, not to you) ` : ''}${String(m.text).slice(0, 20000)}` }));
 }
 
 // A finished team run as the Manager sees it in its next turn: the outcome, and each task's return
 // brief (summary, decisions, what was verified and by whom, what is still open). The briefs are
 // short, so the Manager can use them in the next plan without the agents' transcripts.
 export function teamRunText(run) {
-  const lines = [`Team run (${run.status}): ${run.summary || ''} Files: ${(run.files || []).map((f) => f.path).join(', ') || 'none'}.`];
+  const title = run.direct ? `${run.direct.name} (asked directly)` : 'Team run';
+  const status = run.undone ? `${run.status}, then the user undid its changes` : run.status;
+  const lines = [`${title} (${status}): ${run.summary || ''} Files: ${(run.files || []).map((f) => f.path).join(', ') || 'none'}.`];
   for (const t of run.tasks || []) {
     const b = t.brief;
     if (!b) continue;
@@ -75,7 +78,7 @@ export function teamRunText(run) {
 
 export function newAssistant(id, target) {
   return {
-    id, kind: 'assistant', text: '', status: 'streaming',
+    id, kind: 'assistant', text: '', status: 'streaming', startedAt: Date.now(),
     provider: target.provider, providerName: target.name, model: target.model, effort: target.effort,
   };
 }
@@ -164,22 +167,36 @@ const QUESTION = /<orqestra-question>\s*([\s\S]*?)\s*<\/orqestra-question>\s*$/;
 
 const text = (value, max) => (typeof value === 'string' && value.trim() && value.length <= max ? value.trim() : null);
 
+// One question: 2 to 6 options, and the option the Manager would pick.
+function readQuestion(value) {
+  const question = text(value?.question, 300);
+  const options = Array.isArray(value?.options) ? value.options : [];
+  if (!question || options.length < 2 || options.length > 6) return null;
+  const parsed = options.map((o) => ({ label: text(o?.label, 120), description: text(o?.description, 240) }));
+  if (parsed.some((o) => !o.label)) return null;
+  const recommended = Number.isInteger(value.recommended) && value.recommended >= 0 && value.recommended < parsed.length ? value.recommended : null;
+  return { question, options: parsed, recommended };
+}
+
+export const MAX_QUESTIONS = 4;
+
+// The Manager may ask one question, or a short form of up to four ({"questions": [...]}), like Lovable
+// does before it builds. `question` is the first one, `questions` all of them.
 export function parseQuestion(raw) {
   const source = String(raw ?? '');
   const match = QUESTION.exec(source);
-  if (!match) return { body: source, question: null };
+  const none = { body: source, question: null, questions: [] };
+  if (!match) return none;
   const body = source.slice(0, match.index).trimEnd();
   try {
     const value = JSON.parse(match[1]);
-    const question = text(value?.question, 300);
-    const options = Array.isArray(value?.options) ? value.options : [];
-    if (!question || options.length < 2 || options.length > 6) return { body: source, question: null };
-    const parsed = options.map((o) => ({ label: text(o?.label, 120), description: text(o?.description, 240) }));
-    if (parsed.some((o) => !o.label)) return { body: source, question: null };
-    const recommended = Number.isInteger(value.recommended) && value.recommended >= 0 && value.recommended < parsed.length ? value.recommended : null;
-    return { body, question: { question, options: parsed, recommended } };
+    const list = Array.isArray(value?.questions) ? value.questions : [value];
+    if (list.length < 1 || list.length > MAX_QUESTIONS) return none;
+    const questions = list.map(readQuestion);
+    if (questions.some((q) => !q)) return none;
+    return { body, question: questions[0], questions };
   } catch {
-    return { body: source, question: null };
+    return none;
   }
 }
 
@@ -204,12 +221,29 @@ export function answerFor(question, choice) {
   return option.description ? `${option.label} (${option.description})` : option.label;
 }
 
+// The answers to a form of questions, as one message. A skipped question is left to the Manager.
+export function answersFor(questions, choices) {
+  if (choices.every((c) => c.kind === 'skip')) return 'I skip these questions. Decide yourself and tell me briefly what you chose.';
+  if (questions.length === 1) return answerFor(questions[0], choices[0]);
+  return questions.map((q, i) => `${i + 1}. ${q.question}\n   ${choices[i].kind === 'skip' ? 'You decide.' : answerFor(q, choices[i])}`).join('\n');
+}
+
 // ---- Plans and team runs (phase 3) ------------------------------------------------------------
 // The Manager ends a reply with <orqestra-plan>{json}</orqestra-plan> when work should be done. The
 // window shows the plan; nothing runs until the user starts it. The main process validates the plan
 // again (main/team/plan.ts) before anything happens.
 
 const PLAN = /<orqestra-plan>\s*([\s\S]*?)\s*<\/orqestra-plan>\s*$/;
+
+// The products a plan names (the main process checks them again before a run starts).
+export function planProducts(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 6).map((p) => ({
+    id: typeof p?.id === 'string' ? p.id.trim().toLowerCase() : '',
+    name: text(p?.name, 60),
+    folder: typeof p?.folder === 'string' && p.folder !== '.' ? p.folder.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') : '',
+  })).filter((p) => /^[a-z0-9][a-z0-9-]{0,31}$/.test(p.id) && p.name);
+}
 
 export function parsePlan(raw) {
   const source = String(raw ?? '');
@@ -227,10 +261,11 @@ export function parsePlan(raw) {
       deliverables: Array.isArray(t?.deliverables) ? t.deliverables.filter((d) => typeof d === 'string') : [],
       // The task's handoff goes to the main process as written; it is validated there.
       ...(t?.handoff && typeof t.handoff === 'object' && !Array.isArray(t.handoff) ? { handoff: t.handoff } : {}),
+      ...(typeof t?.product === 'string' && t.product.trim() ? { product: t.product.trim().toLowerCase() } : {}),
     }));
     if (parsed.some((t) => !t.id || !t.title || !t.role || !t.goal || !t.deliverables.length)) return { body: source, plan: null };
     const rules = Array.isArray(value?.rules) ? value.rules.filter((r) => typeof r === 'string') : [];
-    return { body, plan: { goal, tasks: parsed, ...(rules.length ? { rules } : {}) } };
+    return { body, plan: { goal, tasks: parsed, products: planProducts(value?.products), ...(rules.length ? { rules } : {}) } };
   } catch {
     return { body: source, plan: null };
   }
@@ -265,11 +300,11 @@ export function planningUsage(message) {
   return { by: 'Manager', name: message.providerName || 'Manager', usage: message.usage || null };
 }
 
-export function newTeamRun(id, plan, planning = null) {
-  return { id, status: 'running', planning, goal: plan.goal, tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, role: t.role, deliverables: t.deliverables, status: 'waiting', agentId: null, attempt: 0, note: null, review: null, files: [] })), summary: null, files: [], calls: 0, usage: null };
+export function newTeamRun(id, plan, now = Date.now(), direct = null, planning = null) {
+  return { id, status: 'running', planning, startedAt: now, log: [], ...(direct ? { direct } : {}), goal: plan.goal, products: plan.products || [], tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, role: t.role, deliverables: t.deliverables, ...(t.product ? { product: t.product } : {}), status: 'waiting', agentId: null, attempt: 0, note: null, review: null, files: [] })), summary: null, files: [], calls: 0, usage: null };
 }
 
-export function applyTeamEvent(run, event) {
+function applyTeamEventCore(run, event) {
   const patch = (taskId, fn) => ({ ...run, tasks: run.tasks.map((t) => (t.id === taskId ? fn(t) : t)) });
   switch (event && event.type) {
     case 'run-started': return { ...run, tasks: run.tasks.map((t) => { const a = event.tasks.find((x) => x.id === t.id); return a ? { ...t, plannedAgentId: a.agentId, plannedAgentName: a.agentName } : t; }) };
@@ -302,7 +337,7 @@ export function nodeStates(run) {
 // A run that was going on when the app closed cannot continue.
 export function settleTeamRun(run) {
   if (!run || run.status !== 'running') return run;
-  return { ...run, status: 'stopped', summary: 'The app closed while the team was working. Files already written stay in the project folder.', tasks: run.tasks.map((t) => (['waiting', 'working', 'waiting_context', 'reviewing'].includes(t.status) ? { ...t, status: 'stopped' } : t)) };
+  return { ...run, outputs: (run.outputs || []).map((o) => (o.done ? o : { ...o, done: true, failed: 'The app closed while this agent was writing.' })), status: 'stopped', summary: 'The app closed while the team was working. Files already written stay in the project folder.', tasks: run.tasks.map((t) => (['waiting', 'working', 'waiting_context', 'reviewing'].includes(t.status) ? { ...t, status: 'stopped' } : t)) };
 }
 
 // ---- Setting up the team in one step -----------------------------------------------------------
@@ -387,7 +422,8 @@ export function productLinks(product, messages, graph) {
     if (m.kind !== 'team' || !m.run) continue;
     for (const t of m.run.tasks || []) {
       const files = [...(t.deliverables || []), ...(t.files || []).map((f) => f.path)];
-      if (!files.some((f) => inProduct(f, product))) continue;
+      const named = t.product && (product.plannedIds || []).includes(t.product);
+      if (!named && !files.some((f) => inProduct(f, product))) continue;
       for (const id of [t.agentId || t.plannedAgentId, t.review?.reviewerId]) if (id && known.has(id) && !agents.includes(id)) agents.push(id);
       if (m.run.status === 'running' && ACTIVE.includes(t.status)) building = true;
     }
@@ -398,7 +434,7 @@ export function productLinks(product, messages, graph) {
 const NODE = { w: 224, h: 159 };
 const overlaps = (a, b) => Math.abs(a.x - b.x) < NODE.w + 20 && Math.abs(a.y - b.y) < NODE.h + 30;
 
-export function placeProducts(products, messages, graph) {
+export function placeProducts(products, messages, graph, positions = {}) {
   const nodes = graph?.nodes || [];
   const placed = [];
   const bottom = nodes.length ? Math.max(...nodes.map((n) => n.y)) : 0;
@@ -406,9 +442,17 @@ export function placeProducts(products, messages, graph) {
   for (const product of products || []) {
     const links = productLinks(product, messages, graph);
     const linked = nodes.filter((n) => links.agents.includes(n.id));
+    const saved = positions?.[product.id];
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+      placed.push({ ...product, x: saved.x, y: saved.y, agents: links.agents, building: links.building });
+      continue;
+    }
+    // Under the lowest of its agents (the last to work on it), one row down.
+    const lowest = linked.length ? Math.max(...linked.map((n) => n.y)) : 0;
+    const under = linked.filter((n) => n.y >= lowest - NODE.h / 2);
     const spot = linked.length
-      ? { x: Math.round(linked.reduce((s, n) => s + n.x, 0) / linked.length), y: Math.max(...linked.map((n) => n.y)) + 240 }
-      : { x: left, y: bottom + 240 };
+      ? { x: Math.round(under.reduce((s, n) => s + n.x, 0) / under.length), y: lowest + NODE.h + 56 }
+      : { x: left, y: bottom + NODE.h + 56 };
     while ([...nodes, ...placed].some((other) => overlaps(spot, other))) spot.x += NODE.w + 30;
     placed.push({ ...product, ...spot, agents: links.agents, building: links.building });
   }
@@ -464,4 +508,261 @@ export function runUsage(run) {
     total: calls === 0 ? 'No model calls yet' : unavailable === calls ? 'Unavailable' : `${tokens({ inputTokens: sum('inputTokens'), cachedInputTokens: sum('cachedInputTokens'), outputTokens: sum('outputTokens') })}${unavailable ? ' · Partial' : ''}`,
     partial: unavailable > 0,
   };
+}
+
+// Problems a previewed page showed (main/preview/problems.ts), per project. The same problem is kept once.
+export const MAX_PROBLEMS = 20;
+const KINDS = ['error', 'missing', 'blocked'];
+const shortText = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+
+export function readProblem(raw) {
+  if (!raw || typeof raw !== 'object' || !KINDS.includes(raw.kind)) return null;
+  const message = shortText(raw.message, 400);
+  if (!message) return null;
+  return { kind: raw.kind, message, page: shortText(raw.page, 200), source: shortText(raw.source, 200), line: Number.isInteger(raw.line) && raw.line > 0 ? raw.line : null };
+}
+
+export function addProblem(list, problem) {
+  if (!problem) return list || [];
+  const same = (p) => p.kind === problem.kind && p.message === problem.message && p.source === problem.source && p.line === problem.line;
+  if ((list || []).some(same)) return list;
+  return [...(list || []), problem].slice(-MAX_PROBLEMS);
+}
+
+const underProduct = (file, product) => Boolean(file) && (product.folder === '' || file.startsWith(`${product.folder}/`) || product.files.includes(file));
+export function problemsFor(product, list) {
+  if (!product) return [];
+  return (list || []).filter((p) => underProduct(p.page, product) || (!p.page && underProduct(p.source, product)));
+}
+
+const KIND_LABEL = { error: 'Script error', missing: 'Missing file', blocked: 'Blocked' };
+export function problemLine(p) {
+  const where = p.source && p.kind !== 'missing' ? ` (${p.source}${p.line ? `, line ${p.line}` : ''})` : '';
+  return `${KIND_LABEL[p.kind]}: ${p.message}${where}`;
+}
+
+// The message that asks the Manager to fix what the preview showed.
+export function fixMessage(product, problems) {
+  return [
+    `The preview of "${product.name}" (${product.entry}) shows ${problems.length === 1 ? 'this problem' : 'these problems'}:`,
+    ...problems.slice(0, 10).map((p) => `- ${problemLine(p)}`),
+    `Files of this product: ${product.files.slice(0, 40).join(', ')}.`,
+    'Make a plan that fixes this. Change only the files that need it, and keep everything that already works. Reply in the language I used earlier in this conversation.',
+  ].join('\n');
+}
+
+// The products in the tree: what the main process found in the folder, plus what the latest plans named.
+// A named product takes the found one with the same folder (and its name); one with no files yet is shown
+// as planned, so the user sees it in the tree from the moment the run starts.
+const productKey = (folder) => folder || 'root';
+export function mergeProducts(found, messages) {
+  const out = (found || []).map((p) => ({ ...p, plannedIds: [] }));
+  const runs = (messages || []).filter((m) => m.kind === 'team' && m.run).map((m) => m.run);
+  const latest = runs.at(-1);
+  for (const run of runs) {
+    for (const planned of run.products || []) {
+      const match = out.find((p) => p.folder.toLowerCase() === planned.folder.toLowerCase());
+      if (match) {
+        if (!match.plannedIds.includes(planned.id)) match.plannedIds.push(planned.id);
+        match.name = planned.name;
+      } else if (run === latest) {
+        out.push({ id: productKey(planned.folder), folder: planned.folder, entry: planned.folder ? `${planned.folder}/index.html` : 'index.html', name: planned.name, kind: 'web', files: [], updatedAt: 0, planned: true, plannedIds: [planned.id] });
+      }
+    }
+  }
+  return out;
+}
+
+// "Select" in the preview: what the page said was clicked (main/preview/picker.ts). It comes from the
+// page, so it is cut short and only ever used as quoted text.
+const oneLine = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+export function readPicked(data) {
+  if (!data || typeof data !== 'object' || data.type !== 'orqestra-picked') return null;
+  const tag = oneLine(data.tag, 30).toLowerCase();
+  if (!/^[a-z][a-z0-9-]*$/.test(tag)) return null;
+  return { tag, path: oneLine(data.path, 200), text: oneLine(data.text, 200), html: typeof data.html === 'string' ? data.html.slice(0, 600) : '' };
+}
+
+export function pickedLabel(picked) {
+  const text = picked.text ? ` “${picked.text.length > 60 ? `${picked.text.slice(0, 60)}…` : picked.text}”` : '';
+  return `<${picked.tag}>${text}`;
+}
+
+// The message that asks the Manager to change one part of a product.
+export function editMessage(product, picked, request) {
+  return [
+    `Change one part of "${product.name}" (${product.entry}).`,
+    `The part I selected in the preview: the <${picked.tag}> element${picked.path ? ` at ${picked.path}` : ''}${picked.text ? `, with the text "${picked.text}"` : ''}.`,
+    picked.html ? `Its HTML starts like this:\n${picked.html}` : null,
+    `What I want: ${request.trim()}`,
+    `Files of this product: ${product.files.slice(0, 40).join(', ')}.`,
+    'Make a plan that changes only this, and keeps everything else as it is. Reply in the language I used earlier in this conversation.',
+  ].filter(Boolean).join('\n');
+}
+
+// ---- What the team did, step by step, like Claude's activity lines ----------------------------
+export const MAX_LOG = 200;
+function logEntry(event) {
+  switch (event && event.type) {
+    case 'run-started': return { type: 'run-started', count: (event.tasks || []).length };
+    case 'task': return { type: 'task', taskId: event.taskId, status: event.status, agentId: event.agentId ?? null, attempt: event.attempt || 1, note: event.note ? String(event.note).slice(0, 300) : null };
+    case 'review': return { type: 'review', taskId: event.taskId, reviewerId: event.reviewerId, approved: Boolean(event.approved), problems: (event.problems || []).slice(0, 2).map((p) => String(p).slice(0, 200)) };
+    case 'files': return { type: 'files', taskId: event.taskId, files: (event.files || []).slice(0, 12).map((f) => ({ path: String(f.path), bytes: Number(f.bytes) || 0 })) };
+    case 'run-finished': return { type: 'run-finished', status: event.status, summary: event.summary ? String(event.summary).slice(0, 300) : null };
+    default: return null;
+  }
+}
+
+export function applyTeamEvent(run, event, now = Date.now()) {
+  if (event && event.type === 'output') return { ...run, outputs: addOutput(run.outputs, event, now) };
+  const next = applyTeamEventCore(run, event);
+  const entry = logEntry(event);
+  if (!entry) return next;
+  return { ...next, startedAt: run.startedAt ?? now, ...(entry.type === 'run-finished' ? { endedAt: now } : {}), log: [...(run.log || []), { at: now, ...entry }].slice(-MAX_LOG) };
+}
+
+const size = (bytes) => (bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} kB` : `${bytes} B`);
+const STEP = { working: 'started', reviewing: 'is reviewing', done: 'finished', unverified: 'finished (not reviewed)', failed: 'could not finish', blocked: 'is blocked on', stopped: 'stopped' };
+// One activity line: what kind of step it is (for the icon) and its text.
+export function logLine(entry, run, nameOf) {
+  const task = run.tasks.find((t) => t.id === entry.taskId);
+  const title = task ? `“${task.title}”` : 'a task';
+  const who = (id) => (id ? nameOf(id) : 'The team');
+  switch (entry.type) {
+    case 'run-started': return { kind: 'start', text: `The team started ${entry.count} task${entry.count === 1 ? '' : 's'}` };
+    case 'task':
+      if (entry.status === 'waiting') return null;
+      if (entry.status === 'working' && entry.attempt > 1) return { kind: 'retry', text: `${who(entry.agentId)} tries ${title} again (attempt ${entry.attempt})${entry.note ? ` — ${entry.note}` : ''}` };
+      return { kind: entry.status, text: `${who(entry.agentId)} ${STEP[entry.status] || entry.status} ${title}${['failed', 'blocked'].includes(entry.status) && entry.note ? ` — ${entry.note}` : ''}` };
+    case 'review': return entry.approved
+      ? { kind: 'approved', text: `${who(entry.reviewerId)} approved ${title}` }
+      : { kind: 'changes', text: `${who(entry.reviewerId)} asked for changes to ${title}${entry.problems.length ? `: ${entry.problems.join('; ')}` : ''}` };
+    case 'files': return { kind: 'files', text: `${task?.agentId ? nameOf(task.agentId) : 'An agent'} wrote ${entry.files.map((f) => `${f.path} (${size(f.bytes)})`).join(', ')}` };
+    case 'run-finished': return { kind: entry.status === 'done' ? 'finished' : 'failed', text: entry.status === 'done' ? 'The team finished' : entry.status === 'stopped' ? 'The run was stopped' : `The run did not finish${entry.summary ? ` — ${entry.summary}` : ''}` };
+    default: return null;
+  }
+}
+
+// "12s", "3m 05s", "1h 02m": how long something has been going on.
+export function elapsed(ms) {
+  const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+  if (total < 60) return `${total}s`;
+  const m = Math.floor(total / 60);
+  if (m < 60) return `${m}m ${String(total % 60).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
+// ---- How much of each subscription is left (the sidebar) ----------------------------------------
+const WINDOW_NAME = (l) => (l.windowMinutes === 300 ? '5 hours' : l.windowMinutes >= 7 * 1440 - 60 && l.windowMinutes <= 7 * 1440 + 60 ? 'Week' : l.label);
+const TOOL_NAME = { claude: 'Claude', codex: 'ChatGPT' };
+export function usageRows(statuses, now = Date.now()) {
+  return (statuses || []).filter((s) => s.installed && s.signedIn && s.subscription).map((s) => ({
+    provider: s.provider,
+    name: TOOL_NAME[s.provider] || s.name,
+    at: s.limitsAt || null,
+    windows: (s.limits || []).map((l) => {
+      const left = Math.max(0, Math.min(100, Math.round(100 - Number(l.usedPercent))));
+      const resets = typeof l.resetsAt === 'number' && l.resetsAt * 1000 > now ? l.resetsAt * 1000 : null;
+      return { name: WINDOW_NAME(l), left, resets };
+    }).sort((a, b) => (a.name === '5 hours' ? -1 : b.name === '5 hours' ? 1 : 0)),
+  }));
+}
+
+// ---- What each agent wrote (main/team/runner.ts "output" events), for the agent's panel ----------
+export const MAX_OUTPUTS = 16;
+export const OUTPUT_KEEP = 6000;
+export function addOutput(list, event, now = Date.now()) {
+  const text = typeof event.text === 'string' ? event.text : '';
+  const entry = {
+    taskId: String(event.taskId), agentId: String(event.agentId), kind: event.kind === 'review' ? 'review' : 'work', attempt: Number(event.attempt) || 1,
+    text: event.done ? text.slice(0, OUTPUT_KEEP) : text.slice(-OUTPUT_KEEP), done: Boolean(event.done),
+    ...(event.failed ? { failed: String(event.failed).slice(0, 500) } : {}), at: now,
+  };
+  const same = (o) => o.taskId === entry.taskId && o.agentId === entry.agentId && o.kind === entry.kind && o.attempt === entry.attempt;
+  const old = (list || []).find(same);
+  const rest = (list || []).filter((o) => !same(o));
+  const next = [...rest, { ...entry, startedAt: old?.startedAt ?? now }];
+  while (next.length > MAX_OUTPUTS) next.splice(next.findIndex((o) => o.done) >= 0 ? next.findIndex((o) => o.done) : 0, 1);
+  return next;
+}
+
+// Everything one agent did in the project's team runs: what it is writing now, earlier answers (newest
+// first) with their task, and the files it wrote.
+export function agentWork(messages, agentId) {
+  const runs = (messages || []).filter((m) => m.kind === 'team' && m.run).map((m) => m.run);
+  const history = [];
+  const files = new Map();
+  let live = null;
+  for (const run of runs) {
+    for (const o of run.outputs || []) {
+      if (o.agentId !== agentId) continue;
+      const task = run.tasks.find((t) => t.id === o.taskId);
+      const item = { ...o, taskTitle: task ? task.title : 'A task', goal: run.goal, running: run.status === 'running' };
+      if (!o.done && run.status === 'running') live = item;
+      else history.push(item);
+    }
+    for (const t of run.tasks) if (t.agentId === agentId) for (const f of t.files || []) files.set(f.path, f);
+  }
+  history.sort((a, b) => b.at - a.at);
+  return { live, history, files: [...files.values()] };
+}
+
+// An agent's answer split into readable parts: text, the files it delivered (shown as one line each,
+// also while a file is still being written), and a review's verdict.
+export function textParts(text) {
+  const parts = [];
+  const source = String(text ?? '');
+  const tag = /<orqestra-file path="([^"]{1,200})">\r?\n?([\s\S]*?)(<\/orqestra-file>|$)|<orqestra-review>([\s\S]*?)(<\/orqestra-review>|$)/g;
+  let at = 0;
+  for (const m of source.matchAll(tag)) {
+    const before = source.slice(at, m.index).trim();
+    if (before) parts.push({ type: 'text', text: before });
+    if (m[1] !== undefined) {
+      const body = (m[2] || '').replace(/\r?\n$/, '');
+      parts.push({ type: 'file', path: m[1], lines: body ? body.split('\n').length : 0, done: Boolean(m[3]) });
+    } else {
+      let verdict;
+      try { verdict = JSON.parse(m[4]); } catch { verdict = null; }
+      parts.push(verdict && typeof verdict.approved === 'boolean'
+        ? { type: 'review', approved: verdict.approved, problems: Array.isArray(verdict.problems) ? verdict.problems.map(String).slice(0, 10) : [] }
+        : { type: 'text', text: m[0] });
+    }
+    at = m.index + m[0].length;
+  }
+  const after = source.slice(at).trim();
+  if (after) parts.push({ type: 'text', text: after });
+  return parts;
+}
+
+// A request the user gives one agent directly (from its panel). The same one-task plan the main
+// process builds (main/team/plan.ts directPlan), so the run card can show it at once.
+export function directPlanFor(request, agent) {
+  const text = String(request ?? '').trim();
+  const short = text.replace(/\s+/g, ' ');
+  return {
+    goal: short.length > 160 ? `${short.slice(0, 157)}…` : short,
+    tasks: [{ id: 't1', title: short.length > 80 ? `${short.slice(0, 77)}…` : short, role: agent.role, goal: text, dependsOn: [], deliverables: [], open: true, agentId: agent.id }],
+    products: [],
+  };
+}
+
+// The agent's own words in a direct run, for the run card (its last finished answer).
+export function directReply(run) {
+  if (!run?.direct) return null;
+  const answers = (run.outputs || []).filter((o) => o.kind === 'work' && o.done && !o.failed && o.agentId === run.direct.agentId);
+  return answers.length ? answers[answers.length - 1].text : null;
+}
+
+// Undo: only the newest finished run that wrote files can be undone (then the one before it, and so on),
+// so a later change is never lost by undoing an earlier one. The main process checks the same.
+const wroteFiles = (run) => (run.files || []).length > 0 || (run.tasks || []).some((t) => (t.files || []).length > 0);
+export function undoableRunId(messages) {
+  const runs = (messages || []).filter((m) => m.kind === 'team' && m.run).map((m) => m.run);
+  for (let i = runs.length - 1; i >= 0; i -= 1) {
+    const run = runs[i];
+    if (run.status === 'running') return null;
+    if (run.undone || !wroteFiles(run)) continue;
+    return run.id;
+  }
+  return null;
 }

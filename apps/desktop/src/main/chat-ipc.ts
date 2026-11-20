@@ -5,6 +5,10 @@ import { ChatService } from "./chat-service";
 import { ClaudeCodeAdapter } from "./providers/claude-code";
 import { CodexAdapter } from "./providers/codex";
 import { toolEnvironment } from "./providers/tool-env";
+import { LimitsStore, recordLimits } from "./providers/limits-store";
+
+// The usage windows the tools last reported (shown in the sidebar).
+export const limitsStore = new LimitsStore();
 
 // Electron wiring for the chat: three request channels from the window and one event channel
 // back to it. Each request is accepted only from the app's own window (isTrusted).
@@ -12,7 +16,10 @@ import { toolEnvironment } from "./providers/tool-env";
 let service: ChatService | null = null;
 
 export function createAdapters(): { claude: ClaudeCodeAdapter; codex: CodexAdapter } {
-  return { claude: new ClaudeCodeAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), codex: new CodexAdapter() };
+  return {
+    claude: recordLimits(new ClaudeCodeAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), limitsStore),
+    codex: recordLimits(new CodexAdapter(), limitsStore),
+  };
 }
 
 export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolean, getWindow: () => BrowserWindow | null, adapters = createAdapters(), teamNow: (projectId: string) => string | null = () => null): ChatService {
@@ -33,7 +40,7 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
     guard(event);
     await firstPath;
     if (refresh === true) await toolEnvironment.refresh();
-    return service!.providers(refresh === true);
+    return limitsStore.merge(await service!.providers(refresh === true));
   });
   ipcMain.handle("chat:send", (event, payload: unknown) => {
     guard(event);

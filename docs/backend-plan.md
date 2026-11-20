@@ -312,8 +312,104 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   storage in the page, a file change showing in the open preview, and that the page cannot read the
   window, use `window.orqestra`, reach the network, or navigate away. **Not verified:** a real run with
   Claude Code and Codex building a product while the preview updates.
-- Not yet: the Manager creating and naming product nodes itself, moving product nodes by hand,
-  several previews side by side, and products other than web pages.
+- Not yet: several previews side by side, and products other than web pages.
+
+**Status 2026-11-20: undo a run's changes.** Before a run writes a file for the first time, the main
+process keeps the file as it was (or notes that it did not exist) in `<project>/history/<runId>/`
+(`main/team/history.ts`; the newest 20 runs are kept). **Undo changes** on the run card puts those
+files back and removes files the run created. Runs are undone newest first: the button is only on
+the newest run that wrote files, and the main process refuses an older one while a newer change is
+not undone, so a later change is never lost. Not while the team works in the project, and not in a
+shared Teams project (there the Manager changes it back, so the team's reservations see the change).
+The card then says how many files are back, the preview reloads, and the Manager's history says the
+user undid the run. Verified with unit tests and in the real Electron app (two changes undone in
+order; the files on disk were checked).
+
+**Status 2026-11-20: ask one agent directly.** The agent's panel in the tree has a box to ask that agent
+directly, without the Manager and without a plan to approve ("make the heading bigger", "what is on
+the page?"). The main process makes a one-task plan for that agent (`directPlan`, `team:direct`): the
+agent reads the project's files (up to the context limit) and delivers the files it changes or
+creates (at most 8, plain relative names inside the project folder), which another agent reviews as
+usual; a question is only answered, with nothing written or reviewed. The chat shows "To <agent>"
+and a card with the agent's reply, its files and the activity; the Manager's history marks such
+requests as not addressed to it. An agent without a tool cannot be asked, and nothing can be asked
+while the team works. In a Teams project the reservation grows when the files are written, as for
+other runs. Verified with unit tests and in the real Electron app with the stand-in tools.
+The interface build now also parses the whole bundle, so a syntax error (a name declared twice, as
+the end-to-end test found) stops the build instead of showing a blank window.
+
+**Status 2026-11-19: what each agent is doing.** A click on an agent in the tree opens a panel beside
+it: **Now** shows what the agent is writing while it writes (text, each file it delivers with its line
+count, "writing…" until the file is complete) and how long it has worked; **Earlier** lists its
+answers, newest first (worked on or reviewed which task, which attempt, how long, when), with review
+verdicts and failures; **Files it wrote** lists its files. The runner sends what an agent writes as
+`output` events (the latest part every 0.4 s while it writes, then the whole answer cut to 12,000
+characters); the window keeps up to 16 answers of 6,000 characters per run with the project. What the
+agents write is never passed to Teams. Verified with unit tests and in the real Electron app with the
+stand-in tools. Also fixed: primary buttons (such as **Restart now** in the update dialog) had dark
+text on a dark button; they now use the shell's accent colours.
+
+**Status 2026-11-19: one question at a time, a working animation, the team's activity, and usage left.**
+- The Manager's questions come one at a time, like Lovable: a click on an option shows the next question
+  (Back goes to the previous one), "Write your own" and "Let the Manager decide" work per question, and
+  the last answer sends them all as one message.
+- While the Manager answers: a turning star with "Thinking", then "Writing", and the time so far. The
+  team's run card and the Planner's card show the same, and a finished run says how long it took.
+- **Activity** on the run card lists each step with its time, like Claude's lines: who started which
+  task, which files were written (with sizes), reviews (approved or the changes asked for), retries,
+  and the end. While the team works the last four steps show; the whole list opens with a click.
+- **Usage left** in the sidebar: the 5-hour and weekly windows of Claude and ChatGPT, as percent left.
+  Codex is asked directly (`account/rateLimits/read`). Claude Code reports its windows only during a
+  reply (`rate_limit_event`), so Claude's values are the latest seen, with their time, and before the
+  first reply the card says so. Nothing extra is sent to the models to read them.
+- Verified: unit tests, and the whole flow in the real Electron app with stand-in `claude` and `codex`
+  programs (the test fixtures, no models): question steps and Back, the answers message, the plan,
+  Start, the activity steps, the time, and usage before and after a reply. **Not verified:** the
+  shape of `rate_limit_event` from the user's own Claude Code version (older versions may report only
+  the window that limits right now, or nothing; then the card keeps saying "Shown after the next reply").
+
+**Status 2026-11-19: Select a part of the preview and ask for a change.** Like Lovable's visual edit:
+**Select** in the preview's toolbar outlines what the mouse is over; a click picks that part (and does
+not follow links or press buttons). A bar shows what was picked ("<h1> "Träningslogg"") and asks what
+should change; **Ask the Manager** sends the part (tag, CSS path, text, the start of its HTML), the
+request and the product's files, so the Manager plans a change to just that. Verified in the real
+Electron app. **Not verified:** the change made by real models from such a request.
+
+**Status 2026-11-19: Arrange, a larger tree, and questions like a short form.**
+- **Arrange** in the tree's toolbar places the Manager on top, each agent one row below the agent it is
+  connected from (rows ordered so that lines cross as little as possible), and products under the
+  lowest of their agents. Only places change, so it also works while the team runs; Undo restores them.
+- The tree is easier to read: larger type in the nodes, tighter rows, a fit that uses more of the panel,
+  and less empty space above the chat and the tree.
+- Before the team builds something new, the Manager asks 2 to 4 multiple-choice questions at once, like
+  Lovable's form (who it is for, main features, look and feel). Each has the Manager's pick preselected,
+  your own answer, or "Let the Manager decide"; the answers go back as one message. It does not ask when
+  the request is clear, when you say to start, or for small changes.
+- Verified in the real Electron app (a messy tree arranged, Undo, the three-question form). **Not
+  verified:** how often the real models ask questions, and how good those questions are.
+
+**Status 2026-11-19: the plan names the products.** The Manager and the Planner list what the user
+will see in the plan (`products`: an id, a name and a folder, at most 6) and mark the tasks that build
+each one. The plan card shows them, and each becomes a node in the tree, linked to the agents of its
+tasks, as soon as the run starts ("Planned", or "Building" while the team works on it). When its files
+arrive it becomes the live preview, in the same place and with the name from the plan. The main process
+validates the products like the rest of the plan. Verified with unit tests and in the real Electron app
+(two named products, then files for one of them). **Not verified:** whether the real models fill in
+`products` reliably; a plan without them still works as before (products then appear from the files).
+
+**Status 2026-11-19: the preview reports problems, and product nodes can be moved.**
+- The main process reads the console of previewed pages (only frames from a known preview host) and
+  sends three kinds of problems to the window: a script error (with file and line), a file the page
+  asks for that does not exist, and something it tried to load from the internet. The same problem is
+  sent once a minute at most, and at most 30 per project a minute; messages are cut short.
+- The product node shows "N problems", and the preview shows a list with **Ask the Manager to fix**,
+  which sends the problems and the product's files to the Manager as a message, so it can plan a fix.
+  Problems are cleared when the files change or the preview reloads, and come back if they remain.
+- Product nodes can be dragged in the tree; the place is saved with the project.
+- Verified: unit tests, and the real Electron app with a broken page (missing CSS file, a script from
+  a CDN, a script error): all three were shown, a drag did not open the preview, the place was kept
+  after a restart, and the problems went away after the page was fixed. **Not verified:** the fix
+  request with a real Manager on Claude Code or Codex (the test machine has none connected).
 
 ### Phase 6 — Supabase (Claude builds, Philip creates the project, L)
 - **Accounts** (sign-in), and the tables for projects, messages, runs, tasks, events, and agent

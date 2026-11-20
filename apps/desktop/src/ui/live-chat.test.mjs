@@ -127,7 +127,7 @@ describe('questions from the Manager', () => {
       '{"question":"x","options":[{"label":"a"},{}]}', JSON.stringify({ question: 'x', options: Array(7).fill({ label: 'a' }) })]) {
       expect(parseQuestion(block(bad)).question, bad).toBeNull();
     }
-    expect(parseQuestion('Just an answer.')).toEqual({ body: 'Just an answer.', question: null });
+    expect(parseQuestion('Just an answer.')).toEqual({ body: 'Just an answer.', question: null, questions: [] });
     expect(parseQuestion(`${block(good)} and more text after`).question).toBeNull();
   });
 
@@ -292,12 +292,18 @@ describe('products in the tree', () => {
   it('places a product under its agents, and never on top of another node', () => {
     const messages = [run('done', [{ deliverables: ['web/index.html'], agentId: 'b', status: 'done' }])];
     const [a, b] = placeProducts([web, { ...web, id: 'web2' }], messages, graph);
-    expect(a).toMatchObject({ id: 'web', x: 100, y: 470, agents: ['b'], building: false });
-    expect(b.y).toBe(470);
+    expect(a).toMatchObject({ id: 'web', x: 100, y: 445, agents: ['b'], building: false });
+    expect(b.y).toBe(445);
     expect(b.x).toBeGreaterThanOrEqual(100 + 224);
     const [alone] = placeProducts([root], [], graph);
-    expect(alone.y).toBe(470);
+    expect(alone.y).toBe(445);
     expect(placeProducts([], [], graph)).toEqual([]);
+  });
+
+  it('places a product under the lowest of its agents', () => {
+    const tree = { nodes: [{ id: 'm', x: 300, y: 0 }, { id: 'b', x: 100, y: 230 }, { id: 'r', x: 300, y: 460 }] };
+    const messages = [run('done', [{ deliverables: ['web/index.html'], agentId: 'b', review: { reviewerId: 'r' }, status: 'done' }])];
+    expect(placeProducts([web], messages, tree)[0]).toMatchObject({ x: 300, y: 460 + 159 + 56 });
   });
 
   it('builds the preview address with the entry page and a version', () => {
@@ -314,9 +320,9 @@ describe('plans with handoffs', () => {
     const { plan } = parsePlan(raw);
     expect(plan.rules).toEqual(['Swedish text']);
     expect(plan.tasks[0].handoff).toEqual(handoff);
-    // An older plan stays exactly as it was.
+    // Older plans still parse without handoffs or declared products.
     const old = parsePlan(`x\n<orqestra-plan>{"goal":"g","tasks":[{"id":"t1","title":"T","role":"Builder","goal":"Do","dependsOn":[],"deliverables":["a.txt"]}]}</orqestra-plan>`).plan;
-    expect(old).toEqual({ goal: 'g', tasks: [{ id: 't1', title: 'T', role: 'Builder', goal: 'Do', dependsOn: [], deliverables: ['a.txt'] }] });
+    expect(old).toEqual({ goal: 'g', products: [], tasks: [{ id: 't1', title: 'T', role: 'Builder', goal: 'Do', dependsOn: [], deliverables: ['a.txt'] }] });
   });
 });
 
@@ -340,7 +346,7 @@ describe('usage in the run details', () => {
   it('shows planning and each agent, marks missing usage Unavailable and totals Partial', async () => {
     const { runUsage, planningUsage } = await import('./live-chat.mjs');
     const entry = (seq, agentId, kind, inputTokens, outputTokens, cachedInputTokens = 0) => ({ seq, taskId: 't1', agentId, agentName: agentId === 'bu' ? 'Bob' : 'Vera', role: agentId === 'bu' ? 'Builder' : 'Code Reviewer', tool: 'x', model: null, kind, attempt: 1, outcome: 'completed', inputTokens, cachedInputTokens, outputTokens });
-    let run = newTeamRun('r', { goal: 'g', tasks: [{ id: 't1', title: 'T', role: 'Builder', deliverables: ['a'] }] }, planningUsage({ providerName: 'Claude Code', usage: { inputTokens: 5000, cachedInputTokens: 4000, outputTokens: 300 } }));
+    let run = newTeamRun('r', { goal: 'g', tasks: [{ id: 't1', title: 'T', role: 'Builder', deliverables: ['a'] }] }, 1000, null, planningUsage({ providerName: 'Claude Code', usage: { inputTokens: 5000, cachedInputTokens: 4000, outputTokens: 300 } }));
     run = applyTeamEvent(run, { type: 'usage', entry: entry(1, 'bu', 'worker', 1000, 50, 600) });
     run = applyTeamEvent(run, { type: 'usage', entry: entry(1, 'bu', 'worker', 1000, 50, 600) }); // the same request again
     run = applyTeamEvent(run, { type: 'usage', entry: entry(2, 'rv', 'review', null, null) });
@@ -354,5 +360,288 @@ describe('usage in the run details', () => {
     ]);
     expect(u.total).toBe('6,000 in (4,600 cached) · 350 out · Partial');
     expect(planningUsage({ planning: { status: 'done', plannerName: 'Pia', usage: null } })).toEqual({ by: 'Planner', name: 'Pia', usage: null });
+  });
+});
+
+import { addProblem, fixMessage, MAX_PROBLEMS, problemLine, problemsFor, readProblem } from './live-chat.mjs';
+
+describe('preview problems', () => {
+  const web = { id: 'web', folder: 'web', entry: 'web/index.html', name: 'Web', files: ['web/index.html', 'web/app.js'] };
+  const root = { id: 'root', folder: '', entry: 'index.html', name: 'Site', files: ['index.html'] };
+  const err = readProblem({ projectId: 'p1', kind: 'error', message: 'Uncaught ReferenceError: x is not defined', page: 'web/index.html', source: 'web/app.js', line: 4 });
+
+  it('reads only well-formed problems', () => {
+    expect(err).toEqual({ kind: 'error', message: 'Uncaught ReferenceError: x is not defined', page: 'web/index.html', source: 'web/app.js', line: 4 });
+    expect(readProblem({ kind: 'evil', message: 'x' })).toBeNull();
+    expect(readProblem({ kind: 'error', message: '  ' })).toBeNull();
+    expect(readProblem(null)).toBeNull();
+    expect(readProblem({ kind: 'missing', message: 'm', line: -2, page: 5 })).toEqual({ kind: 'missing', message: 'm', page: null, source: null, line: null });
+  });
+
+  it('keeps each problem once and only the latest ones', () => {
+    let list = addProblem([], err);
+    expect(addProblem(list, { ...err })).toBe(list);
+    for (let i = 0; i < 30; i++) list = addProblem(list, { ...err, message: `m${i}` });
+    expect(list).toHaveLength(MAX_PROBLEMS);
+    expect(list.at(-1).message).toBe('m29');
+    expect(addProblem(list, null)).toBe(list);
+  });
+
+  it('finds the problems of a product by its page or file', () => {
+    const missing = { kind: 'missing', message: 'gone', page: null, source: 'web/style.css', line: null };
+    const other = { ...err, page: 'landing/index.html', source: 'landing/a.js' };
+    expect(problemsFor(web, [err, missing, other])).toEqual([err, missing]);
+    expect(problemsFor(root, [err, other])).toHaveLength(2);
+    expect(problemsFor(null, [err])).toEqual([]);
+  });
+
+  it('writes a fix request for the Manager', () => {
+    expect(problemLine(err)).toBe('Script error: Uncaught ReferenceError: x is not defined (web/app.js, line 4)');
+    const text = fixMessage(web, [err]);
+    expect(text).toContain('The preview of "Web" (web/index.html) shows this problem:');
+    expect(text).toContain('- Script error: Uncaught ReferenceError');
+    expect(text).toContain('Files of this product: web/index.html, web/app.js.');
+  });
+
+  it('places a product where the user moved it', () => {
+    const [p] = placeProducts([web], [], { nodes: [{ id: 'm', x: 0, y: 0 }] }, { web: { x: 900, y: 40 } });
+    expect(p).toMatchObject({ x: 900, y: 40 });
+  });
+});
+
+import { mergeProducts, planProducts } from './live-chat.mjs';
+
+describe('products named in the plan', () => {
+  const planText = (extra) => `Plan.\n<orqestra-plan>\n${JSON.stringify({ goal: 'Log', tasks: [{ id: 't1', title: 'Page', role: 'Builder', goal: 'Write it', deliverables: ['web/index.html'], product: 'Log' }], ...extra })}\n</orqestra-plan>`;
+
+  it('reads products and the product of each task', () => {
+    const { plan } = parsePlan(planText({ products: [{ id: 'Log', name: 'Workout log', folder: 'web/' }, { id: 'bad id', name: 'x' }, { id: 'n', name: '' }] }));
+    expect(plan.products).toEqual([{ id: 'log', name: 'Workout log', folder: 'web' }]);
+    expect(plan.tasks[0].product).toBe('log');
+    expect(parsePlan(planText({})).plan.products).toEqual([]);
+    expect(planProducts('x')).toEqual([]);
+  });
+
+  it('keeps them on the run', () => {
+    const { plan } = parsePlan(planText({ products: [{ id: 'log', name: 'Workout log', folder: 'web' }] }));
+    const run = newTeamRun('r1', plan);
+    expect(run.products).toEqual([{ id: 'log', name: 'Workout log', folder: 'web' }]);
+    expect(run.tasks[0].product).toBe('log');
+  });
+
+  const graph = { nodes: [{ id: 'm', x: 300, y: 0 }, { id: 'b', x: 100, y: 230 }] };
+  const team = (status, products, tasks) => ({ kind: 'team', run: { status, products, tasks } });
+
+  it('shows a planned product before it has files, linked to the agent building it', () => {
+    const messages = [team('running', [{ id: 'log', name: 'Workout log', folder: 'web' }], [{ deliverables: ['web/index.html'], product: 'log', plannedAgentId: 'b', status: 'working' }])];
+    const [p] = mergeProducts([], messages);
+    expect(p).toMatchObject({ id: 'web', folder: 'web', entry: 'web/index.html', name: 'Workout log', files: [], planned: true, plannedIds: ['log'] });
+    expect(productLinks(p, messages, graph)).toEqual({ agents: ['b'], building: true });
+  });
+
+  it('gives a found product the name from the plan, and keeps its id', () => {
+    const found = [{ id: 'web', folder: 'web', entry: 'web/index.html', name: 'Page title', files: ['web/index.html'], updatedAt: 5 }];
+    const messages = [team('done', [{ id: 'log', name: 'Workout log', folder: 'web' }], [{ deliverables: ['web/x.js'], product: 'log', agentId: 'b', status: 'done' }])];
+    const [p, ...rest] = mergeProducts(found, messages);
+    expect(rest).toEqual([]);
+    expect(p).toMatchObject({ id: 'web', name: 'Workout log', files: ['web/index.html'], plannedIds: ['log'] });
+    expect(p.planned).toBeUndefined();
+  });
+
+  it('forgets planned products of earlier runs that never got files', () => {
+    const messages = [team('failed', [{ id: 'old', name: 'Old', folder: 'old' }], []), team('running', [{ id: 'new', name: 'New', folder: 'new' }], [])];
+    expect(mergeProducts([], messages).map((p) => p.id)).toEqual(['new']);
+    expect(mergeProducts([], [])).toEqual([]);
+  });
+});
+
+import { answersFor } from './live-chat.mjs';
+
+describe('a form of questions', () => {
+  const q = (question, recommended = 0) => ({ question, options: [{ label: 'A', description: 'first' }, { label: 'B' }], recommended });
+  const block = (value) => `Några frågor först.\n<orqestra-question>\n${JSON.stringify(value)}\n</orqestra-question>`;
+
+  it('reads up to four questions', () => {
+    const { body, question, questions } = parseQuestion(block({ questions: [q('Vem?'), q('Hur?', 1)] }));
+    expect(body).toBe('Några frågor först.');
+    expect(questions.map((x) => x.question)).toEqual(['Vem?', 'Hur?']);
+    expect(question.question).toBe('Vem?');
+    expect(questions[1].recommended).toBe(1);
+  });
+
+  it('refuses a form with a broken question or too many', () => {
+    expect(parseQuestion(block({ questions: [q('Vem?'), { question: 'x', options: [] }] })).question).toBeNull();
+    expect(parseQuestion(block({ questions: [q('1'), q('2'), q('3'), q('4'), q('5')] })).question).toBeNull();
+    expect(parseQuestion(block({ questions: [] })).question).toBeNull();
+  });
+
+  it('still reads one question', () => {
+    expect(parseQuestion(block(q('Vem?'))).questions).toHaveLength(1);
+  });
+
+  it('writes the answers as one message', () => {
+    const questions = [q('Vem?'), q('Hur?')];
+    expect(answersFor(questions, [{ kind: 'option', index: 0 }, { kind: 'own', text: 'Snabbt' }])).toBe('1. Vem?\n   A (first)\n2. Hur?\n   Snabbt');
+    expect(answersFor(questions, [{ kind: 'skip' }, { kind: 'option', index: 1 }])).toBe('1. Vem?\n   You decide.\n2. Hur?\n   B');
+    expect(answersFor(questions, [{ kind: 'skip' }, { kind: 'skip' }])).toMatch(/^I skip these questions/);
+    expect(answersFor([questions[0]], [{ kind: 'option', index: 1 }])).toBe('B');
+  });
+});
+
+import { editMessage, pickedLabel, readPicked } from './live-chat.mjs';
+
+describe('selecting a part of the preview', () => {
+  const picked = readPicked({ type: 'orqestra-picked', tag: 'H1', path: 'body > h1', text: '  Träningslogg\n idag ', html: '<h1>Träningslogg</h1>' });
+  it('reads what the page says was clicked, cut short', () => {
+    expect(picked).toEqual({ tag: 'h1', path: 'body > h1', text: 'Träningslogg idag', html: '<h1>Träningslogg</h1>' });
+    expect(readPicked({ type: 'other', tag: 'h1' })).toBeNull();
+    expect(readPicked({ type: 'orqestra-picked', tag: '<script>' })).toBeNull();
+    expect(readPicked(null)).toBeNull();
+    expect(readPicked({ type: 'orqestra-picked', tag: 'p', text: 'x'.repeat(500), html: 'y'.repeat(900) })).toMatchObject({ text: 'x'.repeat(200), html: 'y'.repeat(600) });
+  });
+  it('labels it and writes the change request for the Manager', () => {
+    expect(pickedLabel(picked)).toBe('<h1> “Träningslogg idag”');
+    const text = editMessage({ name: 'Logg', entry: 'web/index.html', files: ['web/index.html'] }, picked, ' Gör rubriken större ');
+    expect(text).toContain('Change one part of "Logg" (web/index.html).');
+    expect(text).toContain('the <h1> element at body > h1, with the text "Träningslogg idag".');
+    expect(text).toContain('What I want: Gör rubriken större');
+  });
+});
+
+import { elapsed, logLine, usageRows } from './live-chat.mjs';
+
+describe('the team activity log', () => {
+  const plan = { goal: 'Logg', tasks: [{ id: 't1', title: 'Bygg sidan', role: 'Builder', goal: 'g', dependsOn: [], deliverables: ['index.html'] }] };
+  const names = { b: 'Code builder', r: 'A fresh pair of eyes' };
+  const nameOf = (id) => names[id] || 'someone';
+  it('records each step with its time and writes it as a line', () => {
+    let run = newTeamRun('r1', plan, 1000);
+    run = applyTeamEvent(run, { type: 'run-started', tasks: [{ id: 't1', agentId: 'b' }] }, 1000);
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'waiting', agentId: null, attempt: 0 }, 1100);
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'working', agentId: 'b', attempt: 1 }, 1200);
+    run = applyTeamEvent(run, { type: 'files', taskId: 't1', files: [{ path: 'index.html', bytes: 2150 }] }, 5000);
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'reviewing', agentId: 'r', attempt: 1 }, 5100);
+    run = applyTeamEvent(run, { type: 'review', taskId: 't1', reviewerId: 'r', approved: false, problems: ['No title'] }, 9000);
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'working', agentId: 'b', attempt: 2, note: 'Fixing: No title' }, 9100);
+    run = applyTeamEvent(run, { type: 'run-finished', status: 'done', summary: 'ok', files: [], calls: 4, usage: null }, 20000);
+    expect(run.startedAt).toBe(1000);
+    expect(run.endedAt).toBe(20000);
+    expect(run.log.map((e) => e.at)).toEqual([1000, 1100, 1200, 5000, 5100, 9000, 9100, 20000]);
+    expect(run.log.map((e) => logLine(e, run, nameOf)).filter(Boolean).map((l) => l.text)).toEqual([
+      'The team started 1 task',
+      'Code builder started “Bygg sidan”',
+      'Code builder wrote index.html (2.1 kB)',
+      'A fresh pair of eyes is reviewing “Bygg sidan”',
+      'A fresh pair of eyes asked for changes to “Bygg sidan”: No title',
+      'Code builder tries “Bygg sidan” again (attempt 2) — Fixing: No title',
+      'The team finished',
+    ]);
+  });
+  it('keeps the log short', () => {
+    let run = newTeamRun('r1', plan, 0);
+    for (let i = 0; i < 250; i++) run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'working', agentId: 'b', attempt: 1 }, i);
+    expect(run.log).toHaveLength(200);
+    expect(run.log[0].at).toBe(50);
+  });
+  it('writes how long something took', () => {
+    expect([elapsed(4200), elapsed(65_000), elapsed(3_725_000), elapsed(-5)]).toEqual(['4s', '1m 05s', '1h 02m', '0s']);
+  });
+});
+
+describe('usage left', () => {
+  it('shows what is left of each window, the 5 hours first, for subscribed tools only', () => {
+    const now = 1_000_000_000_000;
+    const rows = usageRows([
+      { provider: 'claude', name: 'Claude Code', installed: true, signedIn: true, subscription: true, limitsAt: now - 60_000, limits: [{ label: '7-day limit', usedPercent: 40, windowMinutes: 10080 }, { label: '5-hour limit', usedPercent: 31.4, windowMinutes: 300, resetsAt: now / 1000 + 3600 }] },
+      { provider: 'codex', name: 'Codex', installed: true, signedIn: true, subscription: true, limits: [{ label: '5-hour limit', usedPercent: 120, windowMinutes: 300, resetsAt: 5 }] },
+      { provider: 'claude', name: 'x', installed: true, signedIn: false, subscription: false, limits: [] },
+    ], now);
+    expect(rows).toEqual([
+      { provider: 'claude', name: 'Claude', at: now - 60_000, windows: [{ name: '5 hours', left: 69, resets: now + 3_600_000 }, { name: 'Week', left: 60, resets: null }] },
+      { provider: 'codex', name: 'ChatGPT', at: null, windows: [{ name: '5 hours', left: 0, resets: null }] },
+    ]);
+  });
+});
+
+import { addOutput, agentWork, MAX_OUTPUTS, textParts } from './live-chat.mjs';
+
+describe("an agent's work", () => {
+  const plan = { goal: 'Logg', tasks: [{ id: 't1', title: 'Bygg sidan', role: 'Builder', goal: 'g', dependsOn: [], deliverables: ['index.html'] }] };
+  it('keeps what an agent writes, live and when done, without filling the activity log', () => {
+    let run = newTeamRun('r1', plan, 0);
+    run = applyTeamEvent(run, { type: 'task', taskId: 't1', status: 'working', agentId: 'b', attempt: 1 }, 1);
+    run = applyTeamEvent(run, { type: 'output', taskId: 't1', agentId: 'b', kind: 'work', attempt: 1, text: 'Jag bygger', done: false }, 2);
+    let work = agentWork([{ kind: 'team', run }], 'b');
+    expect(work.live).toMatchObject({ text: 'Jag bygger', taskTitle: 'Bygg sidan', startedAt: 2 });
+    run = applyTeamEvent(run, { type: 'output', taskId: 't1', agentId: 'b', kind: 'work', attempt: 1, text: 'Jag byggde sidan.', done: true }, 5);
+    run = applyTeamEvent(run, { type: 'files', taskId: 't1', files: [{ path: 'index.html', bytes: 9 }] }, 6);
+    run = applyTeamEvent(run, { type: 'output', taskId: 't1', agentId: 'r', kind: 'review', attempt: 1, text: 'x', done: true, failed: 'Overloaded' }, 7);
+    expect(run.outputs).toHaveLength(2);
+    expect(run.log.some((e) => e.type === 'output')).toBe(false);
+    work = agentWork([{ kind: 'team', run }], 'b');
+    expect(work.live).toBeNull();
+    expect(work.history).toMatchObject([{ text: 'Jag byggde sidan.', done: true, startedAt: 2, at: 5 }]);
+    expect(work.files).toEqual([{ path: 'index.html', bytes: 9 }]);
+    expect(agentWork([{ kind: 'team', run }], 'r').history[0]).toMatchObject({ kind: 'review', failed: 'Overloaded' });
+    expect(agentWork([], 'b')).toEqual({ live: null, history: [], files: [] });
+  });
+  it('keeps a bounded number of answers, dropping the oldest finished ones', () => {
+    let list = [];
+    for (let i = 0; i < 20; i++) list = addOutput(list, { taskId: `t${i}`, agentId: 'b', kind: 'work', attempt: 1, text: 'x'.repeat(9000), done: true }, i);
+    expect(list).toHaveLength(MAX_OUTPUTS);
+    expect(list[0].taskId).toBe('t4');
+    expect(list[0].text).toHaveLength(6000);
+  });
+  it('marks unfinished writing as stopped when the app closed', () => {
+    let run = newTeamRun('r1', plan, 0);
+    run = applyTeamEvent(run, { type: 'output', taskId: 't1', agentId: 'b', kind: 'work', attempt: 1, text: 'hal', done: false }, 1);
+    expect(settleTeamRun(run).outputs[0]).toMatchObject({ done: true, failed: 'The app closed while this agent was writing.' });
+  });
+  it('splits an answer into text, files and a verdict, also mid-file', () => {
+    expect(textParts('Klart.\n<orqestra-file path="index.html">\n<h1>a</h1>\n<p>b</p>\n</orqestra-file>\nSlut.')).toEqual([
+      { type: 'text', text: 'Klart.' }, { type: 'file', path: 'index.html', lines: 2, done: true }, { type: 'text', text: 'Slut.' }]);
+    expect(textParts('Bygger\n<orqestra-file path="a.js">\nconst x')).toEqual([{ type: 'text', text: 'Bygger' }, { type: 'file', path: 'a.js', lines: 1, done: false }]);
+    expect(textParts('Bra.\n<orqestra-review>{"approved": false, "problems": ["Ingen rubrik"]}</orqestra-review>')).toEqual([
+      { type: 'text', text: 'Bra.' }, { type: 'review', approved: false, problems: ['Ingen rubrik'] }]);
+    expect(textParts('')).toEqual([]);
+  });
+});
+
+import { directPlanFor, directReply } from './live-chat.mjs';
+
+describe('asking one agent directly', () => {
+  it('makes the same one-task plan as the main process, and finds the reply', () => {
+    const plan = directPlanFor('  Gör   rubriken större ', { id: 'b', role: 'Builder' });
+    expect(plan).toEqual({ goal: 'Gör rubriken större', products: [], tasks: [{ id: 't1', title: 'Gör rubriken större', role: 'Builder', goal: 'Gör   rubriken större', dependsOn: [], deliverables: [], open: true, agentId: 'b' }] });
+    let run = newTeamRun('d1', plan, 0, { agentId: 'b', name: 'Code builder' });
+    expect(directReply(run)).toBeNull();
+    run = applyTeamEvent(run, { type: 'output', taskId: 't1', agentId: 'b', kind: 'work', attempt: 1, text: 'Klart, större nu.', done: true }, 1);
+    expect(directReply(run)).toBe('Klart, större nu.');
+    expect(directReply(newTeamRun('x', plan, 0))).toBeNull();
+  });
+});
+
+describe('the Manager sees direct requests for what they are', () => {
+  it('marks them in its history', () => {
+    const run = { status: 'done', summary: 'Klart.', files: [{ path: 'index.html' }], direct: { agentId: 'b', name: 'Code builder' } };
+    expect(historyFor([{ kind: 'user', text: 'Gör rubriken större', to: 'Code builder' }, { kind: 'team', run }])).toEqual([
+      { role: 'user', text: '(To Code builder, not to you) Gör rubriken större' },
+      { role: 'assistant', text: 'Code builder (asked directly) (done): Klart. Files: index.html.' },
+    ]);
+  });
+});
+
+import { undoableRunId } from './live-chat.mjs';
+
+describe('undo', () => {
+  const team = (id, extra = {}) => ({ kind: 'team', run: { id, status: 'done', files: [], tasks: [{ files: [{ path: 'a', bytes: 1 }] }], ...extra } });
+  it('offers undo only on the newest run that wrote files, then the one before', () => {
+    expect(undoableRunId([team('r1'), team('r2'), team('r3', { tasks: [{ files: [] }] })])).toBe('r2');
+    expect(undoableRunId([team('r1'), team('r2', { undone: { restored: ['a'], removed: [] } })])).toBe('r1');
+    expect(undoableRunId([team('r1'), team('r2', { status: 'running' })])).toBeNull();
+    expect(undoableRunId([{ kind: 'user', text: 'x' }])).toBeNull();
+  });
+  it('tells the Manager when changes were undone', () => {
+    expect(historyFor([team('r1', { summary: 'Klart.', undone: { restored: [], removed: [] } })])[0].text).toContain('(done, then the user undid its changes)');
   });
 });

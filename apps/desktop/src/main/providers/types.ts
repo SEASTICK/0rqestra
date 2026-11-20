@@ -46,6 +46,8 @@ export interface RateLimit {
   label: string;
   usedPercent: number;
   windowMinutes: number | null;
+  // When the window starts over (Unix seconds), when the tool says so.
+  resetsAt?: number | null;
 }
 
 export type FailureReason =
@@ -83,6 +85,9 @@ export interface ProviderStatus {
   subscription: boolean;
   models: ModelOption[];
   limits: RateLimit[];
+  // When `limits` were last read (milliseconds). Claude Code reports them only during a reply, so they
+  // can be from earlier; null or absent when they were read just now.
+  limitsAt?: number | null;
   problem: string | null;
   // How the tool is signed in: a subscription, an API key (never used by 0rqestra), or something else
   // (a cloud provider, a token from the environment). Null when signed out or unknown.

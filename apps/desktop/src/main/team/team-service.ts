@@ -3,8 +3,9 @@ import type { ChatEvent, ChatHandle, TeamMember, Usage } from "../providers/type
 import { extractPlan, plannerPrompt } from "./planner";
 import { listFiles } from "./workspace";
 import { PROVIDER_IDS, type ProviderAdapter, type ProviderId } from "../providers/types";
-import { missingProjectFiles, parsePlan, type Plan } from "./plan";
+import { directPlan, missingProjectFiles, parsePlan, type Plan } from "./plan";
 import { TeamRun, type TeamAgent, type TeamEvent } from "./runner";
+import { pruneHistory, RunSnapshot, undoRun } from "./history";
 
 // Team runs between the window and the runner, free of Electron so it is unit-tested. The plan came
 // from a model and the agents from the window, so both are validated here.
@@ -76,6 +77,20 @@ export class TeamService {
     return { runId, projectId, plan, agents };
   }
 
+  // A request the user gives one agent directly, from its panel in the tree: a one-task plan for that agent.
+  prepareDirect(raw: unknown): { runId: string; projectId: string; plan: Plan; agents: TeamAgent[] } {
+    const v = (raw ?? {}) as Record<string, unknown>;
+    if (typeof v.runId !== "string" || !ID.test(v.runId)) throw new Error("Invalid run id.");
+    if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
+    const agents = parseAgents(v.agents);
+    const agent = agents.find((a) => a.id === v.agentId);
+    if (!agent) throw new Error("This agent does not run on Claude Code or Codex yet. Set its tool first.");
+    const plan = directPlan(v.request, agent);
+    if (this.runs.has(v.runId)) throw new Error("This run already exists.");
+    if ([...this.runs.values()].some((r) => r.projectId === v.projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
+    return { runId: v.runId, projectId: v.projectId, plan, agents };
+  }
+
   start(raw: unknown, emit: TeamEmit, writeGuard?: { authorize(paths: string[]): Promise<void> }): string {
     return this.launch(this.prepare(raw), emit, writeGuard);
   }
@@ -84,8 +99,12 @@ export class TeamService {
     const { runId, projectId, plan, agents } = prepared;
     if (this.runs.has(runId)) throw new Error("This run already exists.");
     if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
-    const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace: this.workspaceFor(projectId), cwd: this.cwd(), ...(writeGuard ? { writeGuard } : {}), emit: (event) => {
+    const workspace = this.workspaceFor(projectId);
+    const snapshot = new RunSnapshot(workspace, runId, plan.goal);
+    const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace, cwd: this.cwd(), snapshot, ...(writeGuard ? { writeGuard } : {}), emit: (event) => {
       emit(runId, event);
+      // What the agents write stays on this computer: it is shown in the window, never shared.
+      if (event.type === "output") return;
       try {
         this.observe?.({ runId, localProjectId: projectId, plan }, event);
       } catch {
@@ -95,7 +114,14 @@ export class TeamService {
     this.runs.set(runId, { projectId, run });
     void run.start().catch((error: unknown) => {
       emit(runId, { type: "run-finished", status: "failed", summary: error instanceof Error ? error.message : String(error), files: [], calls: 0, usage: { inputTokens: 0, outputTokens: 0 } });
-    }).finally(() => this.runs.delete(runId));
+    }).finally(() => {
+      this.runs.delete(runId);
+      try {
+        pruneHistory(workspace);
+      } catch {
+        /* old undo history that cannot be removed now is removed after a later run */
+      }
+    });
     return runId;
   }
 
@@ -143,6 +169,16 @@ export class TeamService {
     if (!handle) return false;
     handle.stop();
     return true;
+  }
+
+  // Undo: puts back the files a finished run changed (history.ts). Not while the team works in the project.
+  undo(raw: unknown): { restored: string[]; removed: string[] } {
+    const v = (raw ?? {}) as Record<string, unknown>;
+    if (typeof v.runId !== "string" || !ID.test(v.runId)) throw new Error("Invalid run id.");
+    if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
+    const projectId = v.projectId;
+    if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is working in this project. Undo when it is done.");
+    return undoRun(this.workspaceFor(projectId), v.runId);
   }
 
   stop(runId: unknown): boolean {

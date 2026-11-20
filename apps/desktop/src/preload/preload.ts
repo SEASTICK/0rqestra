@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("orqestra", {
   // Team runs (main/team/team-ipc.ts): start an approved plan, stop it, open the project's folder.
   team: {
     start: (payload: unknown) => ipcRenderer.invoke("team:start", payload),
+    direct: (payload: unknown) => ipcRenderer.invoke("team:direct", payload),
+    undo: (payload: unknown) => ipcRenderer.invoke("team:undo", payload),
     plan: (payload: unknown) => ipcRenderer.invoke("team:plan", payload),
     stopPlan: (requestId: string) => ipcRenderer.invoke("team:plan-stop", String(requestId)),
     stop: (runId: string) => ipcRenderer.invoke("team:stop", String(runId)),
@@ -36,6 +38,11 @@ contextBridge.exposeInMainWorld("orqestra", {
     subscribe: (listener: (message: unknown) => void) => {
       ipcRenderer.removeAllListeners("team:event");
       ipcRenderer.on("team:event", (_event, message: unknown) => listener(message));
+    },
+    // Errors from a previewed page (main/preview/problems.ts).
+    onPreviewProblem: (listener: (message: unknown) => void) => {
+      ipcRenderer.removeAllListeners("team:preview-problem");
+      ipcRenderer.on("team:preview-problem", (_event, message: unknown) => listener(message));
     },
   },
   // AI accounts (main/accounts/accounts-ipc.ts): check the tools, run the official installer or

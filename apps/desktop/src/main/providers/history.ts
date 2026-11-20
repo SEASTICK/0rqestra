@@ -13,25 +13,28 @@ const PREAMBLE = [
   "In this version you answer the user directly in the chat. Reply in the language the user writes in.",
   "Do not claim to have run tools, read files, or contacted other agents.",
   "",
-  "When a decision from the user would clearly change what you do (for example what an app should mainly do, or",
-  "which of a few directions to take), ask ONE multiple-choice question instead of guessing. Write a short",
-  "sentence first, then put the question at the very end of your reply, exactly in this form, with nothing after it:",
+  "Before the team builds something new (an app, a page, a product), ask what you need to know first, like a short form:",
+  "2 to 4 multiple-choice questions in one reply, about what changes the plan most (who it is for, the main features,",
+  "the look and feel, what to leave out). Ask them once; after the answers, plan. Do not ask when the request is already",
+  "clear, when the user asks you to just start, or for a small change to something that exists; then plan directly.",
+  "For a single open decision later on, ask one question. Write a short sentence first, then put the questions at the",
+  "very end of your reply, exactly in this form, with nothing after it:",
   "<orqestra-question>",
-  '{"question": "What should the app mainly help you with?", "options": [{"label": "Log gym sessions", "description": "Exercises, sets, reps and weight."}, {"label": "Training programs", "description": "Ready-made plans to follow."}], "recommended": 0}',
+  '{"questions": [{"question": "Who is the app for?", "options": [{"label": "Just me", "description": "A personal log, no accounts."}, {"label": "A small team", "description": "Shared with a coach or friends."}], "recommended": 0}, {"question": "What should it mainly do?", "options": [{"label": "Log gym sessions", "description": "Exercises, sets, reps and weight."}, {"label": "Training programs", "description": "Ready-made plans to follow."}], "recommended": 0}]}',
   "</orqestra-question>",
-  "Use 2 to 4 options with short labels and one-line descriptions, in the user's language. \"recommended\" is the",
-  "index of the option you would choose. Ask at most one question per reply, and none when the request is already clear.",
+  "Each question has 2 to 4 options with short labels and one-line descriptions, in the user's language; \"recommended\"",
+  "is the index of the option you would choose. The user can also write their own answer or let you decide.",
 ].join("\n");
 
 // Kept short on purpose: the Manager writes this for every plan, so every word here is paid for in
 // each planning call (input) and in what it writes back (output).
 export const PLAN_FORMAT = [
   "<orqestra-plan>",
-  '{"goal": "A simple workout log", "rules": ["Swedish interface text"], "tasks": [' +
-    '{"id": "t1", "title": "Build the page", "role": "Builder", "goal": "Concrete instructions.", "dependsOn": [], "deliverables": ["index.html"], ' +
+  '{"goal": "A simple workout log", "rules": ["Swedish interface text"], "products": [{"id": "workout-log", "name": "Workout log", "folder": "workout-log"}], "tasks": [' +
+    '{"id": "t1", "title": "Build the page", "role": "Builder", "product": "workout-log", "goal": "Concrete instructions.", "dependsOn": [], "deliverables": ["workout-log/index.html"], ' +
     '"handoff": {"decisions": ["Save sets in localStorage"], "acceptance": ["A new set shows in the list", "The list survives a reload"]}}, ' +
-    '{"id": "t2", "title": "Style it", "role": "Builder", "goal": "...", "dependsOn": ["t1"], "deliverables": ["style.css"], ' +
-    '"handoff": {"references": [{"file": "index.html", "why": "Its class names"}], "acceptance": ["..."]}}]}',
+    '{"id": "t2", "title": "Style it", "role": "Builder", "product": "workout-log", "goal": "...", "dependsOn": ["t1"], "deliverables": ["workout-log/style.css"], ' +
+    '"handoff": {"references": [{"file": "workout-log/index.html", "why": "Its class names"}], "acceptance": ["..."]}}]}',
   "</orqestra-plan>",
 ].join("\n");
 
@@ -57,6 +60,9 @@ export const PLAN_RULES = [
   "To change a file that already exists, make it a deliverable and name it in the task's goal; the agent gets its content.",
   HANDOFF_RULES,
   WEB_RULES,
+  "Name what the user will see in \"products\" (at most 6; a short lowercase id, a name for the user, and the folder its files",
+  "go in) and set \"product\" on each task that builds it; the user sees each product in the tree while the team works.",
+  "A plan that only writes documents or code with nothing to look at has no products.",
 ].join("\n");
 
 const PLANNING = [

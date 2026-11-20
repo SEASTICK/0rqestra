@@ -1,6 +1,7 @@
 // The Manager's plan, and the team working on it, as cards in the chat.
 import React from 'react';
-import { runUsage } from './live-chat.mjs';
+import { ActivityLog, Working } from './Activity.jsx';
+import { directReply, elapsed, runUsage, textParts } from './live-chat.mjs';
 
 const STATUS_LABEL = {
   waiting: 'Waiting', working: 'Working', waiting_context: 'Waiting for context', reviewing: 'In review', done: 'Done', unverified: 'Done, not reviewed',
@@ -13,6 +14,7 @@ export function PlanCard({ plan, assignments, startedRunId, busy, onStart, onTre
   return (
     <div className="plan-card" role="group" aria-label="Plan">
       <div className="plan-head"><span className="plan-eyebrow">{plannedBy ? `PLAN BY ${plannedBy.toUpperCase()}` : 'PLAN'}</span><strong>{plan.goal}</strong>{summary && <small className="plan-summary">{summary}</small>}</div>
+      {plan.products?.length > 0 && <div className="plan-products"><span>Products</span>{plan.products.map((p) => <span key={p.id} className="plan-product"><strong>{p.name}</strong>{p.folder ? <code>{p.folder}/</code> : null}</span>)}</div>}
       <ol className="plan-tasks">
         {assignments.map((t) => (
           <li key={t.id} className="plan-task">
@@ -51,16 +53,18 @@ function UsageDetails({ run }) {
   );
 }
 
-export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPreview }) {
+export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPreview, onUndo }) {
   const running = run.status === 'running';
   const tokens = run.usage && (run.usage.inputTokens || run.usage.outputTokens) ? ` · ${run.usage.inputTokens} in · ${run.usage.outputTokens} out tokens` : '';
   return (
     <div className={`team-card team-${run.status}`} role="status" aria-live="polite">
       <div className="team-head">
-        <span className={`team-dot ${running ? 'is-live' : ''}`}/>
-        <strong>{RUN_LABEL[run.status] || run.status}</strong>
+        {running
+          ? <Working label={run.direct ? `${run.direct.name} is working` : RUN_LABEL.running} since={run.startedAt} className="team-working" />
+          : <><span className="team-dot"/><strong>{RUN_LABEL[run.status] || run.status}</strong>{run.startedAt && run.endedAt ? <span className="team-took">in {elapsed(run.endedAt - run.startedAt)}</span> : null}</>}
         <span className="team-goal">{run.goal}</span>
       </div>
+      {run.direct && <DirectReply run={run} nameOf={nameOf} />}
       <ul className="team-tasks">
         {run.tasks.map((t) => (
           <li key={t.id} className={`team-task task-${t.status}`}>
@@ -76,19 +80,32 @@ export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPre
           </li>
         ))}
       </ul>
+      <ActivityLog run={run} nameOf={nameOf} />
       {run.summary && <p className="team-summary">{run.summary}</p>}
       <UsageDetails run={run}/>
+
+      {run.undone && <p className="team-undone">Changes undone · {[...run.undone.restored, ...run.undone.removed].length === 1 ? '1 file back as it was' : `${[...run.undone.restored, ...run.undone.removed].length} files back as they were`} before this run{run.undone.removed.length ? ` (${run.undone.removed.join(', ')} removed)` : ''}.</p>}
       <div className="team-foot">
         <span>{run.calls ? `${run.calls} agent request${run.calls === 1 ? '' : 's'}${tokens}` : running ? 'Starting…' : ''}</span>
         <span className="team-actions">
           {running && <button type="button" className="shell-button" onClick={onStop}>Stop</button>}
           {run.status === 'failed' && onReplan && <button type="button" className="shell-button primary" onClick={onReplan}>Ask the Manager to fix it</button>}
+          {onUndo && !running && !run.undone ? <button type="button" className="shell-button" title="Put the files back as they were before this run" onClick={onUndo}>Undo changes</button> : null}
           {onPreview ? <button type="button" className="shell-button primary" onClick={onPreview}>Open preview</button> : null}
           {run.files.length > 0 || run.tasks.some((t) => t.files.length) ? <button type="button" className="shell-button" onClick={onOpenFolder}>Open project folder</button> : null}
         </span>
       </div>
     </div>
   );
+}
+
+// A request the user gave one agent directly: who answered, and what it said (files as one line each).
+function DirectReply({ run }) {
+  const reply = directReply(run);
+  if (!reply) return null;
+  return <div className="direct-reply"><span className="direct-who">{run.direct.name}</span>
+    {textParts(reply).map((p, i) => p.type === 'text' ? <p key={i}>{p.text}</p> : p.type === 'file' ? <div key={i} className="agent-file"><code>{p.path}</code><span>{p.lines} {p.lines === 1 ? 'line' : 'lines'}</span></div> : null)}
+  </div>;
 }
 
 // While the Planner turns the Manager's brief into a plan, and when that did not work.
@@ -104,7 +121,7 @@ export function PlannerCard({ planning, brief, onStop, onRetry }) {
   return (
     <div className="plan-card planner-card" role="status" aria-live="polite">
       <div className="plan-head">
-        <span className="plan-eyebrow"><span className="team-dot is-live"/> {planning?.plannerName ? `${planning.plannerName.toUpperCase()} IS PLANNING` : 'WAITING FOR THE PLANNER'}</span>
+        <Working label={planning?.plannerName ? `${planning.plannerName} is planning` : 'Waiting for the Planner'} since={planning?.startedAt} className="plan-working" />
         <strong>{brief.length > 220 ? `${brief.slice(0, 220)}…` : brief}</strong>
       </div>
       <div className="plan-actions">{planning?.status === 'running' && <button type="button" className="shell-button" onClick={onStop}>Stop</button>}</div>
