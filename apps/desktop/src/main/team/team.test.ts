@@ -356,3 +356,20 @@ describe("a request given to one agent directly", () => {
     expect(fs.existsSync(path.join(dir, "..", "evil.sh"))).toBe(false);
   });
 });
+
+describe("undo after a team run", () => {
+  it("keeps the files as they were before the run wrote them", async () => {
+    const { RunSnapshot, undoRun } = await import("./history.js");
+    fs.mkdirSync(path.join(dir, "ws"));
+    const ws = path.join(dir, "ws");
+    fs.writeFileSync(path.join(ws, "index.html"), "<h1>Old</h1>");
+    const codex = new ScriptedTool("codex", () => file("index.html", "<h1>New</h1>"));
+    const claude = new ScriptedTool("claude", () => approve);
+    const events: TeamEvent[] = [];
+    const team = new TeamRun({ plan: directPlan("Byt rubrik", builder), agents: [builder, reviewer], adapters: { codex, claude }, workspace: ws, cwd: dir, emit: (e) => void events.push(e), snapshot: new RunSnapshot(ws, "run1", "Byt rubrik") });
+    await team.start();
+    expect(fs.readFileSync(path.join(ws, "index.html"), "utf8")).toBe("<h1>New</h1>");
+    expect(undoRun(ws, "run1")).toEqual({ restored: ["index.html"], removed: [] });
+    expect(fs.readFileSync(path.join(ws, "index.html"), "utf8")).toBe("<h1>Old</h1>");
+  });
+});

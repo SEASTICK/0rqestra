@@ -580,3 +580,18 @@ describe('the Manager sees direct requests for what they are', () => {
     ]);
   });
 });
+
+import { undoableRunId } from './live-chat.mjs';
+
+describe('undo', () => {
+  const team = (id, extra = {}) => ({ kind: 'team', run: { id, status: 'done', files: [], tasks: [{ files: [{ path: 'a', bytes: 1 }] }], ...extra } });
+  it('offers undo only on the newest run that wrote files, then the one before', () => {
+    expect(undoableRunId([team('r1'), team('r2'), team('r3', { tasks: [{ files: [] }] })])).toBe('r2');
+    expect(undoableRunId([team('r1'), team('r2', { undone: { restored: ['a'], removed: [] } })])).toBe('r1');
+    expect(undoableRunId([team('r1'), team('r2', { status: 'running' })])).toBeNull();
+    expect(undoableRunId([{ kind: 'user', text: 'x' }])).toBeNull();
+  });
+  it('tells the Manager when changes were undone', () => {
+    expect(historyFor([team('r1', { summary: 'Klart.', undone: { restored: [], removed: [] } })])[0].text).toContain('(done, then the user undid its changes)');
+  });
+});

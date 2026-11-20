@@ -62,6 +62,10 @@ export function registerTeamIpc(
     guard(event);
     return launch(event.sender, service.prepareDirect(payload));
   });
+  ipcMain.handle("team:undo", (event, payload: unknown) => {
+    guard(event);
+    return service.undo(payload);
+  });
   ipcMain.handle("team:plan", (event, payload: unknown) => {
     guard(event);
     return service.plan(payload);

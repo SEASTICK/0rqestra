@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld("orqestra", {
   team: {
     start: (payload: unknown) => ipcRenderer.invoke("team:start", payload),
     direct: (payload: unknown) => ipcRenderer.invoke("team:direct", payload),
+    undo: (payload: unknown) => ipcRenderer.invoke("team:undo", payload),
     plan: (payload: unknown) => ipcRenderer.invoke("team:plan", payload),
     stopPlan: (requestId: string) => ipcRenderer.invoke("team:plan-stop", String(requestId)),
     stop: (runId: string) => ipcRenderer.invoke("team:stop", String(runId)),

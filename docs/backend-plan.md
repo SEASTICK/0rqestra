@@ -273,6 +273,17 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-20: undo a run's changes.** Before a run writes a file for the first time, the main
+process keeps the file as it was (or notes that it did not exist) in `<project>/history/<runId>/`
+(`main/team/history.ts`; the newest 20 runs are kept). **Undo changes** on the run card puts those
+files back and removes files the run created. Runs are undone newest first: the button is only on
+the newest run that wrote files, and the main process refuses an older one while a newer change is
+not undone, so a later change is never lost. Not while the team works in the project, and not in a
+shared Teams project (there the Manager changes it back, so the team's reservations see the change).
+The card then says how many files are back, the preview reloads, and the Manager's history says the
+user undid the run. Verified with unit tests and in the real Electron app (two changes undone in
+order; the files on disk were checked).
+
 **Status 2026-11-20: ask one agent directly.** The agent's panel in the tree has a box to ask that agent
 directly, without the Manager and without a plan to approve ("make the heading bigger", "what is on
 the page?"). The main process makes a one-task plan for that agent (`directPlan`, `team:direct`): the

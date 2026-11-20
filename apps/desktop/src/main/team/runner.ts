@@ -49,6 +49,8 @@ export interface RunOptions {
   // Coordinated runs (Teams phase 5): every write is authorised against the run's reservation
   // first. A refusal stops the run's writing; nothing is written without it.
   writeGuard?: { authorize(paths: string[]): Promise<void> };
+  // Keeps the files as they were before this run first writes them, for Undo (history.ts).
+  snapshot?: { before(paths: string[]): void };
 }
 
 const byPriority = (a: TeamAgent, b: TeamAgent) => a.priority - b.priority || a.name.localeCompare(b.name);
@@ -173,6 +175,7 @@ export class TeamRun {
         await this.o.writeGuard.authorize(outgoing.map((f) => f.path));
         if (this.stopped) throw new Stopped();
       }
+      this.o.snapshot?.before(outgoing.map((f) => f.path));
       const saved = writeFiles(workspace, outgoing);
       for (const f of saved) this.written.set(f.path.toLowerCase(), f);
       this.o.emit({ type: "files", taskId: task.id, files: saved });

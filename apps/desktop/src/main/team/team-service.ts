@@ -5,6 +5,7 @@ import { listFiles } from "./workspace";
 import { PROVIDER_IDS, type ProviderAdapter, type ProviderId } from "../providers/types";
 import { directPlan, parsePlan, type Plan } from "./plan";
 import { TeamRun, type TeamAgent, type TeamEvent } from "./runner";
+import { pruneHistory, RunSnapshot, undoRun } from "./history";
 
 // Team runs between the window and the runner, free of Electron so it is unit-tested. The plan came
 // from a model and the agents from the window, so both are validated here.
@@ -90,7 +91,9 @@ export class TeamService {
     const { runId, projectId, plan, agents } = prepared;
     if (this.runs.has(runId)) throw new Error("This run already exists.");
     if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
-    const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace: this.workspaceFor(projectId), cwd: this.cwd(), ...(writeGuard ? { writeGuard } : {}), emit: (event) => {
+    const workspace = this.workspaceFor(projectId);
+    const snapshot = new RunSnapshot(workspace, runId, plan.goal);
+    const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace, cwd: this.cwd(), snapshot, ...(writeGuard ? { writeGuard } : {}), emit: (event) => {
       emit(runId, event);
       // What the agents write stays on this computer: it is shown in the window, never shared.
       if (event.type === "output") return;
@@ -103,7 +106,14 @@ export class TeamService {
     this.runs.set(runId, { projectId, run });
     void run.start().catch((error: unknown) => {
       emit(runId, { type: "run-finished", status: "failed", summary: error instanceof Error ? error.message : String(error), files: [], calls: 0, usage: { inputTokens: 0, outputTokens: 0 } });
-    }).finally(() => this.runs.delete(runId));
+    }).finally(() => {
+      this.runs.delete(runId);
+      try {
+        pruneHistory(workspace);
+      } catch {
+        /* old undo history that cannot be removed now is removed after a later run */
+      }
+    });
     return runId;
   }
 
@@ -142,6 +152,16 @@ export class TeamService {
     if (!handle) return false;
     handle.stop();
     return true;
+  }
+
+  // Undo: puts back the files a finished run changed (history.ts). Not while the team works in the project.
+  undo(raw: unknown): { restored: string[]; removed: string[] } {
+    const v = (raw ?? {}) as Record<string, unknown>;
+    if (typeof v.runId !== "string" || !ID.test(v.runId)) throw new Error("Invalid run id.");
+    if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
+    const projectId = v.projectId;
+    if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is working in this project. Undo when it is done.");
+    return undoRun(this.workspaceFor(projectId), v.runId);
   }
 
   stop(runId: unknown): boolean {

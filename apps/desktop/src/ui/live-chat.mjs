@@ -51,7 +51,7 @@ export function historyFor(messages, max = 40) {
     .filter((m) => m.kind === 'user' || (m.kind === 'assistant' && m.status === 'done' && m.text) || (m.kind === 'team' && m.run && m.run.status !== 'running'))
     .slice(-max)
     .map((m) => (m.kind === 'team'
-      ? { role: 'assistant', text: `${m.run.direct ? `${m.run.direct.name} (asked directly)` : 'Team run'} (${m.run.status}): ${m.run.summary || ''} Files: ${(m.run.files || []).map((f) => f.path).join(', ') || 'none'}.` }
+      ? { role: 'assistant', text: `${m.run.direct ? `${m.run.direct.name} (asked directly)` : 'Team run'} (${m.run.status}${m.run.undone ? ', then the user undid its changes' : ''}): ${m.run.summary || ''} Files: ${(m.run.files || []).map((f) => f.path).join(', ') || 'none'}.` }
       // A request the user gave one agent directly is shown to the Manager as such, not as a request to it.
       : { role: m.kind === 'user' ? 'user' : 'assistant', text: `${m.to ? `(To ${m.to}, not to you) ` : ''}${String(m.text).slice(0, 20000)}` }));
 }
@@ -673,4 +673,18 @@ export function directReply(run) {
   if (!run?.direct) return null;
   const answers = (run.outputs || []).filter((o) => o.kind === 'work' && o.done && !o.failed && o.agentId === run.direct.agentId);
   return answers.length ? answers[answers.length - 1].text : null;
+}
+
+// Undo: only the newest finished run that wrote files can be undone (then the one before it, and so on),
+// so a later change is never lost by undoing an earlier one. The main process checks the same.
+const wroteFiles = (run) => (run.files || []).length > 0 || (run.tasks || []).some((t) => (t.files || []).length > 0);
+export function undoableRunId(messages) {
+  const runs = (messages || []).filter((m) => m.kind === 'team' && m.run).map((m) => m.run);
+  for (let i = runs.length - 1; i >= 0; i -= 1) {
+    const run = runs[i];
+    if (run.status === 'running') return null;
+    if (run.undone || !wroteFiles(run)) continue;
+    return run.id;
+  }
+  return null;
 }
