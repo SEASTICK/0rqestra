@@ -437,6 +437,37 @@ validates the products like the rest of the plan. Verified with unit tests and i
   accounts, paid resources, or keys.
 - **Done when:** a run started in the app finishes in the cloud while the app is closed.
 
+**Status 2026-11-20: the local sandbox (Docker on the user's computer) is built; the cloud part is not.**
+Decision (Philip, 2026-11-20): run apps in Docker on the user's computer now, and move the same runs to the
+cloud later. What exists (`apps/desktop/src/main/sandbox/`):
+- A product whose folder has a `package.json` with a `dev` or `start` script is an **app** (a node in the
+  tree marked "Product · App"). Agents are told to prefer plain pages, and to make a Node.js app (listening
+  on `process.env.PORT`, 3000, and host 0.0.0.0) only when a server or packages are needed.
+- **Start app** in the preview copies the app's folder to `<user data>/sandbox/<project>/<product>/app`
+  (never the project folder itself, never through a link), runs `npm ci`/`npm install` in a container
+  when the package files changed, then `npm run dev|start` in another, and shows the app when it answers.
+  The preview reaches it through the `orqestra-preview` scheme (its own host per app), so the frame has the
+  same origin rules, CSP and Select as a plain page; requests go only to the app's port on 127.0.0.1.
+- The container: the official `node:22-alpine` image, user `node` (not root), all Linux capabilities
+  dropped, `no-new-privileges`, 1 GB memory, 1 CPU, 256 processes (installing: 2 GB, 2 CPUs, 512), the
+  port published on 127.0.0.1 only, no environment from this computer (only fixed values such as PORT),
+  only the copy mounted. Installing may take 10 minutes at most, starting 90 seconds, and an app stops
+  after an hour. The server can reach the internet (like any app the user runs); keys never reach it.
+- While an app runs, the team's file changes reach its copy (dev servers reload them); changed package
+  files restart it. Stop app removes the container; quitting the app removes them all, and leftovers from
+  a crash are removed at the next start. The log is shown while it starts and with **Log** while it runs.
+- If Docker is missing or not running, the preview says so (Docker Desktop must be installed once).
+- Verified: unit tests (the exact `docker run` arguments, the copy, start and stop with a stand-in
+  Docker, the proxy, finding apps), and in the real Electron app with a real Docker engine: an Express
+  app with an API was installed and run; GET and POST went through the preview; inside the container it
+  ran as uid 1000 with no keys; limits and the single mount were checked with `docker inspect`; the
+  project folder stayed without `node_modules`; Stop and quitting left no container. In the test
+  environment the install step had to reach the registry through its proxy, set with the test-only
+  `ORQESTRA_SANDBOX_INSTALL_ARGS`. **Not verified:** Docker Desktop on Windows and macOS (paths and file
+  sharing), and apps built by the real models.
+- Not yet: the cloud worker (still needs Philip's DigitalOcean account and spending cap), live reload over
+  websockets through the preview (pages reload on file changes instead), and apps in other languages.
+
 ### Phase 8 — Keys for cloud runs (Claude, M)
 - Only if a cloud run needs the user's key (D3): the key is encrypted per user, readable only by
   the worker that makes the call, never returned to the app, removable at any time, and every use

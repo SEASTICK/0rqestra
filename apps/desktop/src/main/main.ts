@@ -8,6 +8,7 @@ import { createAdapters, registerChatIpc } from "./chat-ipc";
 import { registerTeamIpc } from "./team/team-ipc";
 import { registerAccountsIpc } from "./accounts/accounts-ipc";
 import { registerTeamsIpc } from "./teams/teams-ipc";
+import { registerSandboxIpc } from "./sandbox/sandbox-ipc";
 import { handlePreviewScheme, isPreviewUrl, registerPreviewScheme, watchPreviewProblems } from "./preview/preview-protocol";
 import {
   createSmokeOutcome,
@@ -99,6 +100,7 @@ let teamNow: (projectId: string) => string | null = () => null;
 const chatService = registerChatIpc(isFromMainWindow, () => mainWindow, providerAdapters, (projectId) => teamNow(projectId));
 registerAccountsIpc(isFromMainWindow, () => mainWindow, providerAdapters, () => chatService.invalidate());
 const teams = registerTeamsIpc(isFromMainWindow, () => mainWindow);
+registerSandboxIpc(isFromMainWindow, () => mainWindow);
 teamNow = (projectId) => teams.service.teamNow(projectId);
 registerTeamIpc(isFromMainWindow, () => mainWindow, providerAdapters, (info, event) => void teams.onRunEvent(info, event), (info) => teams.beforeStart(info), teamNow);
 

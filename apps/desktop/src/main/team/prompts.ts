@@ -1,5 +1,5 @@
 import { MAX_OPEN_FILES, safeRelativePath, type Plan, type PlanTask } from "./plan";
-import { WEB_RULES } from "../providers/history";
+import { APP_RULES, WEB_RULES } from "../providers/history";
 import { attachmentHeader, handoffText, type ResolvedHandoff } from "./handoff";
 import { answerFormat, claimsText, type ReturnBrief } from "./return-brief";
 
@@ -19,6 +19,7 @@ const fileBlocks = (files: { path: string; content: string }[]) => files.map((f)
 const list = (items: string[]) => items.map((i) => `- ${i}`).join("\n");
 // The web preview rules matter only for files a browser shows.
 const isWeb = (task: PlanTask) => task.deliverables.some((d) => /\.(html?|css)$/i.test(d));
+const isApp = (task: PlanTask) => task.deliverables.some((d) => /(^|\/)package\.json$/i.test(d));
 
 // A retry gets the specific problems and the version it submitted last, to fix rather than redo.
 // A request the user gave one agent directly (task.open) has no handoff: the agent sees the
@@ -44,6 +45,7 @@ export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, resolv
       "</orqestra-file>",
       answerFormat(resolved.dependents),
       ...(isWeb(task) ? [WEB_RULES] : []),
+      ...(isApp(task) ? [APP_RULES] : []),
     ].join("\n"),
   );
   return parts.join("\n\n");
@@ -69,6 +71,7 @@ function openPrompt(task: PlanTask, agent: AgentRef, context: { path: string; co
       "Change only what the request needs and keep the rest of each file as it is. Use plain relative file names.",
       "If the request is only a question, answer it and give no files.",
       WEB_RULES,
+      APP_RULES,
     ].join("\n"),
   );
   return parts.join("\n\n");

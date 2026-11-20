@@ -30,6 +30,16 @@ contextBridge.exposeInMainWorld("orqestra", {
     start: (payload: unknown) => ipcRenderer.invoke("team:start", payload),
     direct: (payload: unknown) => ipcRenderer.invoke("team:direct", payload),
     undo: (payload: unknown) => ipcRenderer.invoke("team:undo", payload),
+    // Apps the team built, run in a locked container (main/sandbox).
+    appDocker: () => ipcRenderer.invoke("team:app-docker"),
+    appStatus: (projectId: string) => ipcRenderer.invoke("team:app-status", String(projectId)),
+    appStart: (payload: unknown) => ipcRenderer.invoke("team:app-start", payload),
+    appSync: (payload: unknown) => ipcRenderer.invoke("team:app-sync", payload),
+    appStop: (payload: unknown) => ipcRenderer.invoke("team:app-stop", payload),
+    onAppEvent: (listener: (message: unknown) => void) => {
+      ipcRenderer.removeAllListeners("team:app-event");
+      ipcRenderer.on("team:app-event", (_event, message: unknown) => listener(message));
+    },
     plan: (payload: unknown) => ipcRenderer.invoke("team:plan", payload),
     stopPlan: (requestId: string) => ipcRenderer.invoke("team:plan-stop", String(requestId)),
     stop: (runId: string) => ipcRenderer.invoke("team:stop", String(runId)),

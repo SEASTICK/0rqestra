@@ -122,6 +122,12 @@ every IPC channel added later.
      that scheme as a frame, frames cannot navigate anywhere else, and downloads are refused. The
      agents' code therefore runs only as web code in Chromium's sandbox, never in Node.js and never
      with keys in its environment.
+   - **Apps the team built** (a `package.json` with a `dev` or `start` script) run only in a Docker
+     container (`main/sandbox/`): a copy of the app's folder, user `node`, no capabilities,
+     `no-new-privileges`, memory/CPU/process and time limits, the port on 127.0.0.1 only, and no environment
+     from this computer. The window reaches the app only through the preview scheme (its own host), which
+     passes requests to that port and adds the preview's CSP. The `docker` command gets fixed arguments
+     built in `sandbox/plan.ts`; nothing from a user or a model becomes an argument.
    - For **Select** in the preview, the preview adds one small script (`main/preview/picker.ts`, served
      at `/__orqestra/picker.js` of the project's host) to each HTML page. It does nothing until the window
      asks, accepts messages only from the window around it, and only posts back which element was

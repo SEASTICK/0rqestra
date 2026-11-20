@@ -3,6 +3,7 @@ import { protocol, session, type BrowserWindow } from "electron";
 import { PREVIEW_HEADERS, PREVIEW_SCHEME, previewHost, resolvePreview } from "./products";
 import { problemFromConsole, ProblemThrottle } from "./problems";
 import { PICKER_PATH, PICKER_SCRIPT, withPicker } from "./picker";
+import { appHost, proxyToApp } from "./app-proxy";
 
 // The orqestra-preview scheme serves a project's own files to the preview frame, and nothing else.
 // A host is known only after the window asked for that project's products.
@@ -14,6 +15,15 @@ export function rememberPreviewHost(projectId: string, workspace: string): strin
   const host = previewHost(projectId);
   hosts.set(host, workspace);
   projects.set(host, projectId);
+  return host;
+}
+
+// Running apps (main/sandbox): their own host, and the port they answer on while they run.
+const apps = new Map<string, number | null>();
+
+export function rememberAppHost(projectId: string, productId: string, port: number | null): string {
+  const host = appHost(projectId, productId);
+  apps.set(host, port);
   return host;
 }
 
@@ -42,9 +52,16 @@ export function registerPreviewScheme(): void {
 
 export function handlePreviewScheme(): void {
   session.defaultSession.protocol.handle(PREVIEW_SCHEME, (request) => {
+    const url = URL.canParse(request.url) ? new URL(request.url) : null;
+    // A running app gets its own requests (any method: it may have forms and an API), passed to its port.
+    if (url && apps.has(url.hostname)) {
+      if (url.pathname === `/${PICKER_PATH}`) return new Response(request.method === "HEAD" ? null : PICKER_SCRIPT, { status: 200, headers: { ...PREVIEW_HEADERS, "Content-Type": "text/javascript; charset=utf-8" } });
+      const port = apps.get(url.hostname);
+      if (!port) return new Response("The app is not running. Start it from the preview.", { status: 503, headers: { ...PREVIEW_HEADERS, "Content-Type": "text/plain; charset=utf-8" } });
+      return proxyToApp(request, port);
+    }
     if (request.method !== "GET" && request.method !== "HEAD") return new Response("Not allowed", { status: 405, headers: PREVIEW_HEADERS });
     // The Select script (picker.ts) is served at a reserved path of every known project.
-    const url = URL.canParse(request.url) ? new URL(request.url) : null;
     if (url && hosts.has(url.hostname) && url.pathname === `/${PICKER_PATH}`) {
       return new Response(request.method === "HEAD" ? null : PICKER_SCRIPT, { status: 200, headers: { ...PREVIEW_HEADERS, "Content-Type": "text/javascript; charset=utf-8" } });
     }
@@ -60,5 +77,5 @@ export function handlePreviewScheme(): void {
 export function isPreviewUrl(url: string): boolean {
   if (!URL.canParse(url)) return false;
   const parsed = new URL(url);
-  return parsed.protocol === `${PREVIEW_SCHEME}:` && hosts.has(parsed.hostname);
+  return parsed.protocol === `${PREVIEW_SCHEME}:` && (hosts.has(parsed.hostname) || apps.has(parsed.hostname));
 }

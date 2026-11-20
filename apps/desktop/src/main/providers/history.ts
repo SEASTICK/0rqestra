@@ -53,6 +53,13 @@ export const WEB_RULES = [
   "anything from the internet (no CDNs, web fonts or APIs), so everything it needs must be in its own files.",
 ].join("\n");
 
+// Apps with a server or packages run in a locked container in the app (main/sandbox). They need these to start.
+export const APP_RULES = [
+  "Prefer plain web pages. Only when the product needs a server or npm packages, make it a Node.js app: a package.json",
+  "with a \"dev\" or \"start\" script (and the packages it needs), whose server listens on process.env.PORT (3000) and host",
+  "0.0.0.0. The app installs the packages and runs it in an isolated container with no keys; keep the build simple.",
+].join("\n");
+
 export const PLAN_RULES = [
   "Rules for a plan: use only roles of agents that can work (listed below), never the Manager; 1 to 8 tasks; every file",
   "in deliverables belongs to exactly one task; use plain relative file names such as index.html or src/app.js; do not add",
@@ -60,6 +67,7 @@ export const PLAN_RULES = [
   "To change a file that already exists, make it a deliverable and name it in the task's goal; the agent gets its content.",
   HANDOFF_RULES,
   WEB_RULES,
+  APP_RULES,
   "Name what the user will see in \"products\" (at most 6; a short lowercase id, a name for the user, and the folder its files",
   "go in) and set \"product\" on each task that builds it; the user sees each product in the tree while the team works.",
   "A plan that only writes documents or code with nothing to look at has no products.",

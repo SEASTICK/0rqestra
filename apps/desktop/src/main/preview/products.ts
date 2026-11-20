@@ -18,7 +18,9 @@ export interface Product {
   folder: string;
   entry: string;
   name: string;
-  kind: "web";
+  // "web": plain pages, shown straight from the files. "app": a Node.js project (package.json with a
+  // "dev" or "start" script) that runs in the sandbox (main/sandbox) and is shown while it runs.
+  kind: "web" | "app";
   files: string[];
   updatedAt: number;
 }
@@ -37,21 +39,44 @@ export function titleOf(html: string): string | null {
   return text ? text.slice(0, 60) : null;
 }
 
+// A package.json that the sandbox can start: it has a "dev" or "start" script.
+function runnableApp(root: string, rel: string): { name: string | null } | null {
+  try {
+    const value = JSON.parse(fs.readFileSync(inside(root, rel), "utf8")) as { name?: unknown; scripts?: Record<string, unknown> };
+    const scripts = value && typeof value.scripts === "object" && value.scripts ? value.scripts : {};
+    if (!["dev", "start"].some((k) => typeof scripts[k] === "string" && (scripts[k] as string).trim())) return null;
+    return { name: typeof value.name === "string" && value.name.trim() ? value.name.trim().slice(0, 60) : null };
+  } catch {
+    return null;
+  }
+}
+
 export function findProducts(root: string): Product[] {
   const files = listFiles(root, 500);
+  const chosen: { folder: string; entry: string; kind: "web" | "app"; appName: string | null }[] = [];
+  // Apps first: a page inside an app's folder (such as a Vite index.html) is part of that app.
+  for (const pkg of files.filter((f) => f.split("/").pop() === "package.json").sort(byDepth)) {
+    const folder = folderOf(pkg);
+    if (chosen.some((c) => within(pkg, c.folder))) continue;
+    const app = runnableApp(root, pkg);
+    if (!app) continue;
+    const page = files.find((f) => f === (folder ? `${folder}/index.html` : "index.html"));
+    chosen.push({ folder, entry: page ?? pkg, kind: "app", appName: app.name });
+    if (chosen.length >= MAX_PRODUCTS) break;
+  }
   const html = files.filter((f) => /\.html?$/i.test(f)).sort(byDepth);
   let entries = html.filter((f) => /^index\.html?$/i.test(f.split("/").pop()!));
   if (!entries.length && html.length) entries = [html[0]!];
-  const chosen: { folder: string; entry: string }[] = [];
   for (const entry of entries) {
+    if (chosen.length >= MAX_PRODUCTS) break;
     const folder = folderOf(entry);
     // A page inside another product's folder is part of that product.
     if (chosen.some((c) => within(entry, c.folder))) continue;
-    chosen.push({ folder, entry });
-    if (chosen.length >= MAX_PRODUCTS) break;
+    // A page folder that holds an app folder: the app is its own product, the page stays a page.
+    chosen.push({ folder, entry, kind: "web", appName: null });
   }
-  return chosen.map(({ folder, entry }) => {
-    const own = files.filter((f) => within(f, folder));
+  return chosen.map(({ folder, entry, kind, appName }) => {
+    const own = files.filter((f) => within(f, folder) && !chosen.some((c) => c.folder !== folder && c.folder.length > folder.length && within(f, c.folder)));
     let updatedAt = 0;
     for (const f of own) {
       try {
@@ -60,18 +85,20 @@ export function findProducts(root: string): Product[] {
         // A file that disappeared meanwhile does not count.
       }
     }
-    let name: string | null;
-    try {
-      name = titleOf(fs.readFileSync(inside(root, entry), "utf8"));
-    } catch {
-      name = null;
+    let name: string | null = null;
+    if (entry.endsWith(".html") || entry.endsWith(".htm")) {
+      try {
+        name = titleOf(fs.readFileSync(inside(root, entry), "utf8"));
+      } catch {
+        name = null;
+      }
     }
     return {
       id: folder || "root",
       folder,
       entry,
-      name: name ?? (folder ? folder.split("/").pop()! : "Web page"),
-      kind: "web" as const,
+      name: name ?? appName ?? (folder ? folder.split("/").pop()! : kind === "app" ? "App" : "Web page"),
+      kind,
       files: own.slice(0, 200),
       updatedAt: Math.round(updatedAt),
     };
