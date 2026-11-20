@@ -314,6 +314,21 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-20: several chats per project, and Ask anything.**
+- **Ask anything** is first in the sidebar: a place for questions that belong to no project (quick
+  answers, study help, writing). Its Manager gets no team, so it answers rather than plans; it has its own
+  chats and memory, no team tree, and cannot be linked to a Teams project. New users start there, and a
+  connected tool (Claude Code first) is chosen by itself, with Auto.
+- **Chats.** Each project (and Ask anything) has several chats, listed under it in the sidebar, newest
+  first, named after their first question; **New chat** (sidebar or the + in the chat's header) starts
+  one, and a chat can be deleted. The open chat keeps its messages where they always were
+  (`project.messages`); the others wait in `project.chats` (`ui/chats.mjs`), so team, memory, files and
+  previews stay the project's and are shared by its chats. Switching is refused while the Manager or the
+  team is working in the project, so no reply or run lands in the wrong chat.
+- Verified with unit tests and in the real Electron app with the stand-in Claude Code: the app opened on
+  Ask anything, a question there was sent without a team section and on Haiku, a new chat sent only its own
+  history, switching back showed the first chat, chats survived a reload, and deleting one worked.
+
 **Status 2026-11-20: Auto picks the model per message, and the project has a memory.**
 - **Auto** (the default when no model is chosen) lets the main process pick the Manager's model per
   message: a quick question (short, nothing attached, no work asked for, by the same word check that

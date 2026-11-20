@@ -513,3 +513,18 @@
 .memory-add{display:flex;gap:8px}
 .memory-add input{flex:1;min-width:0;font:inherit;font-size:14px;padding:9px 12px;border:1px solid var(--shell-line);border-radius:10px;background:var(--shell-bg);color:var(--shell-text)}
 .memory-count{display:block;margin-top:8px;font-size:11.5px;color:var(--shell-muted)}
+/* Conversations in the sidebar, and Ask anything (chats.mjs). */
+.chat-links{display:flex;flex-direction:column;gap:1px;margin:2px 0 4px}
+.chat-link{display:flex;align-items:center;border-radius:8px}
+.chat-link:hover{background:light-dark(#efeeea, #2f2f2f)}
+.chat-link.child-active{background:light-dark(#e9e8e3, #333333)}
+.chat-link-open{flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:6px 8px;background:none;border:0;text-align:left;font-size:13px;color:var(--shell-text)}
+.chat-link-open span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-link-remove{opacity:0;border:0;background:none;color:var(--shell-muted);font-size:15px;padding:0 8px}
+.chat-link:hover .chat-link-remove{opacity:1}
+.chat-link-new{display:flex;align-items:center;gap:6px;padding:5px 8px;background:none;border:0;font-size:12.5px;color:var(--shell-muted);text-align:left}
+.chat-link-new:hover{color:var(--shell-text)}
+.navigation>.chat-links{padding-left:14px}
+.panel-header .chat-new{margin-left:auto;margin-right:4px}
+.welcome-general h2{font-size:30px;margin:10px 0 6px}
+.welcome-general .suggestions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;max-width:640px;width:100%}

@@ -34,7 +34,12 @@ export function saveTarget(storage, target) {
 // What will actually answer: the chosen tool if it is ready, with the chosen model if it still
 // exists (otherwise the tool's default), and the chosen effort only if that model supports it.
 export function effectiveTarget(target, statuses) {
-  if (!target || !PROVIDERS.includes(target.provider)) return NO_TOOL;
+  // Nothing chosen yet but a tool is connected: use it (Claude Code first), with Auto.
+  if (!target || !PROVIDERS.includes(target.provider)) {
+    const ready = readyProviders(statuses);
+    const first = ready.find((s) => s.provider === 'claude') || ready[0];
+    return first ? effectiveTarget({ provider: first.provider, model: 'auto', effort: null }, statuses) : NO_TOOL;
+  }
   const status = readyProviders(statuses).find((s) => s.provider === target.provider);
   if (!status) return NO_TOOL;
   const models = status.models || [];

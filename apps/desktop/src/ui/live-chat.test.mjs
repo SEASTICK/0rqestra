@@ -11,9 +11,14 @@ describe('chat target', () => {
     expect(readyProviders(undefined)).toEqual([]);
   });
 
-  it('has no tool (never a simulated answer) when the chosen tool is not ready, or was the old Demo', () => {
+  it('has no tool (never a simulated answer) when the chosen tool is not ready', () => {
     expect(effectiveTarget({ provider: 'codex', model: 'gpt-6.1-sol' }, [claude])).toBe(NO_TOOL);
-    expect(effectiveTarget({ provider: 'demo' }, [claude])).toBe(NO_TOOL);
+    expect(effectiveTarget({ provider: 'demo' }, [])).toBe(NO_TOOL);
+  });
+
+  it('uses a connected tool, with Auto, when none was chosen (or the old Demo was)', () => {
+    expect(effectiveTarget({ provider: 'none' }, [codex, claude])).toMatchObject({ provider: 'claude', model: 'auto' });
+    expect(effectiveTarget({ provider: 'demo' }, [codex])).toMatchObject({ provider: 'codex', model: 'auto' });
   });
 
   it('keeps a model and effort that exist, and replaces ones that do not', () => {
