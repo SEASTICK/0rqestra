@@ -112,6 +112,17 @@ contextBridge.exposeInMainWorld("orqestra", {
       ipcRenderer.on("teams:event", (_event, message: unknown) => listener(message));
     },
   },
+  // An agent's Capabilities tab (main/capabilities): skills on this computer and which agent has them,
+  // by the agent's permanent key. Files are chosen in the system dialog or dropped as text.
+  capabilities: {
+    skills: (agentKey?: string) => ipcRenderer.invoke("capabilities:skills", agentKey ? String(agentKey) : null),
+    chooseSkill: (kind: "file" | "folder") => ipcRenderer.invoke("capabilities:choose-skill", kind === "folder" ? "folder" : "file"),
+    previewText: (fileName: string, text: string) => ipcRenderer.invoke("capabilities:preview-text", String(fileName), String(text).slice(0, 200_000)),
+    install: (selectionId: string, agentKey: string, agentName: string) => ipcRenderer.invoke("capabilities:install", String(selectionId), String(agentKey), String(agentName)),
+    assign: (skillId: string, agentKey: string, agentName: string) => ipcRenderer.invoke("capabilities:assign", String(skillId), String(agentKey), String(agentName)),
+    unassign: (skillId: string, agentKey: string) => ipcRenderer.invoke("capabilities:unassign", String(skillId), String(agentKey)),
+    openTerminal: (projectId: string, label: string) => ipcRenderer.invoke("capabilities:open-terminal", String(projectId), String(label)),
+  },
 });
 
 // Smoke-only diagnostic sent to the main process; nothing is exposed to the page.

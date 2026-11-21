@@ -6,6 +6,7 @@ import { runSmoke } from "./smoke";
 import { registerUpdateIpc, startUpdater } from "./update";
 import { createAdapters, registerChatIpc } from "./chat-ipc";
 import { registerTeamIpc } from "./team/team-ipc";
+import { registerCapabilitiesIpc } from "./capabilities/capabilities-ipc";
 import { registerAccountsIpc } from "./accounts/accounts-ipc";
 import { registerTeamsIpc } from "./teams/teams-ipc";
 import { registerSandboxIpc } from "./sandbox/sandbox-ipc";
@@ -95,6 +96,7 @@ ipcMain.handle("app:get-info", (event) => {
 
 registerUpdateIpc(isFromMainWindow);
 const providerAdapters = createAdapters();
+registerCapabilitiesIpc(isFromMainWindow, () => mainWindow);
 // Teams is registered after chat; the Manager reads "Team right now" through this late binding.
 let teamNow: (projectId: string) => string | null = () => null;
 const chatService = registerChatIpc(isFromMainWindow, () => mainWindow, providerAdapters, (projectId) => teamNow(projectId));

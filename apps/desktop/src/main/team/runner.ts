@@ -1,6 +1,7 @@
 import type { ChatEvent, ProviderAdapter, ProviderId, Usage } from "../providers/types";
 import { REVIEW_ROLES, safeRelativePath, type Plan, type PlanTask } from "./plan";
-import { deliveryProblems, parseFiles, parseReview, reviewPrompt, workerPrompt, type AgentRef } from "./prompts";
+import { deliveryProblems, parseFiles, parseReview, reviewPrompt, workerPrompt, type AgentRef, type LoadedSkill } from "./prompts";
+import { loadSkill } from "../capabilities/registry";
 import { resolveHandoff, type ResolvedHandoff, type TaskOutput } from "./handoff";
 import { followUpPrompt, needKey, parseAnswer, resolveNeed } from "./context-request";
 import { completeBrief, parseBrief, parseNeeds, type ContextNeed, type ReturnBrief } from "./return-brief";
@@ -18,6 +19,11 @@ export interface TeamAgent extends AgentRef {
   effort: string | null;
   // The models its tool offers, so a task can ask for a stronger or lighter one (Plan task "model").
   models?: string[];
+  // Skills (Capabilities): the agent's permanent key, the project's skills that are on for it, and
+  // what it may use (filled in by the main process from the skill store; short descriptions only).
+  agentKey?: string;
+  projectSkills?: string[];
+  skills?: { id: string; name: string; description: string }[];
 }
 
 export type TaskStatus = "waiting" | "working" | "waiting_context" | "reviewing" | "done" | "unverified" | "failed" | "blocked" | "stopped";
@@ -31,6 +37,8 @@ export type TeamEvent =
   | { type: "review"; taskId: string; reviewerId: string; approved: boolean; problems: string[] }
   | { type: "files"; taskId: string; files: { path: string; bytes: number }[] }
   | { type: "brief"; taskId: string; brief: ReturnBrief }
+  // Which skills an agent got for a task (Capabilities), and the ones named that it does not have.
+  | { type: "skills"; taskId: string; agentId: string; kind: "work" | "review"; loaded: { id: string; name: string }[]; refused: string[] }
   | { type: "usage"; entry: UsageEntry }
   // What an agent writes, while it writes (done: false, the latest part) and when it is done (the whole
   // answer, cut to OUTPUT_CHARS). Shown when the user opens the agent in the tree.
@@ -64,6 +72,8 @@ export interface RunOptions {
   writeGuard?: { authorize(paths: string[]): Promise<void> };
   // Keeps the files as they were before this run first writes them, for Undo (history.ts).
   snapshot?: { before(paths: string[]): void };
+  // Reads a skill's full instructions (Capabilities); the app's skill store by default.
+  loadSkill?: (id: string) => { name: string; instructions: string } | null;
 }
 
 const byPriority = (a: TeamAgent, b: TeamAgent) => a.priority - b.priority || a.name.localeCompare(b.name);
@@ -183,7 +193,7 @@ export class TeamRun {
       let text: string;
       try {
         if (attempt > 1) this.ledger.retries += 1;
-        text = await this.ask(worker, workerPrompt(plan, task, worker, resolved, problems, problems.length ? current : [], { context: openContext, files: existing }), { taskId: task.id, kind: "worker", attempt, model: task.model });
+        text = await this.ask(worker, workerPrompt(plan, task, worker, resolved, problems, problems.length ? current : [], { context: openContext, files: existing }, this.skills(task, worker, "work")), { taskId: task.id, kind: "worker", attempt, model: task.model });
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
@@ -255,7 +265,7 @@ export class TeamRun {
           ...(attempt > 1 ? [`This is attempt ${attempt}; the problems found last time were sent to the author.`] : []),
           "No code was run: agents cannot run tools in this version, so any test results in the author's brief are agent-reported.",
         ];
-        reviewText = await this.ask(reviewer, reviewPrompt(plan, task, reviewer, worker, changes, resolved, checks, brief), { taskId: task.id, kind: "review", attempt });
+        reviewText = await this.ask(reviewer, reviewPrompt(plan, task, reviewer, worker, changes, resolved, checks, brief, this.skills(task, reviewer, "review")), { taskId: task.id, kind: "review", attempt });
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
@@ -274,6 +284,25 @@ export class TeamRun {
       problems = review.problems;
     }
     this.set(task, "failed", null, this.limits.maxAttempts, problems[0] ?? "Not approved.");
+  }
+
+  // The skills a task's handoff names that this agent has: their full instructions, loaded now. A
+  // named skill the agent does not have is not loaded (an agent can only use its own skills), and
+  // the run details show both.
+  private skills(task: PlanTask, agent: TeamAgent, kind: "work" | "review"): LoadedSkill[] {
+    const wanted = task.handoff?.skills ?? [];
+    if (!wanted.length) return [];
+    const allowed = new Set((agent.skills ?? []).map((s) => s.id));
+    const load = this.o.loadSkill ?? loadSkill;
+    const loaded: LoadedSkill[] = [];
+    const refused: string[] = [];
+    for (const id of wanted) {
+      const s = allowed.has(id) ? load(id) : null;
+      if (s) loaded.push({ id, ...s });
+      else refused.push(id);
+    }
+    this.o.emit({ type: "skills", taskId: task.id, agentId: agent.id, kind, loaded: loaded.map((s) => ({ id: s.id, name: s.name })), refused });
+    return loaded;
   }
 
   // The brief goes to the window (the run card, and the Manager's next turn) and to later tasks.

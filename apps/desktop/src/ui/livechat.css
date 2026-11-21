@@ -531,3 +531,25 @@
 /* Back to the newest message when you have scrolled up while a reply is written. */
 .chat-scroll{position:relative}
 .jump-latest{position:sticky;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;width:36px;height:36px;margin:-36px auto 0;border-radius:50%;border:1px solid var(--shell-line);background:var(--shell-card);color:var(--shell-text);font-size:17px;box-shadow:0 4px 14px #0000001f;z-index:3}
+
+/* An agent's Capabilities tab */
+.agent-tabs{display:flex;gap:4px;padding:0 14px 8px;border-bottom:1px solid var(--shell-line)}
+.agent-tabs>button{padding:6px 10px;border-radius:7px;font-size:12.5px;color:var(--shell-muted)}
+.agent-tabs>button.is-on{background:var(--shell-active);color:var(--shell-text)}
+.cap-tab section{margin-bottom:14px}
+.cap-drop{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px;border:1px dashed var(--shell-line);border-radius:10px;font-size:12.5px}
+.cap-drop.is-over{border-color:var(--shell-accent);background:var(--shell-hover)}
+.cap-actions{display:inline-flex;flex-wrap:wrap;gap:6px}
+.cap-preview{border:1px solid var(--shell-line);border-radius:10px;padding:10px 12px;display:grid;gap:6px}
+.cap-preview p{margin:0;font-size:12.5px}
+.cap-excerpt{max-height:180px;overflow:auto;white-space:pre-wrap;font-size:11.5px;background:var(--shell-hover);padding:8px;border-radius:7px;margin:0}
+.cap-list{list-style:none;margin:8px 0;padding:0;display:grid;gap:6px}
+.cap-list>li{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;font-size:12.5px;padding:6px 8px;border:1px solid var(--shell-line);border-radius:8px}
+.cap-list>li small{display:block;color:var(--shell-muted)}
+.cap-list>li.is-off{opacity:.6}
+.cap-source{font-size:11px;color:var(--shell-muted);justify-self:end}
+.cap-list>li .provider-text-link{grid-column:2;justify-self:end}
+.cap-pick{display:grid;gap:4px;font-size:12.5px}
+.cap-project,.cap-advanced{margin-top:8px;font-size:12.5px}
+.cap-project>summary,.cap-advanced>summary{cursor:pointer;color:var(--shell-muted)}
+.team-skills{color:var(--shell-muted)}

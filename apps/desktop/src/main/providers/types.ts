@@ -42,6 +42,11 @@ export interface TeamMember {
   model?: string | null;
   // The models its tool offers, which the Manager may choose per task.
   models?: string[];
+  // Skills (Capabilities): the agent's permanent key, the project's skills that are on for it, and
+  // what it may use (filled in by the main process from the skill store; short descriptions only).
+  agentKey?: string;
+  projectSkills?: string[];
+  skills?: { id: string; name: string; description: string }[];
 }
 
 // Every input token (cached ones included), output tokens, and how many input tokens came from the

@@ -288,11 +288,19 @@ const byPriority = (a, b) => (Number(a.priority) || 0) - (Number(b.priority) || 
 // The models a tool offers (from its status), so the Manager can choose one per task.
 const modelsOf = (tool, statuses) => ((Array.isArray(statuses) ? statuses : []).find((s) => s.provider === tool)?.models || []).map((m) => m.id).filter(Boolean).slice(0, 16);
 
+// Skills (Capabilities): the agent's permanent key (its installed skills follow it to every
+// project) and the project's skills that are on for it. The main process looks the skills up.
+export function skillRefs(node, graph) {
+  const off = new Set(node?.skillsOff || []);
+  const projectSkills = (graph?.skills || []).filter((id) => !off.has(id));
+  return { ...(node?.agentKey ? { agentKey: node.agentKey } : {}), ...(projectSkills.length ? { projectSkills } : {}) };
+}
+
 export function teamMembers(graph, statuses = []) {
   return (graph?.nodes || []).filter((n) => n.role !== 'Manager').map((n) => {
     if (!isRealAgent(n)) return { name: String(n.name).slice(0, 48), role: n.role, ready: false };
     const models = modelsOf(n.agent.tool, statuses);
-    return { name: String(n.name).slice(0, 48), role: n.role, ready: true, tool: n.agent.tool, ...(n.agent.model ? { model: n.agent.model } : {}), ...(models.length ? { models } : {}) };
+    return { name: String(n.name).slice(0, 48), role: n.role, ready: true, tool: n.agent.tool, ...(n.agent.model ? { model: n.agent.model } : {}), ...(models.length ? { models } : {}), ...skillRefs(n, graph) };
   });
 }
 
@@ -302,7 +310,7 @@ export function teamAgents(graph, statuses = []) {
     const models = modelsOf(n.agent.tool, statuses);
     return {
       id: n.id, name: String(n.name).slice(0, 48), role: n.role, priority: Number(n.priority) || 0,
-      tool: n.agent.tool, model: n.agent.model ?? null, effort: n.agent.effort ?? null, ...(models.length ? { models } : {}),
+      tool: n.agent.tool, model: n.agent.model ?? null, effort: n.agent.effort ?? null, ...(models.length ? { models } : {}), ...skillRefs(n, graph),
     };
   });
 }
@@ -346,6 +354,7 @@ function applyTeamEventCore(run, event) {
     case 'review': return patch(event.taskId, (t) => ({ ...t, review: { reviewerId: event.reviewerId, approved: event.approved, problems: event.problems } }));
     case 'files': return patch(event.taskId, (t) => ({ ...t, files: event.files }));
     case 'brief': return patch(event.taskId, (t) => ({ ...t, brief: event.brief }));
+    case 'skills': return patch(event.taskId, (t) => ({ ...t, skills: [...(t.skills || []).filter((s) => !(s.agentId === event.agentId && s.kind === event.kind)), { agentId: event.agentId, kind: event.kind, loaded: event.loaded || [], refused: event.refused || [] }] }));
     case 'usage': return { ...run, usageEntries: [...(run.usageEntries || []).filter((e) => e.seq !== event.entry.seq), event.entry] };
     case 'run-finished': return { ...run, status: event.status, summary: event.summary, files: event.files, calls: event.calls, usage: event.usage, totals: event.totals || null };
     default: return run;

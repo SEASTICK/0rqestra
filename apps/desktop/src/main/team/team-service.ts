@@ -1,4 +1,5 @@
 import { EFFORT_NAME, MODEL_NAME } from "../providers/process";
+import { parseSkillRefs, skillsFor } from "../capabilities/registry";
 import type { ChatEvent, ChatHandle, TeamMember, Usage } from "../providers/types";
 import { extractPlan, plannerPrompt } from "./planner";
 import { listFiles } from "./workspace";
@@ -28,7 +29,9 @@ export function parseAgents(value: unknown): TeamAgent[] {
     if (model !== null && (typeof model !== "string" || !MODEL_NAME.test(model))) throw new Error("Invalid agent model.");
     if (effort !== null && (typeof effort !== "string" || !EFFORT_NAME.test(effort))) throw new Error("Invalid agent effort.");
     const models = Array.isArray(a.models) ? a.models.filter((m): m is string => typeof m === "string" && MODEL_NAME.test(m)).slice(0, 16) : [];
-    return { id: a.id, name: a.name.trim(), role: a.role, priority: a.priority as number, tool: a.tool as ProviderId, model: model as string | null, effort: effort as string | null, ...(models.length ? { models } : {}) };
+    const refs = parseSkillRefs(a);
+    const skills = skillsFor(refs.agentKey, refs.projectSkills);
+    return { id: a.id, name: a.name.trim(), role: a.role, priority: a.priority as number, tool: a.tool as ProviderId, model: model as string | null, effort: effort as string | null, ...(models.length ? { models } : {}), ...refs, ...(skills.length ? { skills } : {}) };
   });
 }
 
@@ -41,7 +44,9 @@ export function parseTeamMembers(value: unknown): TeamMember[] {
     const tool = m.tool === "claude" || m.tool === "codex" ? m.tool : null;
     const model = typeof m.model === "string" && MODEL_NAME.test(m.model) ? m.model : null;
     const models = Array.isArray(m.models) ? m.models.filter((x): x is string => typeof x === "string" && MODEL_NAME.test(x)).slice(0, 16) : [];
-    return { name: m.name.trim(), role: m.role, ready: m.ready === true, ...(tool ? { tool } : {}), ...(model ? { model } : {}), ...(models.length ? { models } : {}) };
+    const refs = parseSkillRefs(m);
+    const skills = skillsFor(refs.agentKey, refs.projectSkills);
+    return { name: m.name.trim(), role: m.role, ready: m.ready === true, ...(tool ? { tool } : {}), ...(model ? { model } : {}), ...(models.length ? { models } : {}), ...refs, ...(skills.length ? { skills } : {}) };
   });
 }
 

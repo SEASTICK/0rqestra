@@ -43,7 +43,7 @@ export const HANDOFF_RULES = [
   "Each agent sees only its own task and handoff, never this chat. In \"handoff\" give only what the goal does not already say:",
   "acceptance (always: how to tell it is done), and when they matter decisions, rules, findings (facts it needs, so no one",
   "redoes research) and references ({\"file\": ...} a file it must read, \"full\": true for the whole file; {\"task\": \"t1\"} an",
-  "earlier task's result). Leave out empty fields. Rules for every task go in the plan's \"rules\".",
+  "earlier task's result), skills (ids of the agent's skills the task needs). Leave out empty fields. Rules for every task go in the plan's \"rules\".",
 ].join("\n");
 
 // The app previews web products in an isolated frame that can load only the product's own files.
@@ -122,6 +122,13 @@ export function teamSection(team: TeamMember[]): string {
   if (offered.size) {
     lines.push(`Models you can choose per task: ${[...offered].map(([tool, models]) => `${TOOL_NAME[tool] ?? tool}: ${models.join(", ")}`).join("; ")}.`);
     lines.push("Set a task's \"model\" to one its agent's tool offers: the strongest for hard reasoning, architecture or design, a lighter, faster one for simple or repetitive work. Without it the agent uses its own model.");
+  }
+  // Skills (Capabilities): names and one-line descriptions only. The full instructions load for a
+  // task only when its handoff names the skill, and only for an agent that has it.
+  const skilled = working.filter((m) => m.skills?.length);
+  if (skilled.length) {
+    lines.push(`Skills your agents have: ${skilled.map((m) => `${m.name} (${m.role}${m.tool ? `, ${TOOL_NAME[m.tool] ?? m.tool}` : ""}): ${m.skills!.map((s) => `${s.id} (${s.description.slice(0, 120) || s.name})`).join("; ")}`).join(". ")}.`);
+    lines.push("When a task needs one, give it to an agent that has it and add \"skills\": [\"id\"] to that task's handoff. An agent can only use its own skills.");
   }
   if (tools.size > 1) {
     lines.push(TOOL_STRENGTHS);

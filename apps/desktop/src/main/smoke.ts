@@ -70,7 +70,7 @@ async function runChecks(
     "page has no Node.js globals and only the narrow preload API",
     globalsSeen.require === "undefined" &&
       globalsSeen.process === "undefined" &&
-      JSON.stringify(globalsSeen.api) === JSON.stringify(["getAppInfo", "updates", "chat", "team", "accounts", "teams"]),
+      JSON.stringify(globalsSeen.api) === JSON.stringify(["getAppInfo", "updates", "chat", "team", "accounts", "teams", "capabilities"]),
     globalsSeen,
   );
 

@@ -75,6 +75,9 @@ export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPre
               <strong>{t.title}</strong>
               <span>{t.role}{t.agentId || t.plannedAgentId ? ` · ${nameOf(t.agentId || t.plannedAgentId)}` : ''}{toolOf(t.agentId || t.plannedAgentId) && <span className={`tool-chip tool-${toolOf(t.agentId || t.plannedAgentId)}`}>{TOOL_LABEL[toolOf(t.agentId || t.plannedAgentId)]}</span>}{t.attempt > 1 ? ` · attempt ${t.attempt}` : ''}</span>
               {t.note && <small>{t.note}</small>}
+              {(t.skills || []).filter((s) => s.loaded.length || s.refused.length).map((s) => <small key={`${s.agentId}-${s.kind}`} className="team-skills">
+                {s.kind === 'review' ? 'Review' : 'Work'} · {nameOf(s.agentId)}: {s.loaded.length ? `skills loaded: ${s.loaded.map((x) => x.name).join(', ')}` : 'no skills loaded'}{s.refused.length ? ` · not available to this agent: ${s.refused.join(', ')}` : ''}
+              </small>)}
               {t.brief?.summary && <small className="team-brief">{t.brief.summary}{t.brief.unresolved?.length ? ` · Open: ${t.brief.unresolved.slice(0, 2).join('; ')}` : ''}</small>}
               {t.review && !t.review.approved && t.review.problems.length > 0 && <small className="team-problems">Review: {t.review.problems.slice(0, 3).join(' · ')}</small>}
               {t.files.length > 0 && <div className="plan-files">{t.files.map((f) => <code key={f.path}>{f.path}</code>)}</div>}

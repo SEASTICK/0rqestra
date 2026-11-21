@@ -12,6 +12,14 @@ export interface AgentRef {
   role: string;
 }
 
+// A skill's full instructions, given to an agent that has the skill, only for a task that needs it.
+export interface LoadedSkill { id: string; name: string; instructions: string }
+export const MAX_SKILL_CHARS = 20_000;
+export function skillsText(skills: LoadedSkill[]): string {
+  const body = (s: LoadedSkill) => (s.instructions.length > MAX_SKILL_CHARS ? `${s.instructions.slice(0, MAX_SKILL_CHARS)}\n[... cut to fit ...]` : s.instructions);
+  return `Skills for this task (follow them):\n${skills.map((s) => `### Skill: ${s.name}\n${body(s)}`).join("\n\n")}`;
+}
+
 // Every role gets the same handoff format (handoff.ts); what is in it depends on the job. A worker
 // gets the requirements and the files it needs; a reviewer gets the requirements, the checks and
 // the change. Instructions are short and said once (Stage 3): they are paid for on every call.
@@ -24,11 +32,12 @@ const isApp = (task: PlanTask) => task.deliverables.some((d) => /(^|\/)package\.
 // A retry gets the specific problems and the version it submitted last, to fix rather than redo.
 // A request the user gave one agent directly (task.open) has no handoff: the agent sees the
 // project's files (`open`) and decides what to change.
-export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, resolved: ResolvedHandoff, problems: string[], current: { path: string; content: string }[] = [], open: { context: { path: string; content: string }[]; files: string[] } = { context: [], files: [] }): string {
+export function workerPrompt(plan: Plan, task: PlanTask, agent: AgentRef, resolved: ResolvedHandoff, problems: string[], current: { path: string; content: string }[] = [], open: { context: { path: string; content: string }[]; files: string[] } = { context: [], files: [] }, skills: LoadedSkill[] = []): string {
   if (task.open) return openPrompt(task, agent, open.context, problems, open.files);
   const parts = [
     `You are ${agent.name}, the ${agent.role} in an AI team in the app 0rqestra. You do one task. Project goal: ${plan.goal}`,
     handoffText(plan, task, resolved),
+    ...(skills.length ? [skillsText(skills)] : []),
   ];
   const mine = new Set(current.map((f) => f.path.toLowerCase()));
   const refs = resolved.attachments.filter((a) => !mine.has(a.path.toLowerCase()));
@@ -102,7 +111,7 @@ export function changesText(changes: Change[]): string {
 // check facts against their source instead of wanting to open it.
 export const REVIEW_SOURCE_CHARS = 6000;
 
-export function reviewPrompt(plan: Plan, task: PlanTask, reviewer: AgentRef, author: AgentRef, changes: Change[], resolved: ResolvedHandoff, checks: string[], authorBrief?: ReturnBrief): string {
+export function reviewPrompt(plan: Plan, task: PlanTask, reviewer: AgentRef, author: AgentRef, changes: Change[], resolved: ResolvedHandoff, checks: string[], authorBrief?: ReturnBrief, skills: LoadedSkill[] = []): string {
   const claims = authorBrief ? claimsText(authorBrief) : "";
   const changed = new Set(changes.map((c) => c.path.toLowerCase()));
   const sources = resolved.attachments.filter((a) => !changed.has(a.path.toLowerCase()));
@@ -111,6 +120,7 @@ export function reviewPrompt(plan: Plan, task: PlanTask, reviewer: AgentRef, aut
     `You are ${reviewer.name}, the ${reviewer.role} in an AI team in the app 0rqestra. Review another agent's work. Project goal: ${plan.goal}`,
     `${author.name} (${author.role}) did this task:`,
     handoffText(plan, task, resolved, true),
+    ...(skills.length ? [skillsText(skills)] : []),
     `Verification results so far:\n${list(checks)}`,
     `Submitted changes (the latest version):\n${changesText(changes)}`,
     ...(sources.length && fits ? [`What the author worked from:\n${sources.map((a) => `${attachmentHeader(a)}\n${a.content}`).join("\n\n")}`] : []),

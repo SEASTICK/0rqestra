@@ -28,10 +28,12 @@ describe('after Demo mode was removed', () => {
     expect(p).not.toHaveProperty('liveWorkflow');
     expect(p.graph.nodes.map((n) => [n.id, n.name, n.role, n.priority, n.x, n.y])).toEqual(oldProject.graph.nodes.map((n) => [n.id, n.name, n.role, n.priority, n.x, n.y]));
     // A demo agent has no tool now: no made-up model is shown for it.
-    expect(p.graph.nodes[0]).toEqual({ id: 'manager', name: 'Project manager', role: 'Manager', priority: 1, x: 1, y: 2, agent: null });
+    expect(p.graph.nodes[0]).toEqual({ id: 'manager', name: 'Project manager', role: 'Manager', priority: 1, x: 1, y: 2, agent: null, agentKey: 'p1:manager' });
     // An agent on a real tool keeps its tool and model; only the demo recovery fields go.
-    expect(p.graph.nodes[1]).toEqual({ id: 'b', name: 'Code builder', role: 'Builder', provider: 'Claude Code', model: 'Opus', priority: 2, x: 3, y: 4, agent: { tool: 'claude', model: 'opus', effort: null } });
+    expect(p.graph.nodes[1]).toEqual({ id: 'b', name: 'Code builder', role: 'Builder', provider: 'Claude Code', model: 'Opus', priority: 2, x: 3, y: 4, agent: { tool: 'claude', model: 'opus', effort: null }, agentKey: 'p1:b' });
     expect(migrateNode(p.graph.nodes[1])).toEqual(p.graph.nodes[1]);
+    // Every agent gets a permanent key once (its skills are saved against it); an existing key stays.
+    expect(migrateProject({ ...oldProject, graph: { ...oldProject.graph, nodes: [{ ...oldProject.graph.nodes[1], agentKey: 'kept-key' }] } }).graph.nodes[0].agentKey).toBe('kept-key');
   });
 
   it('clears saved demo settings once and says whether anything from Demo mode was found', () => {

@@ -30,6 +30,8 @@ export interface Handoff {
   references: Reference[];
   acceptance: string[];
   verify: string;
+  // Skills the task needs (ids); loaded only for an agent that has them (Capabilities).
+  skills?: string[];
 }
 
 export interface PlanTask {
@@ -118,6 +120,7 @@ function parseHandoff(raw: unknown, id: string): Handoff | undefined {
   const h = raw as Record<string, unknown>;
   const refs = h.references ?? [];
   if (!Array.isArray(refs) || refs.length > MAX_REFERENCES) throw new Error(`Task ${id} can refer to at most ${MAX_REFERENCES} files or tasks.`);
+  const skills = Array.isArray(h.skills) ? [...new Set(h.skills.filter((s): s is string => typeof s === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(s)))].slice(0, 6) : [];
   const references = refs.map((r: unknown, i: number): Reference => {
     const v = (r ?? {}) as Record<string, unknown>;
     const why = str(v.why, 400) ?? "";
@@ -137,6 +140,7 @@ function parseHandoff(raw: unknown, id: string): Handoff | undefined {
     references,
     acceptance: list(h.acceptance, `Task ${id}'s acceptance criteria`),
     verify: str(h.verify, 600) ?? "",
+    ...(skills.length ? { skills } : {}),
   };
 }
 

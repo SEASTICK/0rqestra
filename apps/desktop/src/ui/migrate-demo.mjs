@@ -25,10 +25,18 @@ export function migrateNode(node) {
   return out;
 }
 
+// An agent's permanent key (Capabilities): skills installed on an agent are saved against it, so
+// they follow the agent when it is renamed, after a restart, and into other projects. Agents made
+// before keys existed get one from their project and node ids, once.
+export function withAgentKey(node, projectId) {
+  if (!node || node.agentKey) return node;
+  return { ...node, agentKey: `${String(projectId).slice(0, 48)}:${String(node.id).slice(0, 48)}`.replace(/[^A-Za-z0-9:_-]/g, '-') };
+}
+
 export function migrateProject(project) {
   const { tasks, approvals, liveWorkflow, ...rest } = project;
   void tasks; void approvals; void liveWorkflow;
-  return { ...rest, graph: { ...project.graph, nodes: (project.graph?.nodes || []).map(migrateNode) } };
+  return { ...rest, graph: { ...project.graph, nodes: (project.graph?.nodes || []).map((n) => withAgentKey(migrateNode(n), project.id)) } };
 }
 
 export function projectHadDemo(project) {

@@ -608,3 +608,27 @@ Claude does not create accounts, paid resources, or keys, and does not start rel
 - Payment, billing, or selling access. Selling usage (users pay 0rqestra, 0rqestra pays the
   providers) needs payments, tax, abuse protection, key custody, and the providers' resale terms.
   Users bringing their own API keys needs none of that.
+
+### Agent capabilities: skills (2026-11-21)
+
+Every agent in the tree has a Capabilities tab (click the agent, then Capabilities). **Install to
+this agent** takes a SKILL.md (dropped on the tab or chosen) or a skill folder, shows a preview,
+and saves 0rqestra's own copy in the app's data (`<user data>/capabilities/skills/<id>/`), so it
+keeps working when the original is moved or deleted. Assignments are saved against the agent's
+permanent key (`agentKey` on the tree node, `<user data>/capabilities/assignments.json`), not its
+name or project: the agent keeps its skills when renamed, after a restart, and when it is added to
+another project with **Add an agent you already have**. Two agents with the same name stay apart.
+A project can add skills for all its agents ("From this project"), and each agent can turn those
+off; skills on the agent itself show as "Installed on this agent". Removing a skill from one agent
+leaves it on the others.
+
+The Manager sees each agent's skills as one-line descriptions and names the skills a task needs in
+its handoff (`"skills": ["id"]`). The runner loads the full instructions only then, and only for an
+agent that has the skill (worker and reviewer alike); the run card shows what was loaded and what
+was named but not available to that agent (`main/capabilities/`, `main/team/runner.ts`).
+
+Not yet: plugins and connectors. Agents run Claude Code and Codex without tools (no file access,
+commands or network), so a plugin or connector cannot yet be limited to one agent; the tab shows
+them as unavailable until that is verified. "Open setup terminal" (Advanced) opens a terminal in
+the project's folder for a provider's own install commands, which the user types; such installs
+are for that provider on this computer, not one agent.

@@ -2,6 +2,7 @@
 // the files it wrote, and its reviews. Opens when the agent is clicked in the tree.
 import React, { useEffect, useRef, useState } from 'react';
 import { Working } from './Activity.jsx';
+import { CapabilitiesTab } from './Capabilities.jsx';
 import { agentWork, elapsed, textParts } from './live-chat.mjs';
 
 const STATE_LABEL = { working: 'Working', reviewing: 'Reviewing', planning: 'Planning', queued: 'Waiting for its turn', completed: 'Done', blocked: 'Blocked', interrupted: 'Stopped', idle: 'Idle' };
@@ -40,7 +41,8 @@ function AskAgent({ node, canAsk, busy, onAsk }) {
   </form>;
 }
 
-export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure, onAsk, canAsk = false, busy = false }) {
+export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure, onAsk, canAsk = false, busy = false, graph, projectId, notify, onPatchNode, onPatchProjectSkills }) {
+  const [tab, setTab] = useState('activity');
   const work = agentWork(messages, node.id);
   const scroller = useRef(null);
   const liveText = work.live?.text;
@@ -60,6 +62,11 @@ export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure, 
         <button className="icon-button" title="Close" aria-label="Close the agent panel" onClick={onClose}><Icon name="close" size={16} /></button>
       </div>
     </div>
+    <div className="agent-tabs" role="tablist">
+      <button type="button" role="tab" aria-selected={tab === 'activity'} className={tab === 'activity' ? 'is-on' : ''} onClick={() => setTab('activity')}>Activity</button>
+      <button type="button" role="tab" aria-selected={tab === 'capabilities'} className={tab === 'capabilities' ? 'is-on' : ''} onClick={() => setTab('capabilities')}>Capabilities</button>
+    </div>
+    {tab === 'capabilities' ? <div className="agent-panel-body"><CapabilitiesTab node={node} graph={graph} projectId={projectId} Icon={Icon} notify={notify} onPatchNode={onPatchNode} onPatchProjectSkills={onPatchProjectSkills} /></div> : <>
     <div className="agent-panel-body" ref={scroller}>
       <section className="agent-now">
         <h4>Now</h4>
@@ -81,5 +88,6 @@ export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure, 
       </section>
     </div>
     {onAsk && <AskAgent node={node} canAsk={canAsk} busy={busy} onAsk={onAsk} />}
+    </>}
   </aside>;
 }
