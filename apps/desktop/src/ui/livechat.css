@@ -553,3 +553,60 @@
 .cap-project,.cap-advanced{margin-top:8px;font-size:12.5px}
 .cap-project>summary,.cap-advanced>summary{cursor:pointer;color:var(--shell-muted)}
 .team-skills{color:var(--shell-muted)}
+.teams-list li .team-member-actions{flex:0 0 auto;display:inline-flex;gap:12px}
+.danger-button{color:light-dark(#9a4a32, #e0a088)}
+.nav-project{position:relative}
+.project-menu{position:absolute;right:4px;top:4px}
+.project-menu-button{opacity:.55;font-size:15px;line-height:1;padding:3px 6px}
+.nav-project:hover .project-menu-button,.project-menu-button[aria-expanded="true"]{opacity:1}
+.project-menu-list{left:auto;right:0;top:calc(100% + 4px);bottom:auto;width:250px}
+.project-menu-list>button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 10px;border-radius:8px;font-size:12px}
+.project-menu-list>button:hover{background:var(--shell-hover, light-dark(#f0f0f0, #3a3a3a))}
+.project-menu-line{height:1px;margin:4px 6px;background:var(--shell-line)}
+.danger-fill{background:light-dark(#9a4a32, #b8664c)!important;border-color:transparent!important;color:#fff!important}
+.removal-lists{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:6px 0 14px;font-size:12px}
+.removal-lists ul{margin:6px 0 0;padding-left:18px;line-height:1.6}
+.access-page{max-height:78vh;overflow-y:auto;min-width:min(720px,90vw)}
+.access-section{margin-top:18px}
+.access-section h3{font-size:13px;font-weight:550;margin:0 0 6px}
+.access-toggles{display:inline-flex;flex-wrap:wrap;gap:12px;font-size:12px}
+.access-toggles label,.access-folder-actions label{display:inline-flex;gap:5px;align-items:center}
+.access-folder-actions{display:inline-flex;gap:14px;align-items:center;font-size:12px}
+.access-agents>li{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.access-command-fields{display:grid;grid-template-columns:1fr 2fr;gap:8px;font-size:12px}
+.access-command-fields label{display:flex;flex-direction:column;gap:3px}
+.access-approve-line{font-size:12px;margin:8px 0}
+.access-diff-list{list-style:none;padding:0;margin:8px 0;display:flex;flex-direction:column;gap:10px}
+.access-diff label{display:flex;gap:6px;align-items:center;font-size:12px}
+.access-diff-text{max-height:240px;overflow:auto;font-size:11px;background:light-dark(#f6f6f6, #262626);border-radius:6px;padding:8px;margin:6px 0 0;white-space:pre}
+.access-log{list-style:none;padding:0;margin:0;font-size:11px;display:flex;flex-direction:column;gap:3px}
+.access-log .is-refused{color:light-dark(#9a4a32, #e0a088)}
+
+/* Resizable split between the Manager chat and the Work Tree (pane-layout.mjs). */
+.main-area .content-panels.split-panels{gap:0}
+.main-area.view-split .chat-panel{display:flex;flex-grow:0;flex-shrink:0;min-width:0}
+.main-area.view-split .tree-panel,.main-area.view-split .preview-panel{flex:1 1 0;min-width:0}
+.pane-divider{flex:0 0 14px;align-self:stretch;position:relative;cursor:col-resize;touch-action:none;display:flex;align-items:center;justify-content:center;border-radius:6px;outline:none}
+.pane-divider>span{width:3px;height:44px;border-radius:3px;background:var(--shell-line);transition:background .15s,height .15s}
+.pane-divider:hover>span,.pane-divider:focus-visible>span,body.pane-resizing .pane-divider>span{background:var(--shell-accent);height:72px}
+.pane-divider:hover{background:var(--shell-hover)}
+.pane-divider:focus-visible{box-shadow:0 0 0 2px var(--shell-accent) inset}
+body.pane-resizing,body.pane-resizing *{cursor:col-resize!important;user-select:none!important}
+body.pane-resizing iframe,body.pane-resizing webview{pointer-events:none}
+.pane-reveal{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 0;border:1px solid var(--shell-line);border-radius:13px;background:var(--shell-card);color:var(--shell-muted);font-size:12px;font-weight:550}
+.pane-reveal>span{writing-mode:vertical-rl;letter-spacing:.3px}
+.pane-reveal-left>span{transform:rotate(180deg)}
+.pane-reveal:hover{color:var(--shell-text);background:var(--shell-hover)}
+.pane-reveal:focus-visible{outline:2px solid var(--shell-accent);outline-offset:2px}
+/* Panes stay usable when narrow: headers and toolbars shrink or wrap instead of spilling. */
+.chat-panel .panel-header,.tree-panel .panel-header{min-width:0}
+.chat-panel .panel-heading{min-width:0;overflow:hidden}
+.chat-panel .panel-heading>div{min-width:0}
+.chat-panel .panel-heading>div>span,.chat-panel .panel-heading>div>strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.tree-panel-title{min-width:0;overflow:hidden;white-space:nowrap}
+.canvas-toolbar{max-width:calc(100% - 32px);flex-wrap:wrap;row-gap:2px}
+.composer-footer{min-width:0;flex-wrap:wrap;row-gap:6px}
+.tree-footer>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+@media (prefers-reduced-motion:reduce){.pane-divider>span{transition:none}}
+
+.tree-footer>span:last-child{white-space:nowrap;flex:none}

@@ -140,25 +140,37 @@ function LinkCheckout({ api, project, teams, projects, onCreateProject, notify, 
   );
 }
 
-function SharedProject({ api, project, teams, projects, onCreateProject, notify, onView }) {
+function SharedProject({ api, project, team, teams, projects, onCreateProject, notify, onView }) {
   const [linking, setLinking] = useState(false);
   const [pending, run] = useAction(notify);
   const line = linkLine(project.link);
+  const moved = project.link && project.link.state !== 'linked';
+  const unlink = () => {
+    if (window.confirm(`Unlink your checkout of ${project.name} from this computer? The folder, its Git changes and the GitHub repository stay. The project stays shared with the team; you can link a checkout again later.`)) {
+      void run(async () => { onView(await api.unlink(project.id)); notify?.(`Your checkout is unlinked. ${project.name} is still shared with the team.`); });
+    }
+  };
+  const removeFromTeam = () => {
+    if (window.confirm(`Remove ${project.name} from ${team.name} for everyone? Members lose its shared briefs and reservations, and their links to it go. Every checkout, its Git changes and the GitHub repository stay.`)) {
+      void run(async () => { onView(await api.removeSharedProject(project.id)); notify?.(`${project.name} is no longer shared with ${team.name}.`); });
+    }
+  };
   return (
     <li className="teams-project">
       <div className="teams-project-head">
-        <div><strong>{project.name}</strong><small>github.com/{repoName(project.repo)}</small></div>
+        <div><strong>{project.name}</strong><small>Shared with {team.name} · github.com/{repoName(project.repo)}</small></div>
         <span className={`provider-badge teams-tone-${line.tone}`}>{line.text}</span>
       </div>
-      {project.link && <p className="provider-line">In “{localName(projects, project.link.localProjectId)}” · <span className="setup-path" title={project.link.path}>{project.link.path}</span>{project.link.branch ? ` · branch ${project.link.branch}` : ''}</p>}
-      {project.link?.problem && <div className="setup-error" role="alert"><span>{project.link.problem}</span></div>}
+      {project.link && <p className="provider-line">This computer uses: <span className="setup-path" title={project.link.path}>{project.link.path}</span> · in “{localName(projects, project.link.localProjectId)}”{project.link.branch ? ` · branch ${project.link.branch}` : ''}</p>}
+      {project.link?.problem && <div className="setup-error" role="alert"><span>{project.link.problem}{moved ? ' If you moved the folder, choose it again with “Relink moved folder”.' : ''}</span></div>}
       {linking ? (
         <LinkCheckout api={api} project={project} teams={teams} projects={projects} onCreateProject={onCreateProject} notify={notify} onView={onView} onDone={() => setLinking(false)}/>
       ) : (
         <div className="setup-actions">
-          <button type="button" className={`button ${project.link ? '' : 'primary-button'}`} onClick={() => setLinking(true)}>{project.link ? 'Link another checkout' : 'Link my checkout'}</button>
+          <button type="button" className={`button ${project.link && !moved ? '' : 'primary-button'}`} onClick={() => setLinking(true)}>{moved ? 'Relink moved folder' : project.link ? 'Link another checkout' : 'Link my checkout'}</button>
           {project.link?.state === 'linked' && <button type="button" className="button" disabled={pending} onClick={() => run(() => api.openCheckout(project.id))}>Open folder</button>}
-          {project.link && <button type="button" className="button" disabled={pending} onClick={() => run(async () => onView(await api.unlink(project.id)))}>Unlink</button>}
+          {project.link && <button type="button" className="button" disabled={pending} onClick={unlink}>Unlink from this computer</button>}
+          {team.isOwner && <button type="button" className="button danger-button" disabled={pending} onClick={removeFromTeam}>Remove from team</button>}
         </div>
       )}
     </li>
@@ -218,6 +230,33 @@ function Invites({ api, team, view, notify, onView, onFriends }) {
   );
 }
 
+// Members, with what the owner can do (remove, make owner) and leaving or deleting the team. Every
+// action says what it does first; the database enforces who may do it.
+function Members({ api, team, notify, onView }) {
+  const [pending, run] = useAction(notify);
+  const others = team.members.filter((m) => !m.isYou);
+  const ask = (text) => window.confirm(text);
+  return (
+    <div className="teams-section">
+      <h3>Members</h3>
+      <ul className="teams-list">
+        {team.members.map((m) => <li key={m.userId}>
+          <span>@{m.name}{m.isYou ? ' (you)' : ''}</span><small>{m.role === 'owner' ? 'Owner' : 'Member'}</small>
+          {team.isOwner && !m.isYou && <span className="team-member-actions">
+            <button type="button" className="provider-text-link" disabled={pending} onClick={() => { if (ask(`Make @${m.name} the owner of ${team.name}? You become a member, and only @${m.name} can invite, remove members and share repositories.`)) void run(async () => { onView(await api.transferOwnership(team.id, m.userId)); notify?.(`@${m.name} now owns ${team.name}.`); }); }}>Make owner</button>
+            <button type="button" className="provider-text-link" disabled={pending} onClick={() => { if (ask(`Remove @${m.name} from ${team.name}? They lose access to its shared projects at once. Their checkout stays on their computer.`)) void run(async () => { onView(await api.removeMember(team.id, m.userId)); notify?.(`@${m.name} was removed from ${team.name}.`); }); }}>Remove</button>
+          </span>}
+        </li>)}
+      </ul>
+      <div className="setup-actions">
+        {!team.isOwner && <button type="button" className="button" disabled={pending} onClick={() => { if (ask(`Leave ${team.name}? You lose access to its shared projects. Your checkout stays on this computer; only the link is removed.`)) void run(async () => { onView(await api.leaveTeam(team.id)); notify?.(`You left ${team.name}.`); }); }}>Leave team</button>}
+        {team.isOwner && others.length > 0 && <small className="provider-line">To leave, first make another member the owner.</small>}
+        {team.isOwner && others.length === 0 && <button type="button" className="button" disabled={pending} onClick={() => { if (ask(`Delete ${team.name}? Its shared projects and invitations are removed for good. Checkouts stay on each computer.`)) void run(async () => { onView(await api.deleteTeam(team.id)); notify?.(`${team.name} was deleted.`); }); }}>Delete team</button>}
+      </div>
+    </div>
+  );
+}
+
 function TeamCard({ api, team, teams, view, projects, onCreateProject, notify, onView, onFriends }) {
   const [registering, setRegistering] = useState(false);
   return (
@@ -225,18 +264,13 @@ function TeamCard({ api, team, teams, view, projects, onCreateProject, notify, o
       <header className="provider-card-head">
         <div><h2>{team.name}</h2><small>{team.isOwner ? 'You own this team' : 'Member'} · {team.members.length} {team.members.length === 1 ? 'person' : 'people'}</small></div>
       </header>
-      <div className="teams-section">
-        <h3>Members</h3>
-        <ul className="teams-list">
-          {team.members.map((m) => <li key={m.userId}><span>@{m.name}{m.isYou ? ' (you)' : ''}</span><small>{m.role === 'owner' ? 'Owner' : 'Member'}</small></li>)}
-        </ul>
-      </div>
+      <Members api={api} team={team} notify={notify} onView={onView}/>
       {team.isOwner && <Invites api={api} team={team} view={view} notify={notify} onView={onView} onFriends={onFriends}/>}
       <div className="teams-section">
         <h3>Shared projects</h3>
         {team.projects.length === 0 && <p className="provider-line">{team.isOwner ? 'No repository is shared yet. Register one from a project on this computer.' : 'The owner has not shared a repository yet.'}</p>}
         <ul className="teams-projects">
-          {team.projects.map((p) => <SharedProject key={p.id} api={api} project={p} teams={teams} projects={projects} onCreateProject={onCreateProject} notify={notify} onView={onView}/>)}
+          {team.projects.map((p) => <SharedProject key={p.id} api={api} project={p} team={team} teams={teams} projects={projects} onCreateProject={onCreateProject} notify={notify} onView={onView}/>)}
         </ul>
         {team.isOwner && (registering
           ? <RegisterProject api={api} team={team} teams={teams} projects={projects} notify={notify} onView={onView} onDone={() => setRegistering(false)}/>

@@ -108,6 +108,41 @@ class FakeSupabase {
     const isMember = (teamId: string) => this.members.some((m) => m.team_id === teamId && m.user_id === me);
     const isOwner = (teamId: string) => this.teams.some((t) => t.id === teamId && t.owner_id === me);
     if (u.pathname === "/auth/v1/logout") return reply(204, undefined);
+    // Row deletes under the migration's row-level security: an owner removes members, a member
+    // leaves (their own member row), an owner deletes the team or a shared project. A row the
+    // policy does not allow is simply not deleted (an empty result), as in PostgREST.
+    if (init.method === "DELETE") {
+      const eq = (k: string) => (u.searchParams.get(k) ?? "").replace(/^eq\./, "");
+      if (u.pathname === "/rest/v1/team_members") {
+        const gone = this.members.filter((m) => m.team_id === eq("team_id") && m.user_id === eq("user_id") && m.role === "member" && (isOwner(m.team_id) || m.user_id === me));
+        this.members = this.members.filter((m) => !gone.includes(m));
+        return reply(200, gone.map(({ team_id, user_id, role }) => ({ team_id, user_id, role })));
+      }
+      if (u.pathname === "/rest/v1/teams") {
+        const gone = this.teams.filter((t) => t.id === eq("id") && t.owner_id === me);
+        this.teams = this.teams.filter((t) => !gone.includes(t));
+        this.members = this.members.filter((m) => !gone.some((t) => t.id === m.team_id));
+        this.projects = this.projects.filter((p) => !gone.some((t) => t.id === p.team_id));
+        return reply(200, gone);
+      }
+      if (u.pathname === "/rest/v1/shared_projects") {
+        const gone = this.projects.filter((p) => p.id === eq("id") && isOwner(p.team_id));
+        this.projects = this.projects.filter((p) => !gone.includes(p));
+        this.reservations = this.reservations.filter((x) => !gone.some((p) => p.id === x.project_id));
+        return reply(200, gone);
+      }
+      return reply(404, { message: "not found" });
+    }
+    if (u.pathname === "/rest/v1/rpc/transfer_team_ownership") {
+      const teamId = String(body.p_team_id);
+      const to = String(body.p_new_owner);
+      if (!isOwner(teamId)) return pgError(403, "42501", "not_team_owner");
+      if (to === me) return pgError(400, "22023", "invalid_new_owner");
+      if (!this.members.some((m) => m.team_id === teamId && m.user_id === to)) return pgError(404, "P0002", "not_a_member");
+      for (const m of this.members) if (m.team_id === teamId) m.role = m.user_id === to ? "owner" : m.user_id === me ? "member" : m.role;
+      this.teams.find((t) => t.id === teamId)!.owner_id = to;
+      return reply(204, undefined);
+    }
     if (init.method === "GET" && u.pathname === "/rest/v1/teams") {
       return reply(200, this.teams.filter((t) => isMember(t.id)).map((t) => ({
         id: t.id, name: t.name, owner_id: t.owner_id,
@@ -817,5 +852,54 @@ describe("usernames, friends and team invitations", () => {
     server.offline = false;
     v = await a.service.refresh();
     expect(v.serverProblem).toBeNull();
+  });
+});
+
+describe("managing a team", () => {
+  it("owner invites, removes and hands over; members leave; ordinary members cannot do owner actions", async () => {
+    const server = new FakeSupabase();
+    const a = computer("ma", server);
+    const b = computer("mb", server);
+    const c = computer("mc", server);
+    await signIn(a.service, "ada@example.test");
+    await signIn(b.service, "ben@example.test");
+    await signIn(c.service, "cyd@example.test");
+    const team = (await a.service.createTeam("Crew")).teams[0]!;
+    const repo = `team-${crypto.randomUUID().slice(0, 6)}`;
+    const pick = await a.service.inspectFolder(checkout(`m-${repo}`, { origin: `https://github.com/seastick/${repo}.git` }));
+    const shared = (await a.service.registerProject({ teamId: team.id, selectionId: pick.id, localProjectId: "la", name: "Shared" })).teams[0]!.projects[0]!;
+    const ids = { b: server.users.get("ben@example.test")!, c: server.users.get("cyd@example.test")! };
+    for (const id of [ids.b, ids.c]) server.members.push({ team_id: team.id, user_id: id, email: "", role: "member" });
+    await a.service.refresh();
+    const bView = await b.service.refresh();
+    expect(bView.teams[0]!.isOwner).toBe(false);
+
+    // An ordinary member cannot remove, hand over, delete the team or remove a shared project.
+    await expect(b.service.removeMember(team.id, ids.c)).rejects.toThrow();
+    await expect(b.service.transferOwnership(team.id, ids.c)).rejects.toThrow();
+    await expect(b.service.deleteTeam(team.id)).rejects.toThrow();
+    await expect(b.service.removeSharedProject(shared.id)).rejects.toThrow();
+    expect(server.members.filter((m) => m.team_id === team.id)).toHaveLength(3);
+    expect(server.projects).toHaveLength(1);
+
+    // The owner cannot leave while others are in the team; removing a member takes away their access.
+    await expect(a.service.leaveTeam(team.id)).rejects.toThrow(/Make another member the owner/);
+    const afterRemove = await a.service.removeMember(team.id, ids.c);
+    expect(afterRemove.teams[0]!.members.map((m) => m.userId)).not.toContain(ids.c);
+    expect((await c.service.refresh()).teams).toEqual([]);
+
+    // Hand over to Ben: Ben is the owner, Ada a member who can now leave.
+    const handed = await a.service.transferOwnership(team.id, ids.b);
+    expect(handed.teams[0]!.isOwner).toBe(false);
+    expect((await b.service.refresh()).teams[0]!.isOwner).toBe(true);
+    await expect(a.service.removeMember(team.id, ids.b)).rejects.toThrow();
+    const left = await a.service.leaveTeam(team.id);
+    expect(left.teams).toEqual([]);
+    expect(server.members.filter((m) => m.team_id === team.id).map((m) => m.user_id)).toEqual([ids.b]);
+
+    // Alone, Ben can remove the shared project for everyone and delete the team.
+    expect((await b.service.removeSharedProject(shared.id)).teams[0]!.projects).toEqual([]);
+    expect((await b.service.deleteTeam(team.id)).teams).toEqual([]);
+    expect(server.teams).toEqual([]);
   });
 });

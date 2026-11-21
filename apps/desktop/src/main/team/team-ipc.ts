@@ -81,6 +81,10 @@ export function registerTeamIpc(
     return service.stop(runId);
   });
   // The products in the project's folder, and the preview host that serves them.
+  ipcMain.handle("team:stop-project", (event, projectId: unknown) => {
+    guard(event);
+    return service.stopProject(projectId);
+  });
   ipcMain.handle("team:products", (event, projectId: unknown) => {
     guard(event);
     if (typeof projectId !== "string") throw new Error("Invalid project id.");

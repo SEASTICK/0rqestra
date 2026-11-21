@@ -29,7 +29,9 @@ export interface ReturnBrief {
   given: boolean;
 }
 
-export type NeedKind = "file" | "finding" | "decision" | "question";
+// "computer" reads a file or lists a folder the user granted on this computer; "check" runs a command
+// the user approved. Both are checked against the agent's permission at the moment of use.
+export type NeedKind = "file" | "finding" | "decision" | "question" | "computer" | "check";
 
 export interface ContextNeed {
   kind: NeedKind;
@@ -97,7 +99,7 @@ export function parseNeeds(text: string): ContextNeed[] {
   const list = Array.isArray(value) ? value : [value];
   return list.slice(0, 3).map((v: unknown) => {
     const n = (v ?? {}) as Record<string, unknown>;
-    const kind = (["file", "finding", "decision", "question"] as const).find((k) => k === n.kind) ?? "question";
+    const kind = (["file", "finding", "decision", "question", "computer", "check"] as const).find((k) => k === n.kind) ?? "question";
     return { kind, ref: oneLine(n.ref, 300), task: typeof n.task === "string" && TASK_ID.test(n.task) ? n.task : null, why: oneLine(n.why, 300) };
   }).filter((n) => n.ref);
 }

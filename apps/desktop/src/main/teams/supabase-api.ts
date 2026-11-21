@@ -134,6 +134,12 @@ export class SupabaseApi {
     return rows[0]!;
   }
 
+  // Deletes the rows a query selects (row-level security decides which ones may go) and returns them.
+  async remove<T>(token: string, table: string, query: string): Promise<T[]> {
+    const rows = (await this.request("DELETE", `/rest/v1/${table}?${query}`, { token, prefer: "return=representation" })) as T[];
+    return Array.isArray(rows) ? rows : [];
+  }
+
   // A null token calls the function as an anonymous visitor (only username_available allows that).
   rpc<T>(token: string | null, fn: string, args: Record<string, unknown>): Promise<T> {
     return this.request("POST", `/rest/v1/rpc/${fn}`, { ...(token ? { token } : {}), body: args }) as Promise<T>;

@@ -65,6 +65,12 @@ export function registerSandboxIpc(isTrusted: (event: IpcMainInvokeEvent) => boo
     await sandbox.stop(v.projectId, v.productId);
     return true;
   });
+  ipcMain.handle("team:app-stop-project", async (event, projectId: unknown) => {
+    guard(event);
+    if (typeof projectId !== "string" || !ID.test(projectId)) throw new Error("Invalid project.");
+    await sandbox.stopProject(projectId);
+    return true;
+  });
   // Leftovers from a crash are removed at start, and nothing keeps running after the app quits.
   void sandbox.cleanup();
   // Quitting is not held up (an update restarts the app this way): the containers are removed at once,

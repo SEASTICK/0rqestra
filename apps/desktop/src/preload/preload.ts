@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld("orqestra", {
     appStart: (payload: unknown) => ipcRenderer.invoke("team:app-start", payload),
     appSync: (payload: unknown) => ipcRenderer.invoke("team:app-sync", payload),
     appStop: (payload: unknown) => ipcRenderer.invoke("team:app-stop", payload),
+    appStopProject: (projectId: string) => ipcRenderer.invoke("team:app-stop-project", String(projectId)),
     onAppEvent: (listener: (message: unknown) => void) => {
       ipcRenderer.removeAllListeners("team:app-event");
       ipcRenderer.on("team:app-event", (_event, message: unknown) => listener(message));
@@ -46,6 +47,7 @@ contextBridge.exposeInMainWorld("orqestra", {
     plan: (payload: unknown) => ipcRenderer.invoke("team:plan", payload),
     stopPlan: (requestId: string) => ipcRenderer.invoke("team:plan-stop", String(requestId)),
     stop: (runId: string) => ipcRenderer.invoke("team:stop", String(runId)),
+    stopProject: (projectId: string) => ipcRenderer.invoke("team:stop-project", String(projectId)),
     openFolder: (projectId: string) => ipcRenderer.invoke("team:open-folder", String(projectId)),
     products: (projectId: string) => ipcRenderer.invoke("team:products", String(projectId)),
     subscribe: (listener: (message: unknown) => void) => {
@@ -101,6 +103,11 @@ contextBridge.exposeInMainWorld("orqestra", {
     registerProject: (payload: unknown) => ipcRenderer.invoke("teams:register-project", payload),
     linkCheckout: (payload: unknown) => ipcRenderer.invoke("teams:link-checkout", payload),
     unlink: (sharedProjectId: string) => ipcRenderer.invoke("teams:unlink", String(sharedProjectId)),
+    removeMember: (teamId: string, userId: string) => ipcRenderer.invoke("teams:remove-member", String(teamId), String(userId)),
+    leaveTeam: (teamId: string) => ipcRenderer.invoke("teams:leave-team", String(teamId)),
+    transferOwnership: (teamId: string, userId: string) => ipcRenderer.invoke("teams:transfer-ownership", String(teamId), String(userId)),
+    deleteTeam: (teamId: string) => ipcRenderer.invoke("teams:delete-team", String(teamId)),
+    removeSharedProject: (sharedProjectId: string) => ipcRenderer.invoke("teams:remove-shared-project", String(sharedProjectId)),
     openCheckout: (sharedProjectId: string) => ipcRenderer.invoke("teams:open-checkout", String(sharedProjectId)),
     catchUp: (sharedProjectId: string) => ipcRenderer.invoke("teams:catch-up", String(sharedProjectId)),
     markSeen: (sharedProjectId: string, items: unknown) => ipcRenderer.invoke("teams:mark-seen", String(sharedProjectId), items),
@@ -114,6 +121,26 @@ contextBridge.exposeInMainWorld("orqestra", {
   },
   // An agent's Capabilities tab (main/capabilities): skills on this computer and which agent has them,
   // by the agent's permanent key. Files are chosen in the system dialog or dropped as text.
+  access: {
+    view: (projectId: string) => ipcRenderer.invoke("access:view", String(projectId)),
+    addFolder: (projectId: string) => ipcRenderer.invoke("access:add-folder", String(projectId)),
+    addCheckout: (projectId: string) => ipcRenderer.invoke("access:add-checkout", String(projectId)),
+    openProjectFolder: (projectId: string) => ipcRenderer.invoke("access:open-project-folder", String(projectId)),
+    setFolderWrite: (projectId: string, folderId: string, write: boolean) => ipcRenderer.invoke("access:set-folder-write", String(projectId), String(folderId), write === true),
+    revokeFolder: (projectId: string, folderId: string) => ipcRenderer.invoke("access:revoke-folder", String(projectId), String(folderId)),
+    setAgent: (projectId: string, agentKey: string, access: { read?: boolean; write?: boolean; commands?: boolean }) => ipcRenderer.invoke("access:set-agent", String(projectId), String(agentKey), { read: access?.read === true, write: access?.write === true, commands: access?.commands === true }),
+    revokeAgents: (projectId: string) => ipcRenderer.invoke("access:revoke-agents", String(projectId)),
+    addCommand: (projectId: string, command: { label: string; command: string; folderId: string; cwd: string }) => ipcRenderer.invoke("access:add-command", String(projectId), { label: String(command?.label ?? ""), command: String(command?.command ?? ""), folderId: String(command?.folderId ?? ""), cwd: String(command?.cwd ?? "") }),
+    removeCommand: (projectId: string, commandId: string) => ipcRenderer.invoke("access:remove-command", String(projectId), String(commandId)),
+    previewApply: (projectId: string, folderId: string) => ipcRenderer.invoke("access:preview-apply", String(projectId), String(folderId)),
+    apply: (projectId: string, previewId: string, paths: string[]) => ipcRenderer.invoke("access:apply", String(projectId), String(previewId), Array.isArray(paths) ? paths.map(String) : []),
+    forgetProject: (projectId: string) => ipcRenderer.invoke("access:forget-project", String(projectId)),
+    subscribe: (listener: (event: unknown) => void) => {
+      const handler = (_event: unknown, payload: unknown) => listener(payload);
+      ipcRenderer.on("access:event", handler);
+      return () => ipcRenderer.removeListener("access:event", handler);
+    },
+  },
   capabilities: {
     skills: (agentKey?: string) => ipcRenderer.invoke("capabilities:skills", agentKey ? String(agentKey) : null),
     chooseSkill: (kind: "file" | "folder") => ipcRenderer.invoke("capabilities:choose-skill", kind === "folder" ? "folder" : "file"),

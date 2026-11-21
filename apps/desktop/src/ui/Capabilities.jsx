@@ -2,6 +2,7 @@
 // installed on the agent follow it to every project (they are saved against its permanent key in
 // the app's data, main/capabilities); a project can add skills for all its agents, and each agent
 // can switch those off. Full instructions are loaded only for a task that needs the skill.
+import { AgentComputerAccess } from './ComputerAccess.jsx';
 import React, { useEffect, useState } from 'react';
 
 const errorText = (error) => String(error?.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
@@ -96,6 +97,7 @@ export function CapabilitiesTab({ node, graph, projectId, Icon, notify, onPatchN
         </select>}
       </details>
     </section>
+    <AgentComputerAccess node={node} projectId={projectId} notify={notify} />
     <section>
       <h4>Plugins and connectors</h4>
       <div className="cap-actions">

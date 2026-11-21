@@ -7,6 +7,7 @@ import { PROVIDER_IDS, type ProviderAdapter, type ProviderId } from "../provider
 import { directPlan, missingProjectFiles, parsePlan, type Plan } from "./plan";
 import { TeamRun, type TeamAgent, type TeamEvent } from "./runner";
 import { pruneHistory, RunSnapshot, undoRun } from "./history";
+import { accessService } from "../access/registry";
 
 // Team runs between the window and the runner, free of Electron so it is unit-tested. The plan came
 // from a model and the agents from the window, so both are validated here.
@@ -136,7 +137,9 @@ export class TeamService {
     if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
     const workspace = this.workspaceFor(projectId);
     const snapshot = new RunSnapshot(workspace, runId, plan.goal);
-    const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace, cwd: this.cwd(), snapshot, ...(writeGuard ? { writeGuard } : {}), emit: (event) => {
+    // Computer access: what this project's agents may read or run on this computer (checked at each use).
+    const computer = accessService()?.gateFor(projectId, runId);
+    const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace, cwd: this.cwd(), snapshot, ...(writeGuard ? { writeGuard } : {}), ...(computer ? { computer } : {}), emit: (event) => {
       emit(runId, event);
       // What the agents write stays on this computer: it is shown in the window, never shared.
       if (event.type === "output") return;
@@ -222,6 +225,19 @@ export class TeamService {
     if (!entry) return false;
     entry.run.stop();
     return true;
+  }
+
+  // Stops every run in a project (before it is removed or unlinked). Each run releases its Teams
+  // reservations as it ends. Returns how many were running.
+  stopProject(projectId: unknown): number {
+    if (typeof projectId !== "string") return 0;
+    let count = 0;
+    for (const entry of this.runs.values()) {
+      if (entry.projectId !== projectId) continue;
+      entry.run.stop();
+      count += 1;
+    }
+    return count;
   }
 
   stopAll(): void {

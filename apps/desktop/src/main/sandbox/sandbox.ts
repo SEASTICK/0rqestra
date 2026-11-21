@@ -236,6 +236,12 @@ export class Sandbox {
     await this.cleanup();
   }
 
+  // A project removed from 0rqestra: its apps stop (the project's files stay).
+  async stopProject(projectId: string): Promise<void> {
+    const started = [...this.apps.values()].filter((e) => e.projectId === projectId && e.generation > 0 && e.status.state !== "stopped");
+    await Promise.all(started.map((e) => this.stop(e.projectId, e.productId)));
+  }
+
   stopAllNow(): void {
     const started = [...this.apps.values()].filter((e) => e.generation > 0);
     if (!started.length || !this.o.docker.available()) return;

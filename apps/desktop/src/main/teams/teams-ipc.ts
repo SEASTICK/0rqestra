@@ -209,6 +209,27 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
     guard(event);
     return service.linkCheckout(payload);
   });
+  // Managing a team: the window sends ids only; the database enforces who may do what.
+  ipcMain.handle("teams:remove-member", (event, teamId: unknown, userId: unknown) => {
+    guard(event);
+    return service.removeMember(teamId, userId);
+  });
+  ipcMain.handle("teams:leave-team", (event, teamId: unknown) => {
+    guard(event);
+    return service.leaveTeam(teamId);
+  });
+  ipcMain.handle("teams:transfer-ownership", (event, teamId: unknown, userId: unknown) => {
+    guard(event);
+    return service.transferOwnership(teamId, userId);
+  });
+  ipcMain.handle("teams:delete-team", (event, teamId: unknown) => {
+    guard(event);
+    return service.deleteTeam(teamId);
+  });
+  ipcMain.handle("teams:remove-shared-project", (event, sharedProjectId: unknown) => {
+    guard(event);
+    return service.removeSharedProject(sharedProjectId);
+  });
   ipcMain.handle("teams:unlink", (event, sharedProjectId: unknown) => {
     guard(event);
     return service.unlink(sharedProjectId);

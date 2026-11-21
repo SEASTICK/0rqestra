@@ -7,6 +7,7 @@ import { SupabaseApi, SupabaseError, type AuthSession, type FetchLike } from "./
 import type { ConfigResult } from "./teams-config";
 import type { PresenceSnapshot, PresenceTarget } from "./presence";
 import { teamNowText } from "./team-now";
+import { pathsOverlap } from "./reservations";
 
 // Teams between the window and Supabase, free of Electron so it is unit-tested. Everything from the
 // window is checked here; the window never sends a path, a token or a user id. Teams sign-in is
@@ -345,6 +346,21 @@ export class TeamsService {
   linkFor(localProjectId: string): { sharedProjectId: string; userId: string; path: string } | null {
     const link = this.myLinks().find((l) => l.localProjectId === localProjectId);
     return link ? { sharedProjectId: link.sharedProjectId, userId: link.userId, path: link.path } : null;
+  }
+
+  // Computer access: before agent changes are applied to a checkout, a teammate's active reservation
+  // over one of the paths stops it. Null when nothing overlaps (or the project is not shared).
+  reservedByOthers(localProjectId: string, paths: string[]): string | null {
+    const link = this.myLinks().find((l) => l.localProjectId === localProjectId);
+    if (!link || !this.session) return null;
+    const project = this.teams.flatMap((t) => t.projects).find((p) => p.id === link.sharedProjectId);
+    const me = this.session.user.id;
+    for (const r of project?.reservations ?? []) {
+      if (r.userId === me) continue;
+      const hit = paths.find((p) => r.paths.some((q) => pathsOverlap(p, q)));
+      if (hit) return `${r.name || "A teammate"} has reserved ${hit} for “${r.task || "a team run"}”. Wait until that run ends.`;
+    }
+    return null;
   }
 
   // "Team right now" for the Manager and the Planner of a local project linked to a shared
@@ -1059,6 +1075,89 @@ export class TeamsService {
     const me = this.userId();
     this.deps.links.remove((l) => l.sharedProjectId === raw && l.userId === me);
     await this.load();
+    return this.changed();
+  }
+
+  // ---- Managing a team (owners; members can leave) ---------------------------------------------
+  // The database decides who may do what (row-level security and the owner-only function); these
+  // checks only give a clear message first. After each change the teams are read again, so access,
+  // presence and briefs follow at once (a removed member's subscriptions stop with the next load).
+
+  private async teamChange(fn: (api: SupabaseApi, token: string) => Promise<unknown>, own: Record<string, string> = {}): Promise<TeamsView> {
+    try {
+      await this.call(fn);
+    } catch (error) {
+      const message = error instanceof SupabaseError ? own[error.message] : undefined;
+      throw new Error(message ?? friendlyError(error), { cause: error });
+    }
+    await this.load();
+    return this.changed();
+  }
+
+  async removeMember(teamId: unknown, userId: unknown): Promise<TeamsView> {
+    const team = this.team(teamId);
+    if (!team.isOwner) throw new Error(MESSAGES.not_team_owner);
+    const member = team.members.find((m) => m.userId === userId && !m.isYou);
+    if (!member) throw new Error("Unknown member.");
+    return this.teamChange(async (api, token) => {
+      const gone = await api.remove(token, "team_members", `team_id=eq.${team.id}&user_id=eq.${member.userId}`);
+      if (!gone.length) throw new SupabaseError("not_removed", 403, "42501");
+    }, { not_removed: "That member could not be removed. Only the owner can remove members." });
+  }
+
+  // A member leaves. An owner first hands the team to another member, or deletes a team they are
+  // alone in. The member's checkout on this computer stays; only the link is removed.
+  async leaveTeam(teamId: unknown): Promise<TeamsView> {
+    const team = this.team(teamId);
+    if (team.isOwner) {
+      throw new Error(team.members.length > 1 ? "Make another member the owner before you leave." : "You are the only member: delete the team instead.");
+    }
+    const me = this.userId();
+    await this.teamChange(async (api, token) => {
+      const gone = await api.remove(token, "team_members", `team_id=eq.${team.id}&user_id=eq.${me}`);
+      if (!gone.length) throw new SupabaseError("not_removed", 403, "42501");
+    }, { not_removed: "You could not leave this team." });
+    this.deps.links.remove((l) => l.teamId === team.id && l.userId === me);
+    return this.changed();
+  }
+
+  async transferOwnership(teamId: unknown, userId: unknown): Promise<TeamsView> {
+    const team = this.team(teamId);
+    if (!team.isOwner) throw new Error(MESSAGES.not_team_owner);
+    const member = team.members.find((m) => m.userId === userId && !m.isYou);
+    if (!member) throw new Error("Choose a member of the team.");
+    return this.teamChange((api, token) => api.rpc(token, "transfer_team_ownership", { p_team_id: team.id, p_new_owner: member.userId }), {
+      not_a_member: "That person is no longer in the team.", invalid_new_owner: "Choose another member.",
+    });
+  }
+
+  // Owner, alone in the team: deletes it with its shared projects (checkouts stay on each computer).
+  async deleteTeam(teamId: unknown): Promise<TeamsView> {
+    const team = this.team(teamId);
+    if (!team.isOwner) throw new Error(MESSAGES.not_team_owner);
+    if (team.members.length > 1) throw new Error("Remove the other members, or make one of them the owner, first.");
+    const me = this.userId();
+    await this.teamChange(async (api, token) => {
+      const gone = await api.remove(token, "teams", `id=eq.${team.id}`);
+      if (!gone.length) throw new SupabaseError("not_removed", 403, "42501");
+    }, { not_removed: "The team could not be deleted." });
+    this.deps.links.remove((l) => l.teamId === team.id && l.userId === me);
+    return this.changed();
+  }
+
+  // Owner: removes a shared project from the team, for everyone. Each member's checkout stays on
+  // their computer; their link to it goes.
+  async removeSharedProject(sharedProjectId: unknown): Promise<TeamsView> {
+    if (typeof sharedProjectId !== "string" || !UUID.test(sharedProjectId)) throw new Error("Unknown shared project.");
+    const team = this.teams.find((t) => t.projects.some((p) => p.id === sharedProjectId));
+    if (!team) throw new Error("Unknown shared project.");
+    if (!team.isOwner) throw new Error(MESSAGES.not_team_owner);
+    const me = this.userId();
+    await this.teamChange(async (api, token) => {
+      const gone = await api.remove(token, "shared_projects", `id=eq.${sharedProjectId}`);
+      if (!gone.length) throw new SupabaseError("not_removed", 403, "42501");
+    }, { not_removed: "Only the team owner can remove a shared project." });
+    this.deps.links.remove((l) => l.sharedProjectId === sharedProjectId && l.userId === me);
     return this.changed();
   }
 

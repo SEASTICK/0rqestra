@@ -1,3 +1,4 @@
+import type { ComputerGate } from "../access/access-service";
 import type { ChatEvent, ProviderAdapter, ProviderId, Usage } from "../providers/types";
 import { REVIEW_ROLES, safeRelativePath, type Plan, type PlanTask } from "./plan";
 import { deliveryProblems, parseFiles, parseReview, reviewPrompt, workerPrompt, type AgentRef, type LoadedSkill } from "./prompts";
@@ -74,6 +75,8 @@ export interface RunOptions {
   snapshot?: { before(paths: string[]): void };
   // Reads a skill's full instructions (Capabilities); the app's skill store by default.
   loadSkill?: (id: string) => { name: string; instructions: string } | null;
+  // Computer access (main/access): reading granted folders and running approved checks, per agent.
+  computer?: ComputerGate;
 }
 
 const byPriority = (a: TeamAgent, b: TeamAgent) => a.priority - b.priority || a.name.localeCompare(b.name);
@@ -193,7 +196,7 @@ export class TeamRun {
       let text: string;
       try {
         if (attempt > 1) this.ledger.retries += 1;
-        text = await this.ask(worker, workerPrompt(plan, task, worker, resolved, problems, problems.length ? current : [], { context: openContext, files: existing }, this.skills(task, worker, "work")), { taskId: task.id, kind: "worker", attempt, model: task.model });
+        text = await this.ask(worker, withComputer(workerPrompt(plan, task, worker, resolved, problems, problems.length ? current : [], { context: openContext, files: existing }, this.skills(task, worker, "work")), this.o.computer?.describe(worker.agentKey)), { taskId: task.id, kind: "worker", attempt, model: task.model });
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
@@ -246,6 +249,7 @@ export class TeamRun {
       });
       for (const f of saved) this.written.set(f.path.toLowerCase(), f);
       this.o.emit({ type: "files", taskId: task.id, files: saved });
+      this.o.computer?.delivered(task.id, worker.agentKey, worker.name, saved.map((f) => f.path));
       const observed = [`Delivered ${saved.map((f) => f.path).join(", ")}: the expected files, none empty, no others.`];
       const brief = completeBrief(parseBrief(text, task.id, plan.tasks.map((t) => t.id)), task.id, summary, saved.map((f) => f.path), observed);
       this.outputs.set(task.id, { title: task.title, role: task.role, summary: brief.summary, files: saved.map((f) => f.path), brief });
@@ -265,7 +269,16 @@ export class TeamRun {
           ...(attempt > 1 ? [`This is attempt ${attempt}; the problems found last time were sent to the author.`] : []),
           "No code was run: agents cannot run tools in this version, so any test results in the author's brief are agent-reported.",
         ];
-        reviewText = await this.ask(reviewer, reviewPrompt(plan, task, reviewer, worker, changes, resolved, checks, brief, this.skills(task, reviewer, "review")), { taskId: task.id, kind: "review", attempt });
+        const reviewBase = withComputer(reviewPrompt(plan, task, reviewer, worker, changes, resolved, checks, brief, this.skills(task, reviewer, "review")), this.o.computer?.describe(reviewer.agentKey));
+        reviewText = await this.ask(reviewer, reviewBase, { taskId: task.id, kind: "review", attempt });
+        // A reviewer with computer access may read the checkout or run an approved check, then review.
+        for (let round = 0; round < 2 && this.o.computer; round += 1) {
+          const wants = parseNeeds(reviewText).filter((n) => n.kind === "computer" || n.kind === "check");
+          if (!wants.length) break;
+          const answers: string[] = [];
+          for (const need of wants) answers.push(await this.computerNeed(task, reviewer, need));
+          reviewText = await this.ask(reviewer, `${reviewBase}\n\n## What you asked for\n${answers.join("\n\n")}\n\nNow give your review.`, { taskId: task.id, kind: "review", attempt });
+        }
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
@@ -329,6 +342,10 @@ export class TeamRun {
         continue;
       }
       asked.add(key);
+      if (need.kind === "computer" || need.kind === "check") {
+        resolved.provided.push(await this.computerNeed(task, worker, need));
+        continue;
+      }
       const r = resolveNeed(plan, task, need, workspace, briefs, this.limits.contextChars);
       if (r.kind === "provided") resolved.provided.push(`You asked for ${r.label}${need.why ? ` (${need.why})` : ""}:\n${r.content}`);
       else if (r.kind === "refused") {
@@ -349,6 +366,19 @@ export class TeamRun {
       }
     }
     return blockers.length ? this.escalate(task, blockers.join(" ")) : null;
+  }
+
+  // A read of a granted folder or an approved check. Without access it is refused and noted; the
+  // permission is checked by main/access at this moment, so a revoke during the run applies at once.
+  private async computerNeed(task: PlanTask, agent: TeamAgent, need: ContextNeed): Promise<string> {
+    const gate = this.o.computer;
+    const r = !gate ? { ok: false as const, message: "No computer access in this project." }
+      : need.kind === "check" ? await gate.check(agent.agentKey, agent.name, need.ref)
+      : gate.read(agent.agentKey, agent.name, need.ref);
+    if (this.stopped) throw new Stopped();
+    if (r.ok) return `You asked for ${r.label}${need.why ? ` (${need.why})` : ""}:\n${r.content}`;
+    this.notices.push(`Task ${task.id}: ${r.message}`);
+    return `Not given: ${r.message}`;
   }
 
   // Shown in the run card and the Manager chat: what the task needs from the user or the Manager.
@@ -416,4 +446,9 @@ export class TeamRun {
     const totals = this.ledger.totals();
     this.o.emit({ type: "run-finished", status, summary, files: [...this.written.values()], calls: this.calls, usage: { inputTokens: totals.inputTokens, outputTokens: totals.outputTokens }, totals });
   }
+}
+
+// The agent's computer access, after its prompt (nothing when it has none in this project).
+function withComputer(prompt: string, access: string | null | undefined): string {
+  return access ? `${prompt}\n\n${access}` : prompt;
 }
