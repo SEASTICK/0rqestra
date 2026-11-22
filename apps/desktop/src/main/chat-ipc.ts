@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { app, clipboard, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { ChatService } from "./chat-service";
-import { AttachmentStore } from "./attachments";
+import { AttachmentStore, LIMITS } from "./attachments";
+import { inside, listFiles, projectWorkspace } from "./team/workspace";
 import { ClaudeCodeAdapter } from "./providers/claude-code";
 import { CodexAdapter } from "./providers/codex";
 import { toolEnvironment } from "./providers/tool-env";
@@ -59,6 +60,22 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
   ipcMain.handle("chat:attach", (event, payload: unknown) => {
     guard(event);
     return store.add(payload);
+  });
+  // The + menu: the project's files, and one of them attached like a file the user picked. Only files inside
+  // the project's folder, never through a link (workspace.ts inside()).
+  ipcMain.handle("chat:project-files", (event, projectId: unknown) => {
+    guard(event);
+    if (typeof projectId !== "string") throw new Error("Invalid project id.");
+    return listFiles(projectWorkspace(app.getPath("userData"), projectId), 200);
+  });
+  ipcMain.handle("chat:attach-project-file", (event, payload: unknown) => {
+    guard(event);
+    const v = (payload ?? {}) as Record<string, unknown>;
+    if (typeof v.projectId !== "string" || typeof v.path !== "string") throw new Error("Invalid file.");
+    const file = inside(projectWorkspace(app.getPath("userData"), v.projectId), v.path);
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.size > LIMITS.pdf) throw new Error("This file cannot be attached.");
+    return store.add({ name: v.path.split("/").pop(), data: new Uint8Array(fs.readFileSync(file)) });
   });
   // Copy a code block from the chat.
   ipcMain.handle("chat:copy", (event, text: unknown) => {

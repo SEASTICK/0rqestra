@@ -76,6 +76,8 @@ export type FailureReason =
 
 export type ChatEvent =
   | { type: "started"; model: string | null }
+  // "Auto" chose the tool and model for this message (sent once, before the reply).
+  | { type: "routed"; provider: ProviderId; model: string | null; reason: string }
   | { type: "delta"; text: string }
   | { type: "completed"; text: string; usage: Usage | null; limits: RateLimit[] }
   | { type: "cancelled"; text: string }

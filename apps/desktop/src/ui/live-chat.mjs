@@ -14,7 +14,7 @@ export function readyProviders(statuses) {
 export function readTarget(storage) {
   try {
     const v = JSON.parse(storage.getItem(TARGET_KEY));
-    if (v && PROVIDERS.includes(v.provider)) {
+    if (v && (PROVIDERS.includes(v.provider) || v.provider === 'auto')) {
       return { provider: v.provider, model: typeof v.model === 'string' ? v.model : null, effort: typeof v.effort === 'string' ? v.effort : null };
     }
   } catch {
@@ -33,11 +33,16 @@ export function saveTarget(storage, target) {
 
 // What will actually answer: the chosen tool if it is ready, with the chosen model if it still
 // exists (otherwise the tool's default), and the chosen effort only if that model supports it.
+const TOOL_NAMES = { claude: 'Claude Code', codex: 'Codex' };
+
 export function effectiveTarget(target, statuses) {
-  // Nothing chosen yet but a tool is connected: use it (Claude Code first), with Auto.
+  const ready = readyProviders(statuses);
+  // "Auto" as the tool: the app picks the chatbot and its level per message (main/chat-service.ts pickTool).
+  if (target?.provider === 'auto') return ready.length ? { provider: 'auto', model: 'auto', effort: null, name: 'Auto', modelLabel: 'Auto' } : NO_TOOL;
+  // Nothing chosen yet: Auto when both tools are connected, else the one that is, with Auto for its level.
   if (!target || !PROVIDERS.includes(target.provider)) {
-    const ready = readyProviders(statuses);
-    const first = ready.find((s) => s.provider === 'claude') || ready[0];
+    if (ready.length > 1) return effectiveTarget({ provider: 'auto' }, statuses);
+    const first = ready[0];
     return first ? effectiveTarget({ provider: first.provider, model: 'auto', effort: null }, statuses) : NO_TOOL;
   }
   const status = readyProviders(statuses).find((s) => s.provider === target.provider);
@@ -94,6 +99,8 @@ export function newAssistant(id, target) {
 export function applyChatEvent(message, event) {
   switch (event && event.type) {
     case 'started': return { ...message, model: event.model || message.model };
+    // Auto chose the chatbot and level for this message.
+    case 'routed': return { ...message, routed: true, provider: event.provider, providerName: TOOL_NAMES[event.provider] || event.provider, model: event.model || message.model, routedReason: event.reason || null };
     case 'delta': return { ...message, text: message.text + event.text };
     case 'completed': return { ...message, text: event.text || message.text, status: 'done', usage: event.usage || null, limits: event.limits || [] };
     case 'cancelled': return { ...message, text: event.text || message.text, status: 'stopped' };

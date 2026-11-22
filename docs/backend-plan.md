@@ -314,6 +314,22 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-22: Auto picks the chatbot, the + menu, a sharp tree.**
+- The chatbot picker has **Auto** (the default when both tools are connected): for each message the main
+  process picks the connected tool (`pickTool`: code and errors to Codex; writing, explaining, studying,
+  planning and design to Claude; a PDF to Claude, which can read it) and then the level (`autoModel`). The
+  reply says "Auto → Codex · <model>". Choosing Claude Code or Codex by hand works as before, with its own
+  Auto or a fixed model.
+- The **+** in the message box opens a menu like Claude's: Add files or photos (also Ctrl+U), Add a file
+  from this project (the project's files, read by the main process from its folder only), New chat, and
+  Project memory.
+- The tree was blurry when zoomed in: its layer had `will-change: transform`, so Chromium drew it once and
+  scaled the picture. Without it the text is drawn again at every zoom.
+- Verified with unit tests and in the real Electron app with the stand-in tools (a code question went to
+  Codex and a writing request to Claude; the menu, Ctrl+U and a project file; the tree at 145 %).
+  Not related to this change: Edwin's test "stops a running check when access is revoked" times out in
+  this container (also on main without these changes) and passes in CI.
+
 **Status 2026-11-20: the Manager leads, the team builds; the chat no longer pulls you down.**
 - Found with Philip's own run: in a project whose tree had only the Manager, the window sent an empty team,
   which was taken as "no team" (as in Ask anything), so the Manager got no planning instructions and wrote

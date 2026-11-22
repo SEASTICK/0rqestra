@@ -211,3 +211,32 @@ describe("the Manager builds with its team, not in the chat", () => {
     expect(general).not.toContain("no agents yet");
   });
 });
+
+describe("Auto picks the tool", () => {
+  it("sends code to Codex, writing and PDFs to Claude, and only to connected tools", async () => {
+    const { pickTool } = await import("./chat-service.js");
+    const both = ["claude", "codex"] as const;
+    expect(pickTool("Varför får jag TypeError i min funktion?", [], [...both]).provider).toBe("codex");
+    expect(pickTool("Fixa buggen:\n```js\nx()\n```", [], [...both]).provider).toBe("codex");
+    expect(pickTool("Skriv ett mejl till min lärare", [], [...both]).provider).toBe("claude");
+    expect(pickTool("Sammanfatta kapitlet", [{ kind: "pdf" }], [...both]).provider).toBe("claude");
+    expect(pickTool("Debug this code", [], ["claude"]).provider).toBe("claude");
+    expect(pickTool("Skriv en dikt", [], ["codex"]).provider).toBe("codex");
+  });
+
+  it("tells the window which tool and model it chose, then answers with that tool", async () => {
+    const used: string[] = [];
+    const make = (id: "claude" | "codex") => ({ id, status: async () => ({ provider: id, name: id, installed: true, version: "1", signedIn: true, plan: null, subscription: true, models: id === "claude" ? [{ id: "sonnet" }, { id: "haiku" }] : [{ id: "gpt-6.2-sol", isDefault: true }, { id: "gpt-6.2-mini" }], limits: [], problem: null }), chat: (r: { model: string | null }) => {
+      used.push(`${id}:${r.model}`);
+      return { events: (async function* () { yield { type: "completed", text: "ok", usage: null, limits: [] }; })(), stop() {} };
+    } });
+    const { ChatService } = await import("./chat-service.js");
+    const service = new ChatService({ claude: make("claude"), codex: make("codex") } as never, () => "/tmp");
+    await service.providers(true);
+    const events: unknown[] = [];
+    await new Promise<void>((resolve) => service.start({ ...valid, provider: "auto", model: "auto", text: "Varför kraschar min python-funktion?" }, (_id, e) => { events.push(e); if (e.type === "completed") resolve(); }));
+    // A short code question: Codex, with its light model.
+    expect(events[0]).toEqual({ type: "routed", provider: "codex", model: "gpt-6.2-mini", reason: "code" });
+    expect(used).toEqual(["codex:gpt-6.2-mini"]);
+  });
+});

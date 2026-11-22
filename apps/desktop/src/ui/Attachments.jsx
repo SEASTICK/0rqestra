@@ -1,7 +1,7 @@
 // Files and images in the chat: the + button, drop and paste, the chips above the message box, and the
 // attachments shown in a sent message. The bytes go to the main process, which checks and keeps them
 // (main/attachments.ts); the window keeps only a small picture of each image.
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export const MAX_ATTACHMENTS = 6;
 const size = (n) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : n >= 1000 ? `${Math.round(n / 1000)} kB` : `${n} B`);
@@ -40,12 +40,53 @@ export async function attachFiles(files, room) {
   return { kept, errors };
 }
 
-export function AttachButton({ disabled, onFiles, Icon }) {
+const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,application/pdf,text/*,.md,.csv,.json,.js,.ts,.jsx,.tsx,.py,.html,.css,.sql,.yaml,.yml,.xml,.txt';
+
+// The + in the message box opens a small menu, like Claude's: add files or photos (also Ctrl+U), add one of
+// the project's own files, start a new chat, or open the project's memory.
+export function AttachMenu({ disabled, onFiles, onProjectFile, projectId, onNewChat, onMemory, Icon }) {
   const input = useRef(null);
-  return <>
-    <button type="button" className="attach-button" title="Add files or photos" aria-label="Add files or photos" disabled={disabled} onClick={() => input.current?.click()}><Icon name="plus" size={17} /></button>
-    <input ref={input} type="file" multiple hidden accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/*,.md,.csv,.json,.js,.ts,.jsx,.tsx,.py,.html,.css,.sql,.yaml,.yml,.xml,.txt" onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ''; if (files.length) onFiles(files); }} />
-  </>;
+  const box = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [files, setFiles] = useState(null);
+  useEffect(() => {
+    const key = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'u' && !disabled) { e.preventDefault(); setOpen(false); input.current?.click(); }
+      if (e.key === 'Escape') { setOpen(false); setFiles(null); }
+    };
+    const away = (e) => { if (box.current && !box.current.contains(e.target)) { setOpen(false); setFiles(null); } };
+    window.addEventListener('keydown', key);
+    window.addEventListener('mousedown', away);
+    return () => { window.removeEventListener('keydown', key); window.removeEventListener('mousedown', away); };
+  }, [disabled]);
+  const showProjectFiles = async () => {
+    try { setFiles(await window.orqestra?.chat?.projectFiles?.(projectId) || []); } catch { setFiles([]); }
+  };
+  const choose = (fn) => { setOpen(false); setFiles(null); fn?.(); };
+  return <span className="attach-menu-wrap" ref={box}>
+    <button type="button" className={`attach-button ${open ? 'is-open' : ''}`} title="Add files and more" aria-label="Add files and more" aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => { setOpen(!open); setFiles(null); }}><Icon name="plus" size={17} /></button>
+    <input ref={input} type="file" multiple hidden accept={ACCEPT} onChange={(e) => { const picked = [...(e.target.files || [])]; e.target.value = ''; if (picked.length) onFiles(picked); }} />
+    {open && <div className="attach-menu" role="menu">
+      {files === null ? <>
+        <button type="button" role="menuitem" onClick={() => choose(() => input.current?.click())}><Icon name="clip" size={16} /><span>Add files or photos</span><kbd>Ctrl+U</kbd></button>
+        {projectId && <button type="button" role="menuitem" onClick={showProjectFiles}><Icon name="folder" size={16} /><span>Add a file from this project</span><span className="attach-menu-more">›</span></button>}
+        <div className="attach-menu-line" />
+        {onNewChat && <button type="button" role="menuitem" onClick={() => choose(onNewChat)}><Icon name="chat" size={16} /><span>New chat</span></button>}
+        {onMemory && <button type="button" role="menuitem" onClick={() => choose(onMemory)}><Icon name="spark" size={16} /><span>Project memory</span></button>}
+      </> : <>
+        <button type="button" role="menuitem" className="attach-menu-back" onClick={() => setFiles(null)}>‹ <span>Files in this project</span></button>
+        <div className="attach-menu-files">
+          {files.length === 0 && <p>No files yet. The team writes them here.</p>}
+          {files.map((f) => <button type="button" role="menuitem" key={f} title={f} onClick={() => choose(() => onProjectFile(f))}><Icon name="code" size={14} /><span>{f}</span></button>)}
+        </div>
+      </>}
+    </div>}
+  </span>;
+}
+
+// Kept for places that only add files.
+export function AttachButton(props) {
+  return <AttachMenu {...props} />;
 }
 
 function Chip({ a, onRemove, Icon }) {

@@ -17,7 +17,10 @@ describe('chat target', () => {
   });
 
   it('uses a connected tool, with Auto, when none was chosen (or the old Demo was)', () => {
-    expect(effectiveTarget({ provider: 'none' }, [codex, claude])).toMatchObject({ provider: 'claude', model: 'auto' });
+    // Both connected: Auto picks the chatbot per message. One connected: that one, with Auto for its level.
+    expect(effectiveTarget({ provider: 'none' }, [codex, claude])).toMatchObject({ provider: 'auto', model: 'auto', name: 'Auto' });
+    expect(effectiveTarget({ provider: 'none' }, [claude])).toMatchObject({ provider: 'claude', model: 'auto' });
+    expect(effectiveTarget({ provider: 'auto' }, [])).toBe(NO_TOOL);
     expect(effectiveTarget({ provider: 'demo' }, [codex])).toMatchObject({ provider: 'codex', model: 'auto' });
   });
 
@@ -749,5 +752,14 @@ describe('a starting team for a project with only its Manager', () => {
     expect(starterTeam(lone, []).changed).toEqual([]);
     const { graph } = starterTeam(lone, [claude]);
     expect(starterTeam(graph, [claude]).changed).toEqual([]);
+  });
+});
+
+describe('Auto picks the chatbot', () => {
+  it('shows which chatbot and level answered', () => {
+    let m = newAssistant('a1', { provider: 'auto', model: 'auto', name: 'Auto' });
+    m = applyChatEvent(m, { type: 'routed', provider: 'codex', model: 'gpt-6.2-mini', reason: 'code' });
+    expect(m).toMatchObject({ routed: true, provider: 'codex', providerName: 'Codex', model: 'gpt-6.2-mini', routedReason: 'code' });
+    expect(readTarget({ getItem: () => JSON.stringify({ provider: 'auto', model: 'auto' }) })).toMatchObject({ provider: 'auto' });
   });
 });

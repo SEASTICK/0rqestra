@@ -13,8 +13,9 @@ export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
   const set = (patch) => onChange({ provider: target.provider, model: target.model, effort: target.effort, ...patch });
   return (
     <span className="chat-target">
-      <select aria-label="Who answers" className="chat-select" value={target.provider} onChange={(e) => set({ provider: e.target.value, model: 'auto', effort: null })}>
-        {(!current || ready.length === 0) && <option value="none">{ready.length ? 'Choose a tool…' : 'No tool connected'}</option>}
+      <select aria-label="Who answers" className="chat-select" value={target.provider} title={target.provider === 'auto' ? 'Auto picks the chatbot and its level for each message' : undefined} onChange={(e) => set({ provider: e.target.value, model: 'auto', effort: null })}>
+        {ready.length === 0 && <option value="none">No tool connected</option>}
+        {ready.length > 0 && <option value="auto">Auto</option>}
         {ready.map((s) => <option key={s.provider} value={s.provider}>{s.name}</option>)}
       </select>
       {current && current.models.length > 0 && (
@@ -37,7 +38,9 @@ export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
 export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPlan, renderPlanRequest }) {
   // "Auto" shows which model it chose once the tool says so.
   const modelName = m.model && m.model !== 'default' && m.model !== 'auto' ? m.model : null;
-  const label = [m.providerName, m.auto ? `Auto${modelName ? ` → ${modelName}` : ''}` : modelName, m.effort].filter(Boolean).join(' · ');
+  const label = m.routed
+    ? `Auto → ${[m.providerName, modelName].filter(Boolean).join(' · ')}`
+    : [m.providerName, m.auto ? `Auto${modelName ? ` → ${modelName}` : ''}` : modelName, m.effort].filter(Boolean).join(' · ');
   const usage = m.status === 'done' ? usageLine(m) : '';
   // Facts saved to project memory are not part of the reply's text.
   const remembered = m.status === 'done' ? parseRemember(m.text) : { text: m.text, facts: [] };
