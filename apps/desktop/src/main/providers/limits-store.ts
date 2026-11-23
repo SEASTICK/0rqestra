@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { ChatEvent, ChatHandle, ChatRequest, ProviderAdapter, ProviderId, ProviderStatus, RateLimit } from "./types";
 
 // The last usage windows each tool reported in a reply. Claude Code reports them only while it
@@ -8,8 +9,39 @@ export class LimitsStore {
 
   constructor(private readonly now: () => number = Date.now) {}
 
+  private file: string | null = null;
+
+  // Keeps the last values on disk, so Claude's percentages are still there after a restart (Claude Code
+  // reports them only during a reply). A missing or damaged file just means there is nothing yet.
+  persistTo(file: string): void {
+    this.file = file;
+    try {
+      const saved = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, { limits?: unknown; at?: unknown }>;
+      for (const id of ["claude", "codex"] as const) {
+        const v = saved[id];
+        if (v && Array.isArray(v.limits) && typeof v.at === "number" && !this.latest.has(id)) {
+          const limits = (v.limits as RateLimit[]).filter((l) => l && typeof l.label === "string" && typeof l.usedPercent === "number" && Number.isFinite(l.usedPercent));
+          if (limits.length) this.latest.set(id, { limits, at: v.at });
+        }
+      }
+    } catch {
+      /* nothing saved yet */
+    }
+  }
+
   record(provider: ProviderId, limits: RateLimit[]): void {
-    if (limits.length) this.latest.set(provider, { limits, at: this.now() });
+    if (!limits.length) return;
+    const old = this.latest.get(provider)?.limits ?? [];
+    // A reply can report only the window that limits right now: keep the other window's last value.
+    const merged = [...old.filter((o) => !limits.some((l) => l.label === o.label)), ...limits];
+    this.latest.set(provider, { limits: merged, at: this.now() });
+    if (this.file) {
+      try {
+        fs.writeFileSync(this.file, JSON.stringify(Object.fromEntries(this.latest)));
+      } catch {
+        /* the values are still shown for this run */
+      }
+    }
   }
 
   get(provider: ProviderId): { limits: RateLimit[]; at: number } | null {

@@ -18,6 +18,7 @@ export const limitsStore = new LimitsStore();
 let service: ChatService | null = null;
 
 export function createAdapters(): { claude: ClaudeCodeAdapter; codex: CodexAdapter } {
+  limitsStore.persistTo(path.join(app.getPath("userData"), "usage-limits.json"));
   return {
     claude: recordLimits(new ClaudeCodeAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), limitsStore),
     codex: recordLimits(new CodexAdapter(), limitsStore),

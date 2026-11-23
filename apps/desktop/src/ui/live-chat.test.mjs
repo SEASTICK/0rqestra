@@ -763,3 +763,14 @@ describe('Auto picks the chatbot', () => {
     expect(readTarget({ getItem: () => JSON.stringify({ provider: 'auto', model: 'auto' }) })).toMatchObject({ provider: 'auto' });
   });
 });
+
+describe('The Manager can be set to Auto', () => {
+  const manager = { role: 'Manager', ...nodeFieldsFor({ provider: 'auto' }, null, 'Manager') };
+  it('is Auto only for the Manager', () => {
+    expect(manager.agent).toEqual({ tool: 'auto', model: 'auto', effort: null });
+    expect(agentTarget(manager)).toEqual({ provider: 'auto', model: 'auto', effort: null });
+    expect(isRealAgent(manager)).toBe(true);
+    expect(nodeFieldsFor({ provider: 'auto' }, null, 'Builder').agent).toBeNull();
+    expect(isRealAgent({ role: 'Builder', agent: { tool: 'auto' } })).toBe(false);
+  });
+});

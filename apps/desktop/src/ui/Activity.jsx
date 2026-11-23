@@ -51,20 +51,23 @@ const resetText = (ms) => {
 };
 
 // The sidebar card: what is left of the 5-hour and weekly windows of Claude and ChatGPT.
-export function UsagePanel({ statuses, onAccounts, Icon }) {
+export function UsagePanel({ statuses, onAccounts, onCheck, Icon }) {
   const rows = usageRows(statuses);
+  const [checking, setChecking] = useState(false);
+  const check = () => { if (checking) return; setChecking(true); onCheck(() => setChecking(false)); };
   return <div className="connection-card usage-card">
     <div className="usage-head"><span className="connection-icon"><Icon name="link" size={15} /></span><strong>Usage left</strong></div>
     {rows.length === 0 && <p>Connect Claude Code or Codex to see how much of your subscription is left.</p>}
     {rows.map((row) => <div key={row.provider} className="usage-tool">
       <div className="usage-tool-name"><span>{row.name}</span>{row.at && <small title="Claude Code reports this during a reply">as of {new Date(row.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>}</div>
       {row.windows.length === 0
-        ? <small className="usage-unknown">{row.provider === 'claude' ? 'Shown after the next reply from Claude' : 'Not reported yet'}</small>
+        ? <small className="usage-unknown">{row.provider === 'claude' ? 'Not known yet. Claude reports it when it answers.' : 'Not reported yet'}</small>
         : row.windows.map((w) => <div key={w.name} className={`usage-window ${w.left <= 10 ? 'is-low' : w.left <= 30 ? 'is-warn' : ''}`} title={w.resets ? resetText(w.resets) : undefined}>
           <span className="usage-window-name">{w.name}</span>
           <i className="usage-bar"><b style={{ width: `${w.left}%` }} /></i>
           <span className="usage-left">{w.left}%</span>
         </div>)}
+      {row.provider === 'claude' && onCheck && <button type="button" className="usage-check" disabled={checking} onClick={check} title="Sends one tiny message to Claude to read how much is left. It uses a very small part of your plan.">{checking ? 'Checking…' : 'Check now'}</button>}
     </div>)}
     <button onClick={onAccounts}>Manage accounts <Icon name="chevron" size={12} /></button>
   </div>;

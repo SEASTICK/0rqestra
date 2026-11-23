@@ -624,3 +624,6 @@ body.pane-resizing iframe,body.pane-resizing webview{pointer-events:none}
 .attach-menu-files{max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:1px}
 .attach-menu-files>button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
 .attach-menu-files p{margin:6px 10px 8px;font-size:13px;color:var(--shell-muted)}
+
+.usage-check { margin-top: 6px; align-self: flex-start; font-size: 12px; padding: 3px 10px; border-radius: 8px; border: 1px solid var(--line, #d8d8d8); background: var(--surface, #fff); color: inherit; cursor: pointer; }
+.usage-check:disabled { opacity: .6; cursor: default; }

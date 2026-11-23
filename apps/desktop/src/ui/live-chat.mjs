@@ -139,16 +139,22 @@ export const FAILURE_HELP = {
 // yet: it keeps its role and place in the tree, and cannot work until one is chosen. `provider` and
 // `model` on a node are display text for the chosen tool.
 
+// The Manager (and only the Manager) can be set to Auto: 0rqestra then picks the chatbot and level for each
+// message from the task, the same as the Auto choice in the chat.
+export const isAutoManager = (node) => Boolean(node && node.role === 'Manager' && node.agent && node.agent.tool === 'auto');
+
 export function isRealAgent(node) {
-  return Boolean(node && node.agent && (node.agent.tool === 'claude' || node.agent.tool === 'codex'));
+  return Boolean(node && node.agent && (node.agent.tool === 'claude' || node.agent.tool === 'codex')) || isAutoManager(node);
 }
 
 export function agentTarget(node) {
+  if (isAutoManager(node)) return { provider: 'auto', model: 'auto', effort: null };
   return isRealAgent(node) ? { provider: node.agent.tool, model: node.agent.model ?? null, effort: node.agent.effort ?? null } : null;
 }
 
 // The fields a node gets for a chosen target. `status` is the tool's entry from AI accounts.
-export function nodeFieldsFor(target, status) {
+export function nodeFieldsFor(target, status, role) {
+  if (target && target.provider === 'auto' && role === 'Manager') return { agent: { tool: 'auto', model: 'auto', effort: null }, provider: 'Auto', model: 'Picks the best for each task' };
   if (!target || !PROVIDERS.includes(target.provider) || !status) return { agent: null, provider: undefined, model: undefined };
   const model = (status.models || []).find((m) => m.id === target.model);
   return {
