@@ -196,3 +196,8 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .git-box textarea{width:100%;font:inherit;font-size:13.5px;padding:8px 10px;border-radius:9px;border:1px solid var(--shell-line);background:var(--shell-bg);color:var(--shell-text);resize:vertical}
 .git-done{margin:0;font-size:13px}
 .git-done code{font-family:ui-monospace,Consolas,monospace;background:var(--shell-hover);padding:1px 5px;border-radius:5px}
+.modal{background:var(--shell-card);border-color:var(--shell-line)}
+.modal:has(.access-page){width:min(780px,94vw)}
+.access-page{min-width:0;max-height:none;overflow:visible}
+.access-page .cap-list li{flex-wrap:wrap;gap:8px}
+.access-page .teams-inline select{flex:1;min-width:0}
