@@ -154,3 +154,36 @@ html,body,.application,.application>.titlebar,.workspace,.main-area{background:v
 .usage-check{background:transparent;border-color:var(--shell-line);color:var(--shell-text)}
 .usage-check:hover{background:var(--shell-hover)}
 button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid light-dark(#c9644299,#e0896a99);outline-offset:2px}
+
+/* The sidebar, simple like Claude's: New chat, Teams, then your chats and your projects; the rest is in
+   the profile menu at the bottom. */
+.nav-simple{gap:2px;padding-top:18px}
+.nav-simple .nav-brand{margin-bottom:12px}
+.nav-new-chat{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border-radius:9px;font-size:14px;font-weight:500;color:var(--shell-text);margin-bottom:2px}
+.nav-new-chat:hover{background:var(--shell-hover);filter:none}
+.nav-new-icon{width:24px;height:24px;border-radius:50%;background:var(--look-orange);color:#fff;display:inline-flex;align-items:center;justify-content:center;margin-left:-2px}
+.nav-simple .nav-item{padding:8px 11px}
+.nav-scroll{flex:1;min-height:0;overflow-y:auto;margin:8px -6px 0;padding:0 6px;scrollbar-width:thin}
+.nav-simple .nav-section-heading{display:flex;align-items:center;justify-content:space-between;margin:14px 0 4px;padding:0 10px;min-height:26px}
+.nav-simple .nav-section-label{font-size:12px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--shell-muted)}
+.nav-chats{display:flex;flex-direction:column;gap:1px}
+.nav-chat{display:flex;align-items:center;border-radius:8px}
+.nav-chat:hover,.nav-chat.is-active{background:var(--shell-hover)}
+.nav-chat.is-active{background:var(--shell-active)}
+.nav-chat-open{flex:1;min-width:0;text-align:left;padding:7px 10px;font-size:13.5px;color:var(--shell-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-chat-open:hover{filter:none}
+.nav-chat-remove{width:24px;height:24px;margin-right:4px;border-radius:6px;color:var(--shell-muted);font-size:16px;opacity:0}
+.nav-chat:hover .nav-chat-remove{opacity:1}
+.nav-chat-remove:hover{background:var(--shell-active);color:var(--shell-text)}
+.nav-empty{margin:2px 10px 6px;font-size:12.5px;color:var(--shell-muted);text-align:left}
+.nav-empty-button{padding:0;line-height:1.45}
+.nav-empty-button:hover{color:var(--shell-text);filter:none}
+.nav-simple .project-button{font-size:13.5px}
+.nav-simple .nav-bottom{margin-top:8px;padding-top:8px;border-top:1px solid var(--shell-line)}
+.profile-menu{max-height:calc(100vh - 80px);overflow-y:auto}
+.profile-usage{padding:2px 8px 8px}
+.profile-usage .usage-card{margin:0;border:0;padding:6px 4px;background:transparent}
+.profile-usage .usage-head{display:none}
+.profile-low{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--look-orange);margin-left:6px}
+.profile-item .nav-badge{margin-left:auto}
+.profile-usage .usage-card>button:last-child{display:none}

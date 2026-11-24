@@ -50,6 +50,9 @@ const resetText = (ms) => {
   return `resets ${sameDay ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`;
 };
 
+// True when a window of a tool has 10 % or less left (a dot on the profile button says so).
+export const lowUsage = (statuses) => usageRows(statuses).some((r) => r.windows.some((w) => w.left <= 10));
+
 // The sidebar card: what is left of the 5-hour and weekly windows of Claude and ChatGPT.
 export function UsagePanel({ statuses, onAccounts, onCheck, Icon }) {
   const rows = usageRows(statuses);

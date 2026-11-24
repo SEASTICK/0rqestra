@@ -46,11 +46,12 @@ function useDismiss(open, onClose, ref) {
   }, [open, onClose, ref]);
 }
 
-export function ProfileMenu({ name, version, updates, theme, onTheme, onSettings, onHelp, account = null, accountAvailable = false, onSignOut, onSignIn }) {
+export function ProfileMenu({ name, version, updates, theme, onTheme, onSettings, onHelp, account = null, accountAvailable = false, onSignOut, onSignIn, usage = null, lowUsage = false, onAccounts, onFriends, friendsWaiting = 0 }) {
   const [open, setOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const ref = useRef(null);
-  const close = () => { setOpen(false); setThemeOpen(false); };
+  const close = () => { setOpen(false); setThemeOpen(false); setUsageOpen(false); };
   useDismiss(open, close, ref);
   const status = updateLabel(updates);
   const ready = updates.snapshot?.status === 'ready';
@@ -65,6 +66,10 @@ export function ProfileMenu({ name, version, updates, theme, onTheme, onSettings
           {accountAvailable && (account
             ? <button role="menuitem" className="profile-item" onClick={run(onSignOut)}><ShellIcon name="user"/> Sign out</button>
             : <button role="menuitem" className="profile-item" onClick={run(onSignIn)}><ShellIcon name="user"/> Sign in or create account</button>)}
+          {usage && <button role="menuitem" className="profile-item" aria-expanded={usageOpen} onClick={() => setUsageOpen(!usageOpen)}><ShellIcon name="refresh"/> Usage left {lowUsage && <i className="profile-low" title="Little left"/>}<span className="profile-value"><ShellIcon name="chevron" size={13}/></span></button>}
+          {usage && usageOpen && <div className="profile-usage">{usage}</div>}
+          {onAccounts && <button role="menuitem" className="profile-item" onClick={run(onAccounts)}><ShellIcon name="user"/> AI accounts</button>}
+          {onFriends && <button role="menuitem" className="profile-item" onClick={run(onFriends)}><ShellIcon name="user"/> Friends {friendsWaiting > 0 && <span className="nav-badge" aria-label={`${friendsWaiting} waiting for your answer`}>{friendsWaiting}</span>}</button>}
           <button role="menuitem" className="profile-item" onClick={run(() => onSettings('general'))}><ShellIcon name="settings"/> Settings</button>
           <div className="profile-separator"/>
           <button role="menuitem" className="profile-item" aria-expanded={themeOpen} onClick={() => setThemeOpen(!themeOpen)}><ShellIcon name={THEME_ICON[theme]}/> Appearance <span className="profile-value">{THEME_LABEL[theme]} <ShellIcon name="chevron" size={13}/></span></button>
@@ -82,7 +87,7 @@ export function ProfileMenu({ name, version, updates, theme, onTheme, onSettings
         </div>
       )}
       <button className={`profile-button ${open ? 'is-open' : ''}`} aria-haspopup="menu" aria-expanded={open} onClick={() => (open ? close() : setOpen(true))}>
-        <span className="profile-avatar">{((account ? account.name : name).trim().replace(/^@/, '')[0] || '0').toUpperCase()}{ready && <i className="profile-dot" title="Update ready"/>}</span>
+        <span className="profile-avatar">{((account ? account.name : name).trim().replace(/^@/, '')[0] || '0').toUpperCase()}{ready && <i className="profile-dot" title="Update ready"/>}{!ready && friendsWaiting > 0 && <i className="profile-dot" title="A friend waits for your answer"/>}</span>
         <span className="profile-text"><strong>{account ? account.name : name}</strong><span>{ready ? 'Update ready' : account ? account.email : 'Personal'}</span></span>
         <span className="profile-more" aria-hidden="true">···</span>
       </button>

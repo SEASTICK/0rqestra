@@ -314,6 +314,11 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-24: a simple sidebar.** Like Claude's: New chat and Teams at the top, then Chats (the Ask
+anything conversations, reachable from anywhere in the app) and Projects (the open project shows its chats
+and its team tree). Usage left, AI accounts and Friends moved to the profile menu; a dot on the profile
+button says when a friend waits for an answer. Verified in the real Electron app with the stand-in tools.
+
 **Status 2026-11-24: the look of Claude, and paste anything.**
 - A new style sheet (`ui/look.css`, loaded last) gives the app Claude's look: a warm paper palette in light
   and dark, answers set in a serif, the user's message in a soft bubble, a rounded message box with an
