@@ -13,7 +13,7 @@ let remote: string;
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "core.hooksPath=" + path.join(dir, "none"), ...args], { cwd, encoding: "utf8" }).trim();
 
 beforeEach(() => {
-  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "orq-git-")));
+  dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "orq-git-")));
   remote = path.join(dir, "remote.git");
   repo = path.join(dir, "repo");
   fs.mkdirSync(repo);
