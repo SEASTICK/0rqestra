@@ -6,6 +6,7 @@ import { unifiedDiff } from "../team/diff";
 import { readFiles } from "../team/workspace";
 import { AccessStore, type AgentAccess } from "./access-store";
 import { AccessDenied, liveRoot, resolveForRead, writeInside } from "./paths";
+import { gitCommit, gitPush, gitState, insideGitFolder, type GitRunner, type GitState } from "./git";
 
 // The boundary where agents touch this computer. Agents never get the folders themselves: they ask
 // (a need in their answer), and this service checks the agent's permission in the project and the
@@ -22,7 +23,7 @@ export interface ComputerGate {
   delivered(taskId: string, agentKey: string | undefined, agentName: string, paths: string[]): void;
 }
 
-export interface AccessEvent { projectId: string; at: string; agent: string; action: "read" | "list" | "check" | "apply"; target: string; allowed: boolean; detail: string }
+export interface AccessEvent { projectId: string; at: string; agent: string; action: "read" | "list" | "check" | "apply" | "commit" | "push"; target: string; allowed: boolean; detail: string }
 
 interface PendingFile { path: string; agentKey: string | undefined; agentName: string; taskId: string; runId: string }
 interface Preview { id: string; projectId: string; folderId: string; at: number; items: Map<string, { hash: string | null; content: string; pending: PendingFile }> }
@@ -47,6 +48,7 @@ export class AccessService {
     private readonly onEvent: (event: AccessEvent) => void = () => {},
     // Teams: a teammate's active reservation covering one of these paths, as a message; else null.
     private readonly reservedByOthers: (projectId: string, paths: string[]) => string | null = () => null,
+    private readonly git: GitRunner | null = null,
   ) {}
 
   private record(e: Omit<AccessEvent, "at">): void {
@@ -186,6 +188,8 @@ export class AccessService {
 
   private authorIssue(projectId: string, file: PendingFile, access: AgentAccess): string | null {
     void projectId;
+    // Files in a .git folder could change the repository's settings or hooks; they are never applied.
+    if (insideGitFolder(file.path)) return "Files inside a .git folder are never applied.";
     if (!access.write) return `${file.agentName} has no write access in this project, so this file stays in the workspace.`;
     return null;
   }
@@ -224,7 +228,7 @@ export class AccessService {
     });
     this.previews.set(preview.id, preview);
     for (const [id, p] of this.previews) if (Date.now() - p.at > 30 * 60_000) this.previews.delete(id);
-    return { previewId: preview.id, folder: folder.path, items };
+    return { previewId: preview.id, folderId: folder.id, folder: folder.path, items };
   }
 
   // Applies the chosen files of a preview. Everything is checked again: the author's permission and
@@ -270,6 +274,46 @@ export class AccessService {
     }
     this.previews.delete(preview.id);
     return { applied, conflicts, blocked };
+  }
+
+  // ---- Commit and push what was applied (the user's buttons, never an agent) --------------------
+
+  private writableFolder(projectId: string, folderId: unknown) {
+    const folder = this.store.project(projectId).folders.find((f) => f.id === folderId);
+    if (!folder) throw new Error("Choose a granted folder.");
+    if (!folder.write) throw new Error(`${folder.path} does not accept changes. Allow changes there first.`);
+    if (!this.git) throw new Error("git is not available here.");
+    return { folder, git: this.git };
+  }
+
+  async gitState(projectId: string, folderId: unknown): Promise<GitState> {
+    const folder = this.store.project(projectId).folders.find((f) => f.id === folderId);
+    if (!folder || !this.git) return { repo: false, branch: null, upstream: null, ahead: 0, remote: false, problem: folder ? "git is not available here." : "Choose a granted folder." };
+    return gitState(this.git, folder.path);
+  }
+
+  async commit(projectId: string, folderId: unknown, paths: unknown, message: unknown) {
+    const { folder, git } = this.writableFolder(projectId, folderId);
+    try {
+      const r = await gitCommit(git, folder.path, paths, message);
+      this.record({ projectId, agent: "You", action: "commit", target: folder.path, allowed: true, detail: `${r.commit} on ${r.branch ?? "a detached HEAD"}` });
+      return r;
+    } catch (error) {
+      this.record({ projectId, agent: "You", action: "commit", target: folder.path, allowed: false, detail: (error as Error).message.split("\n")[0]! });
+      throw error;
+    }
+  }
+
+  async push(projectId: string, folderId: unknown) {
+    const { folder, git } = this.writableFolder(projectId, folderId);
+    try {
+      const r = await gitPush(git, folder.path);
+      this.record({ projectId, agent: "You", action: "push", target: folder.path, allowed: true, detail: `pushed ${r.branch}` });
+      return r;
+    } catch (error) {
+      this.record({ projectId, agent: "You", action: "push", target: folder.path, allowed: false, detail: (error as Error).message.split("\n")[0]! });
+      throw error;
+    }
   }
 
   forgetProject(projectId: string): void {

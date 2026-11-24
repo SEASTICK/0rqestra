@@ -3,6 +3,7 @@ import { app, dialog, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEven
 import { projectWorkspace } from "../team/workspace";
 import { AccessService } from "./access-service";
 import { AccessStore } from "./access-store";
+import { gitRunner } from "./git";
 import { useAccess } from "./registry";
 
 // Electron wiring for Project → Computer access. Requests come only from the app's window, and the
@@ -23,7 +24,7 @@ export function registerAccessIpc(
     const w = getWindow();
     if (w && !w.isDestroyed()) w.webContents.send(channel, payload);
   };
-  const service = new AccessService(new AccessStore(base()), (projectId) => projectWorkspace(base(), projectId), (event) => send("access:event", event), (projectId, paths) => teams.reservedByOthers(projectId, paths));
+  const service = new AccessService(new AccessStore(base()), (projectId) => projectWorkspace(base(), projectId), (event) => send("access:event", event), (projectId, paths) => teams.reservedByOthers(projectId, paths), gitRunner(path.join(base(), "git-no-hooks")));
   useAccess(service);
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
@@ -115,6 +116,23 @@ export function registerAccessIpc(
     guard(event);
     const id = project(projectId);
     return { result: service.apply(id, previewId, paths), view: state(id) };
+  });
+  // Commit and push what the user applied: only from these buttons, in a folder that accepts changes.
+  ipcMain.handle("access:git-state", (event, projectId: unknown, folderId: unknown) => {
+    guard(event);
+    return service.gitState(project(projectId), folderId);
+  });
+  ipcMain.handle("access:commit", async (event, projectId: unknown, folderId: unknown, paths: unknown, message: unknown) => {
+    guard(event);
+    const id = project(projectId);
+    const result = await service.commit(id, folderId, paths, message);
+    return { result, git: await service.gitState(id, folderId), view: state(id) };
+  });
+  ipcMain.handle("access:push", async (event, projectId: unknown, folderId: unknown) => {
+    guard(event);
+    const id = project(projectId);
+    const result = await service.push(id, folderId);
+    return { result, git: await service.gitState(id, folderId), view: state(id) };
   });
   ipcMain.handle("access:forget-project", (event, projectId: unknown) => {
     guard(event);

@@ -65,7 +65,45 @@ function CommandForm({ view, busy, onAdd }) {
   );
 }
 
-function ApplyChanges({ api, projectId, view, notify, onView }) {
+// After files were applied: commit exactly those files with a message (the run's goal to start with),
+// then push the branch. Only these buttons do it; agents never commit or push.
+function GitBox({ api, projectId, folderId, files, suggestion, notify, onView }) {
+  const [git, setGit] = useState(null);
+  const [message, setMessage] = useState(suggestion || 'Changes from the 0rqestra team');
+  const [done, setDone] = useState(null);
+  const [pushed, setPushed] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  useEffect(() => { let live = true; api.gitState?.(projectId, folderId).then((g) => { if (live) setGit(g); }).catch(() => {}); return () => { live = false; }; }, [projectId, folderId, done, pushed]);
+  const act = async (fn) => { setBusy(true); setError(null); try { await fn(); } catch (e) { setError(errorText(e)); } finally { setBusy(false); } };
+  if (!git) return null;
+  if (!git.repo) return git.problem ? <p className="agent-muted">{git.problem}</p> : <p className="agent-muted">This folder is not a git repository, so there is nothing to commit.</p>;
+  return <div className="git-box">
+    <div className="git-head"><strong>Commit to git</strong><span className="git-branch">{git.branch ? `on ${git.branch}` : 'no branch checked out'}</span></div>
+    {!done && files.length > 0 && <>
+      <p className="agent-muted">Commits only the {files.length === 1 ? 'file' : `${files.length} files`} you applied: {files.join(', ')}.</p>
+      <textarea aria-label="Commit message" rows={2} maxLength={5000} value={message} onChange={(e) => setMessage(e.target.value)} />
+      <div className="setup-actions"><button type="button" className="button primary-button" disabled={busy || !message.trim()} onClick={() => act(async () => {
+        const r = await api.commit(projectId, folderId, files, message);
+        setDone(r.result); setGit(r.git); onView?.(r.view);
+        notify?.(`Committed ${r.result.commit}${r.result.branch ? ` on ${r.result.branch}` : ''}.`);
+      })}>{busy ? 'Committing…' : 'Commit'}</button></div>
+    </>}
+    {done && <p className="git-done">Committed <code>{done.commit}</code>{done.branch ? ` on ${done.branch}` : ''}.</p>}
+    {(done || git.ahead > 0) && !pushed && (git.upstream || git.remote) && git.branch && <div className="setup-actions">
+      <button type="button" className="button primary-button" disabled={busy} onClick={() => act(async () => {
+        const r = await api.push(projectId, folderId);
+        setPushed(r.result); setGit(r.git); onView?.(r.view);
+        notify?.(`Pushed ${r.result.branch}.`);
+      })}>{busy ? 'Pushing…' : `Push ${git.branch} to ${git.upstream || 'origin'}`}</button>
+      <small className="agent-muted">{git.ahead > 0 ? `${git.ahead} commit${git.ahead === 1 ? '' : 's'} not pushed yet.` : 'Sends the commit to the remote with your own git sign-in.'}</small>
+    </div>}
+    {pushed && <p className="git-done">Pushed {pushed.branch}.</p>}
+    {error && <div className="setup-error" role="alert"><span>{error}</span></div>}
+  </div>;
+}
+
+function ApplyChanges({ api, projectId, view, notify, onView, suggestion }) {
   const writable = view.folders.filter((f) => f.write && f.available);
   const [folderId, setFolderId] = useState(writable[0]?.id || '');
   const [preview, setPreview] = useState(null);
@@ -107,7 +145,7 @@ function ApplyChanges({ api, projectId, view, notify, onView }) {
         <div className="setup-actions">
           <button type="button" className="button primary-button" disabled={busy || !chosen.size} onClick={() => act(async () => {
             const r = await api.apply(projectId, preview.previewId, [...chosen]);
-            setResult(r.result); setPreview(null); onView(r.view);
+            setResult({ ...r.result, folderId: preview.folderId || folderId }); setPreview(null); onView(r.view);
             notify?.(r.result.applied.length ? `Applied ${r.result.applied.length} file${r.result.applied.length === 1 ? '' : 's'} to your folder.` : 'Nothing was applied.');
           })}>Apply {chosen.size} file{chosen.size === 1 ? '' : 's'}</button>
           <button type="button" className="button" onClick={() => setPreview(null)}>Cancel</button>
@@ -115,6 +153,7 @@ function ApplyChanges({ api, projectId, view, notify, onView }) {
       </>}
       {result && <div className="access-result" role="status">
         {result.applied.length > 0 && <p>Applied: {result.applied.join(', ')}</p>}
+        {result.applied.length > 0 && result.folderId && <GitBox api={api} projectId={projectId} folderId={result.folderId} files={result.applied} suggestion={suggestion} notify={notify} onView={onView} />}
         {result.conflicts.map((c) => <div key={c.path} className="setup-error" role="alert"><span>Conflict in {c.path}: {c.reason}</span></div>)}
         {result.blocked.map((c) => <div key={c.path} className="setup-error" role="alert"><span>Not applied, {c.path}: {c.reason}</span></div>)}
       </div>}
@@ -169,7 +208,7 @@ export function ComputerAccess({ project, Icon, notify, onClose }) {
         </section>
         <section className="access-section">
           <h3>Agent changes</h3>
-          <ApplyChanges api={api} projectId={project.id} view={view} notify={notify} onView={setView}/>
+          <ApplyChanges api={api} projectId={project.id} view={view} notify={notify} onView={setView} suggestion={[...(project.messages || [])].reverse().find((m) => m.kind === 'team' && m.run?.goal)?.run.goal}/>
         </section>
         {view.recent.length > 0 && <section className="access-section">
           <h3>Recent activity</h3>

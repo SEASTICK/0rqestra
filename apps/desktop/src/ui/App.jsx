@@ -6,7 +6,7 @@ import { AGREED_ROLES, isAgreedRole, canConnect, nextPriority, priorityConflict 
 import {useUpdates,UpdateDialog} from './UpdateDialog.jsx';
 import {prepareForUpdate} from './update-gate.mjs';
 import {PROJECTS_KEY,readStored} from './storage-keys.mjs';
-import {DEMO_REMOVED_KEY,cleanDemoStorage,migrateProject} from './migrate-demo.mjs';
+import {DEMO_REMOVED_KEY,cleanDemoStorage,migrateProject,withAgentKey} from './migrate-demo.mjs';
 import {ProfileMenu,SettingsDialog,HelpDialog,UpdateIntro} from './Shell.jsx';
 import {readTheme,applyTheme} from './theme.mjs';
 import {readLaunch,dismissBoot} from './launch.mjs';
@@ -189,6 +189,9 @@ function App() {
   function refreshProducts(projectId,changed){const team=window.orqestra?.team;if(!team?.products)return;team.products(projectId).then(info=>{if(!info||!Array.isArray(info.products))return;const stamp=info.products.map(p=>`${p.id}:${p.updatedAt}`).join('|');const before=productStamps.current[projectId];productStamps.current[projectId]=stamp;setProductsByProject(all=>({...all,[projectId]:{host:info.host,products:info.products}}));if(changed||(before!==undefined&&before!==stamp)){for(const p of info.products)if(p.kind==='app')team.appSync?.({projectId,productId:p.id}).catch(()=>{});setPreviewVersion(v=>v+1);setPreviewProblems(all=>({...all,[projectId]:[]}));}}).catch(()=>{});}
   async function refreshProviders(refresh){if(!window.orqestra?.chat)return;setProvidersLoading(true);try{const list=await window.orqestra.chat.providers(refresh===true);setChatProviders(Array.isArray(list)?list:[]);}catch{/* AI accounts shows the problem on the next check. */}finally{setProvidersLoading(false);}}
   useEffect(()=>{void refreshProviders(false);},[]);
+  // Agents made while the app runs (Create the team, Set up the team) get their key at once, not only at the next start:
+  // Computer access and skills are given per key.
+  useEffect(()=>{if(projects.some(p=>(p.graph?.nodes||[]).some(n=>!n.agentKey)))setProjects(ps=>ps.map(p=>(p.graph?.nodes||[]).some(n=>!n.agentKey)?{...p,graph:{...p.graph,nodes:p.graph.nodes.map(n=>withAgentKey(n,p.id))}}:p));},[projects]);
   const [chatTarget,setChatTarget]=useState(()=>readTarget(localStorage));
   // The Manager's tool, model and effort are the Manager node's own settings, so the box under the chat
   // and the agent editor always agree. Older projects fall back to the last choice made in the box.

@@ -910,3 +910,4 @@ export function greeting(name, hour = new Date().getHours()) {
   const n = typeof name === 'string' ? name.trim() : '';
   return n && n !== 'My workspace' ? `${part}, ${n.split(/\s+/)[0]}` : part;
 }
+

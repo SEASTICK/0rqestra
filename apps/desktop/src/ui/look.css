@@ -187,3 +187,12 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .profile-low{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--look-orange);margin-left:6px}
 .profile-item .nav-badge{margin-left:auto}
 .profile-usage .usage-card>button:last-child{display:none}
+
+/* Commit and push, after applying the team's changes */
+.git-box{margin-top:12px;padding:12px 14px;border:1px solid var(--shell-line);border-radius:12px;background:var(--shell-card);display:flex;flex-direction:column;gap:8px}
+.git-head{display:flex;align-items:center;gap:8px}
+.git-head strong{font-size:14px;font-weight:600}
+.git-branch{font-size:12px;color:var(--shell-muted);font-family:ui-monospace,Consolas,monospace;background:var(--shell-hover);padding:2px 7px;border-radius:6px}
+.git-box textarea{width:100%;font:inherit;font-size:13.5px;padding:8px 10px;border-radius:9px;border:1px solid var(--shell-line);background:var(--shell-bg);color:var(--shell-text);resize:vertical}
+.git-done{margin:0;font-size:13px}
+.git-done code{font-family:ui-monospace,Consolas,monospace;background:var(--shell-hover);padding:1px 5px;border-radius:5px}

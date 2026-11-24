@@ -139,6 +139,9 @@ contextBridge.exposeInMainWorld("orqestra", {
     previewApply: (projectId: string, folderId: string) => ipcRenderer.invoke("access:preview-apply", String(projectId), String(folderId)),
     apply: (projectId: string, previewId: string, paths: string[]) => ipcRenderer.invoke("access:apply", String(projectId), String(previewId), Array.isArray(paths) ? paths.map(String) : []),
     forgetProject: (projectId: string) => ipcRenderer.invoke("access:forget-project", String(projectId)),
+    gitState: (projectId: string, folderId: string) => ipcRenderer.invoke("access:git-state", String(projectId), String(folderId)),
+    commit: (projectId: string, folderId: string, paths: string[], message: string) => ipcRenderer.invoke("access:commit", String(projectId), String(folderId), Array.isArray(paths) ? paths.map(String) : [], String(message ?? "")),
+    push: (projectId: string, folderId: string) => ipcRenderer.invoke("access:push", String(projectId), String(folderId)),
     subscribe: (listener: (event: unknown) => void) => {
       const handler = (_event: unknown, payload: unknown) => listener(payload);
       ipcRenderer.on("access:event", handler);

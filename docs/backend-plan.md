@@ -314,6 +314,21 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-24: improve a real repository from the app, with commit and push.** The whole flow was
+tried in the real Electron app with the stand-in tools and a real git repository: a project, its ⋯ menu →
+Computer access → Add folder → Allow changes → each agent may read and apply reviewed changes; the
+Manager's plan; the Builder read the repository's README through computer access, delivered a new one; the
+reviewer approved; Review changes showed the diff; Apply wrote it. New after Apply: **Commit to git**
+commits exactly the applied files with a message (the run's goal to start with), then **Push** sends the
+branch to its upstream (or to origin, and sets it). Only these buttons commit or push, never an agent; git
+runs without a shell, never prompts in a terminal, and with the repository's hooks switched off
+(`core.hooksPath` points to an empty folder), and a file inside a `.git` folder is never applied. Pushing
+uses the user's own git sign-in. Found and fixed on the way: agents made while the app runs (Create the
+team) got their agent key only at the next start, so Computer access could not list them until then.
+Not verified: a push to GitHub with a real sign-in (Git Credential Manager on Windows may open its own
+window), and the quality of real models on a large code base. Delivered files waiting to be applied are
+kept in memory, so they are lost if the app quits before Apply (they stay in the project workspace).
+
 **Status 2026-11-24: a simple sidebar.** Like Claude's: New chat and Teams at the top, then Chats (the Ask
 anything conversations, reachable from anywhere in the app) and Projects (the open project shows its chats
 and its team tree). Usage left, AI accounts and Friends moved to the profile menu; a dot on the profile
