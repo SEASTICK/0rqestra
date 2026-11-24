@@ -1,9 +1,11 @@
+import fs from "node:fs";
 import path from "node:path";
 import { app, dialog, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { projectWorkspace } from "../team/workspace";
 import { AccessService } from "./access-service";
 import { AccessStore } from "./access-store";
 import { gitRunner } from "./git";
+import { suggestedChecks } from "./folder-info";
 import { useAccess } from "./registry";
 
 // Electron wiring for Project → Computer access. Requests come only from the app's window, and the
@@ -24,7 +26,7 @@ export function registerAccessIpc(
     const w = getWindow();
     if (w && !w.isDestroyed()) w.webContents.send(channel, payload);
   };
-  const service = new AccessService(new AccessStore(base()), (projectId) => projectWorkspace(base(), projectId), (event) => send("access:event", event), (projectId, paths) => teams.reservedByOthers(projectId, paths), gitRunner(path.join(base(), "git-no-hooks")));
+  const service = new AccessService(new AccessStore(base()), (projectId) => projectWorkspace(base(), projectId), (event) => send("access:event", event), (projectId, paths) => teams.reservedByOthers(projectId, paths), gitRunner(path.join(base(), "git-no-hooks")), path.join(base(), "access-pending.json"));
   useAccess(service);
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
@@ -56,6 +58,24 @@ export function registerAccessIpc(
     if (result.canceled || !chosen) return state(id);
     service.store.addFolder(id, chosen);
     return state(id);
+  });
+  // "Work in a folder": the folder picker, then the folder is granted with changes allowed (each change is
+  // still reviewed before it is applied). Returns the checks the folder's own setup offers, for the user
+  // to approve or not; nothing runs until they do.
+  ipcMain.handle("access:setup-folder", async (event, projectId: unknown) => {
+    guard(event);
+    const id = project(projectId);
+    const window = getWindow();
+    const options = { title: "Choose the folder of the app to work on", properties: ["openDirectory" as const] };
+    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    const chosen = result.filePaths[0];
+    if (result.canceled || !chosen) return null;
+    const view = service.store.addFolder(id, chosen);
+    const real = fs.realpathSync.native(chosen);
+    const folder = view.folders.find((f) => f.path.toLowerCase() === real.toLowerCase());
+    if (!folder) throw new Error("The folder could not be added.");
+    service.store.setFolderWrite(id, folder.id, true);
+    return { folderId: folder.id, folder: folder.path, checks: suggestedChecks(folder.path), git: await service.gitState(id, folder.id), view: state(id) };
   });
   // Grants this computer's linked checkout of a shared project (a path main already has).
   ipcMain.handle("access:add-checkout", (event, projectId: unknown) => {

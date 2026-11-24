@@ -6,6 +6,7 @@ import { unifiedDiff } from "../team/diff";
 import { readFiles } from "../team/workspace";
 import { AccessStore, type AgentAccess } from "./access-store";
 import { AccessDenied, liveRoot, resolveForRead, writeInside } from "./paths";
+import { folderOutline } from "./folder-info";
 import { gitCommit, gitPush, gitState, insideGitFolder, type GitRunner, type GitState } from "./git";
 
 // The boundary where agents touch this computer. Agents never get the folders themselves: they ask
@@ -49,7 +50,58 @@ export class AccessService {
     // Teams: a teammate's active reservation covering one of these paths, as a message; else null.
     private readonly reservedByOthers: (projectId: string, paths: string[]) => string | null = () => null,
     private readonly git: GitRunner | null = null,
-  ) {}
+    // Where files waiting to be applied are kept, so they survive a restart (null: memory only).
+    private readonly pendingFile: string | null = null,
+  ) {
+    this.loadPending();
+  }
+
+  private loadPending(): void {
+    if (!this.pendingFile) return;
+    try {
+      const saved = JSON.parse(fs.readFileSync(this.pendingFile, "utf8")) as Record<string, PendingFile[]>;
+      for (const [projectId, files] of Object.entries(saved)) {
+        if (!Array.isArray(files)) continue;
+        const map = new Map<string, PendingFile>();
+        for (const f of files) if (f && typeof f.path === "string" && typeof f.taskId === "string") map.set(f.path.toLowerCase(), { path: f.path, agentKey: typeof f.agentKey === "string" ? f.agentKey : undefined, agentName: String(f.agentName ?? "Agent"), taskId: f.taskId, runId: String(f.runId ?? "") });
+        if (map.size) this.pending.set(projectId, map);
+      }
+    } catch {
+      /* nothing saved yet */
+    }
+  }
+
+  private savePending(): void {
+    if (!this.pendingFile) return;
+    try {
+      fs.mkdirSync(path.dirname(this.pendingFile), { recursive: true });
+      fs.writeFileSync(this.pendingFile, JSON.stringify(Object.fromEntries([...this.pending].filter(([, m]) => m.size).map(([id, m]) => [id, [...m.values()]]))));
+    } catch {
+      /* kept in memory for this run */
+    }
+  }
+
+  // For the Manager and the Planner: the folders this project works on, with their files' names, so a
+  // plan names real paths. Agents read the contents themselves, through their own access.
+  overview(projectId: string): string | null {
+    const folders = this.store.project(projectId).folders;
+    const lines: string[] = [];
+    for (const f of folders) {
+      let root: string;
+      try {
+        root = liveRoot(f.path);
+      } catch {
+        continue;
+      }
+      lines.push(`Folder ${f.id}: ${f.path}${f.write ? " (changes are applied there after the user reviews them)" : " (read only)"}`, ...folderOutline(root).map((l) => `  ${l}`));
+    }
+    if (!lines.length) return null;
+    return [
+      "## The code this project works on (folders the user granted on this computer)",
+      "This project improves existing code. Plan tasks against these real files and folders, by their paths inside the folder. The agents read the files themselves through their computer access; deliver changed or new files with the same paths, and the user reviews each change before it reaches the folder. Keep each task small and focused on a few files.",
+      ...lines,
+    ].join("\n");
+  }
 
   private record(e: Omit<AccessEvent, "at">): void {
     const event = { ...e, at: new Date().toISOString() };
@@ -180,6 +232,7 @@ export class AccessService {
     const map = this.pending.get(projectId) ?? new Map<string, PendingFile>();
     for (const p of paths) map.set(p.toLowerCase(), { path: p, agentKey, agentName, taskId, runId });
     this.pending.set(projectId, map);
+    this.savePending();
   }
 
   pendingFiles(projectId: string): PendingFile[] {
@@ -273,6 +326,7 @@ export class AccessService {
       }
     }
     this.previews.delete(preview.id);
+    if (applied.length) this.savePending();
     return { applied, conflicts, blocked };
   }
 
@@ -319,6 +373,7 @@ export class AccessService {
   forgetProject(projectId: string): void {
     this.store.forgetProject(projectId);
     this.pending.delete(projectId);
+    this.savePending();
     this.log.delete(projectId);
     for (const [id, p] of this.previews) if (p.projectId === projectId) this.previews.delete(id);
   }

@@ -314,6 +314,17 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-24: Work in a folder.** New project → **Work in a folder** creates the project with a team
+and opens a short setup: choose the folder (it is granted with changes allowed; each change is still
+reviewed before it is applied), see its git branch, and approve the checks its own setup offers
+(`package.json` scripts check/typecheck/lint/test, `cargo test`, pytest). **Start working** gives every
+agent read, apply and run-checks access in this project and puts a first request in the message box. The
+Manager and the Planner now see the names of the folder's files two levels deep (never their contents;
+`.git`, `node_modules` and build folders are skipped), so plans name real paths. Files waiting to be
+applied are saved (`access-pending.json`) and survive a restart. Honest limit: approved checks run in the
+user's real folder, so they test an agent's change only after the user applied it. Verified with unit
+tests and in the real Electron app with the stand-in tools.
+
 **Status 2026-11-24: improve a real repository from the app, with commit and push.** The whole flow was
 tried in the real Electron app with the stand-in tools and a real git repository: a project, its ⋯ menu →
 Computer access → Add folder → Allow changes → each agent may read and apply reviewed changes; the

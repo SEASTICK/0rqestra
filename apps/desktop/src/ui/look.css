@@ -201,3 +201,22 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .access-page{min-width:0;max-height:none;overflow:visible}
 .access-page .cap-list li{flex-wrap:wrap;gap:8px}
 .access-page .teams-inline select{flex:1;min-width:0}
+
+/* Work in a folder */
+.folder-setup .folder-step{padding:8px 0 4px}
+.folder-chosen{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--shell-line);border-radius:12px;background:var(--shell-bg);margin:4px 0 12px}
+.folder-chosen>span:nth-child(2){display:flex;flex-direction:column;min-width:0;flex:1}
+.folder-chosen small{font-size:11.5px;color:var(--shell-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.folder-option{display:flex;gap:10px;align-items:flex-start;padding:8px 2px;cursor:pointer}
+.folder-option input{margin-top:3px}
+.folder-option>span{display:flex;flex-direction:column;gap:2px}
+.folder-option strong{font-weight:500;font-size:13.5px}
+.folder-option small{font-size:12px;color:var(--shell-muted)}
+.folder-option code{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--shell-muted)}
+.folder-checks{display:flex;flex-direction:column;margin:6px 0 8px;padding:10px 12px;border:1px solid var(--shell-line);border-radius:12px}
+.folder-checks>small{font-size:12px;color:var(--shell-muted);margin-bottom:2px}
+.project-kind{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
+.project-kind button{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:12px;border-radius:12px;border:1px solid var(--shell-line);background:var(--shell-bg);color:var(--shell-text)}
+.project-kind button strong{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:6px}
+.project-kind button small{font-size:12px;color:var(--shell-muted);line-height:1.4}
+.project-kind button.is-on{border-color:var(--look-orange);box-shadow:0 0 0 1px var(--look-orange) inset}
