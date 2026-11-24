@@ -57,3 +57,16 @@ describe('Ask anything', () => {
     expect(isGeneral(base)).toBe(false);
   });
 });
+
+import { addChats } from './chats.mjs';
+describe('Imported chats keep their names', () => {
+  it('keeps the title from the file while open and after switching away', () => {
+    let p = { id: 'general', messages: [{ kind: 'user', text: 'hej' }], chats: [{ id: 'c0', title: 'Chat', updatedAt: 1 }], chatId: 'c0' };
+    p = addChats(p, [{ id: 'c9', title: 'Matteprov', named: true, updatedAt: 5, messages: [{ kind: 'user', text: 'Hjälp mig med derivator' }] }]);
+    p = switchChat(p, 'c9', 10);
+    expect(chatList(p).find((c) => c.id === 'c9').title).toBe('Matteprov');
+    p = switchChat(p, 'c0', 20);
+    expect(chatList(p).find((c) => c.id === 'c9').title).toBe('Matteprov');
+    expect(chatList(p).find((c) => c.id === 'c0').title).toBe('hej');
+  });
+});

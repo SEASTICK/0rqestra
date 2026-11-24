@@ -314,6 +314,19 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-24: export and import chats.** The download button at the top of a chat exports it as
+Markdown (the system's save dialog; the window only suggests a name): readable anywhere, for example
+pasted into Claude or ChatGPT, with an invisible marker before each message so 0rqestra reads it back
+exactly. The upload button beside "Chats" in the sidebar imports a file: a chat exported from 0rqestra,
+plain Markdown with You/Assistant headings, or `conversations.json` from a Claude or ChatGPT data
+export (ChatGPT: the shown branch of each conversation; only text, no pictures or tool calls). Imported
+chats keep their names, open in Ask anything, and the next message continues them with the earlier turns
+as history; imported replies are read-only (no plan or question in them is offered again). At most 100
+chats and 2.5 million characters per import, so it fits in the window's storage; the rest is reported as
+left out. Verified with unit tests and in the real Electron app with the stand-in tools. Not verified:
+real data exports from Claude and ChatGPT (built from their documented shape; a .zip must be unpacked
+first, the file inside is conversations.json).
+
 **Status 2026-11-24: Work in a folder.** New project → **Work in a folder** creates the project with a team
 and opens a short setup: choose the folder (it is granted with changes allowed; each change is still
 reviewed before it is applied), see its git branch, and approve the checks its own setup offers

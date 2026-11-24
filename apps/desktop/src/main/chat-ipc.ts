@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { app, clipboard, ipcMain, nativeImage, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import { app, clipboard, dialog, ipcMain, nativeImage, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { ChatService } from "./chat-service";
 import { AttachmentStore, LIMITS } from "./attachments";
 import { fileUrls, windowsFileNames } from "./clipboard-files";
@@ -138,6 +138,20 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
     const stat = fs.lstatSync(file);
     if (!stat.isFile() || stat.size > LIMITS.pdf) throw new Error("This file cannot be attached.");
     return store.add({ name: v.path.split("/").pop(), data: new Uint8Array(fs.readFileSync(file)) });
+  });
+  // Export a chat: the system's save dialog, then the Markdown the window made. The window never names a
+  // path; only a file name is suggested.
+  ipcMain.handle("chat:export", async (event, payload: unknown) => {
+    guard(event);
+    const v = (payload ?? {}) as Record<string, unknown>;
+    if (typeof v.text !== "string" || v.text.length > 20_000_000) throw new Error("Nothing to export.");
+    const name = typeof v.name === "string" ? [...v.name].map((c) => (c < " " || '\\/:*?"<>|'.includes(c) ? " " : c)).join("").slice(0, 80) || "Chat.md" : "Chat.md";
+    const window = getWindow();
+    const options = { title: "Export chat", defaultPath: path.join(app.getPath("documents"), name), filters: [{ name: "Markdown", extensions: ["md"] }] };
+    const result = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return null;
+    fs.writeFileSync(result.filePath, v.text, "utf8");
+    return result.filePath;
   });
   // Copy a code block from the chat.
   ipcMain.handle("chat:copy", (event, text: unknown) => {
