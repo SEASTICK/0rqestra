@@ -2,7 +2,8 @@ import { fileURLToPath } from "node:url";
 
 // Files the user copied in Explorer, Finder or a Linux file manager and then pasted into the chat. The
 // browser part of the window does not always see them, so the main process reads the clipboard's own
-// formats: "FileNameW" on Windows (UTF-16 paths, each ending in NUL), file:// URLs on macOS and Linux.
+// formats: "FileNameW" on Windows (UTF-16 paths, each ending in NUL), file:// URLs on macOS and Linux
+// (read as POSIX paths, whatever system runs the tests).
 
 export const MAX_PASTED_FILES = 6;
 
@@ -19,7 +20,7 @@ export function fileUrls(text: string | null | undefined): string[] {
     const v = line.trim();
     if (!v.startsWith("file://")) continue;
     try {
-      out.push(fileURLToPath(v));
+      out.push(fileURLToPath(v, { windows: false }));
     } catch {
       /* not a local file */
     }
