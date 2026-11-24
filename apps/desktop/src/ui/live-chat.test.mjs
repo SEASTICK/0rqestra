@@ -774,3 +774,13 @@ describe('The Manager can be set to Auto', () => {
     expect(isRealAgent({ role: 'Builder', agent: { tool: 'auto' } })).toBe(false);
   });
 });
+
+import { greeting } from './live-chat.mjs';
+describe('The greeting on an empty chat', () => {
+  it('follows the time of day and uses a real first name only', () => {
+    expect(greeting('Philip Sjöqvist', 20)).toBe('Good evening, Philip');
+    expect(greeting('My workspace', 9)).toBe('Good morning');
+    expect(greeting('', 14)).toBe('Good afternoon');
+    expect(greeting(null, 2)).toBe('Up late');
+  });
+});

@@ -33,7 +33,7 @@ function compile(file, compilerOptions) {
 
 fs.rmSync(outdir, { recursive: true, force: true });
 fs.mkdirSync(outdir, { recursive: true });
-for (const file of ['index.html', 'app.css', 'recovery.css', 'connections.css', 'tasks.css', 'live.css', 'theme.css', 'boot.css', 'boot.js', 'shell.css', 'livechat.css']) {
+for (const file of ['index.html', 'app.css', 'recovery.css', 'connections.css', 'tasks.css', 'live.css', 'theme.css', 'boot.css', 'boot.js', 'shell.css', 'livechat.css', 'look.css']) {
   fs.copyFileSync(path.join(src, file), path.join(outdir, file));
 }
 

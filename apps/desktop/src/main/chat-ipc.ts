@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { app, clipboard, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import { app, clipboard, ipcMain, nativeImage, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { ChatService } from "./chat-service";
 import { AttachmentStore, LIMITS } from "./attachments";
+import { fileUrls, windowsFileNames } from "./clipboard-files";
 import { inside, listFiles, projectWorkspace } from "./team/workspace";
 import { ClaudeCodeAdapter } from "./providers/claude-code";
 import { CodexAdapter } from "./providers/codex";
@@ -61,6 +62,66 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
   ipcMain.handle("chat:attach", (event, payload: unknown) => {
     guard(event);
     return store.add(payload);
+  });
+  // Paste: what the browser part could not see on the clipboard. Files copied in Explorer, Finder or a file
+  // manager first; otherwise a picture (a screenshot, or "Copy image" in another app). Each one goes through
+  // store.add like a picked file, so its content decides what it is and the size limits apply.
+  ipcMain.handle("chat:paste", async (event) => {
+    guard(event);
+    const items = await clipboard.read().catch(() => []);
+    const raw = (format: string) => `electron application/osclipboard;format="${format}"`;
+    // The first entry of a type that one of the items carries, as bytes (null when none has it).
+    const bytes = async (type: string): Promise<Uint8Array | null> => {
+      for (const item of items) {
+        try {
+          const blob = (await item.getType(type)) as Blob;
+          if (blob && typeof blob.arrayBuffer === "function") return new Uint8Array(await blob.arrayBuffer());
+        } catch {
+          /* this item does not have it */
+        }
+      }
+      return null;
+    };
+    const asText = (b: Uint8Array | null) => (b ? Buffer.from(b).toString("utf8") : "");
+    const files = process.platform === "win32"
+      ? windowsFileNames(await bytes(raw("FileNameW")))
+      : fileUrls(asText(await bytes("text/uri-list")) || asText(await bytes(raw(process.platform === "darwin" ? "public.file-url" : "text/uri-list"))));
+    const kept: unknown[] = [];
+    const errors: string[] = [];
+    for (const file of files) {
+      const name = path.basename(file);
+      try {
+        const stat = fs.statSync(file);
+        if (!stat.isFile()) throw new Error("Folders cannot be attached.");
+        if (stat.size > LIMITS.pdf) throw new Error("The file is too large.");
+        kept.push(store.add({ name, data: new Uint8Array(fs.readFileSync(file)) }));
+      } catch (error) {
+        errors.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    if (!files.length) {
+      const type = items.flatMap((i) => i.types).find((t) => /^image\/(png|jpeg|gif|webp)$/.test(t));
+      const data = type ? await bytes(type) : null;
+      if (data && data.length) {
+        try {
+          const meta = store.add({ name: "Pasted image.png", data });
+          const image = nativeImage.createFromBuffer(Buffer.from(data));
+          const size = image.getSize();
+          const scale = Math.min(1, 160 / Math.max(size.width, size.height, 1));
+          kept.push({ ...meta, thumb: image.isEmpty() ? null : image.resize({ width: Math.max(1, Math.round(size.width * scale)) }).toDataURL() });
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+    return { kept, errors };
+  });
+  // A picture the user added, shown big (the window keeps only a small copy).
+  ipcMain.handle("chat:attachment-image", (event, id: unknown) => {
+    guard(event);
+    const a = store.get(id);
+    if (!a || a.kind !== "image") return null;
+    return `data:${a.mediaType};base64,${fs.readFileSync(a.path).toString("base64")}`;
   });
   // The + menu: the project's files, and one of them attached like a file the user picked. Only files inside
   // the project's folder, never through a link (workspace.ts inside()).

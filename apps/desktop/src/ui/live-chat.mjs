@@ -903,3 +903,10 @@ export function starterTeam(graph, statuses) {
   const nodes = next.nodes.map((n) => (n.role === 'Manager' ? graph.nodes.find((m) => m.id === n.id) || n : n));
   return { graph: { ...next, nodes }, changed: added.map((a) => a.id) };
 }
+
+// The greeting on an empty chat, like Claude's "Good evening, …". The default workspace name is not a name.
+export function greeting(name, hour = new Date().getHours()) {
+  const part = hour < 5 ? 'Up late' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const n = typeof name === 'string' ? name.trim() : '';
+  return n && n !== 'My workspace' ? `${part}, ${n.split(/\s+/)[0]}` : part;
+}

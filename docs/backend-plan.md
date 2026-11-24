@@ -314,6 +314,27 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-24: the look of Claude, and paste anything.**
+- A new style sheet (`ui/look.css`, loaded last) gives the app Claude's look: a warm paper palette in light
+  and dark, answers set in a serif, the user's message in a soft bubble, a rounded message box with an
+  orange send button, and no card around the chat. An empty chat shows a greeting ("Good evening, …") with
+  the box in the middle and suggestions under it, like Claude, ChatGPT and Gemini. "Thinking" shimmers.
+- Who answers is a menu like the model menus of Claude and ChatGPT (Auto, Claude Code, Codex, then the
+  level and effort, each with a short description) instead of plain drop-down lists.
+- Under each reply: Copy, Retry (the last reply: asks again with the same message and attachments) and who
+  answered. On the user's own message: Copy and Edit (puts the text back in the box).
+- Paste: pictures and files on the clipboard become attachments, also when the page itself has focus; a
+  text longer than 4,000 characters becomes a "Pasted" card (a text attachment) like in Claude. When the
+  page cannot see what was copied (files copied in Explorer, Finder or a file manager, some screenshots),
+  the main process reads the clipboard (`chat:paste`, Electron 44's clipboard API) and each file goes
+  through the same checks as a picked file. Dropping files anywhere on the chat shows a drop area, and a
+  picture opens big when clicked (`chat:attachment-image`).
+- Verified with unit tests and in the real Electron app with the stand-in tools (a pasted picture, a long
+  text pasted on the page, a picture and a file read from the real clipboard by the main process, the
+  picture reaching the tool, the big picture, Retry, Edit, the drop area, light and dark). Not verified:
+  pasting files copied in Windows Explorer or macOS Finder on those systems (built from their clipboard
+  formats; only the Linux format ran here), and how it looks with the fonts on Windows and macOS.
+
 **Status 2026-11-22: Auto picks the chatbot, the + menu, a sharp tree.**
 - The chatbot picker has **Auto** (the default when both tools are connected): for each message the main
   process picks the connected tool (`pickTool`: code and errors to Codex; writing, explaining, studying,
