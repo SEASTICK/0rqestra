@@ -314,6 +314,23 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-25: New project → From GitHub.** Pick one of your GitHub repositories from a searchable list
+(own, shared with you and your organisations', newest push first, archived ones left out), choose where to
+put it, and it is cloned and set up for the team like "Work in a folder" (the project is named after the
+repository). It uses GitHub's official command line tool `gh` (`main/github/github.ts`): the dialog installs
+it in a terminal (winget on Windows, brew on macOS) and signs in with `gh auth login --web` (browser), then
+lists with `gh api user/repos` and clones with `gh repo clone owner/name`. 0rqestra never asks `gh` for a
+token (no `gh auth token`) and stores nothing; the window can only ask for the status, the list, and
+"clone this owner/name" (checked) into a folder picked in the system's folder picker. A folder that
+already holds a clone of the same repository is reused; any other existing folder is refused. `gh` also
+sets git up with the same sign-in (the dialog tells the user to say yes), which is what the push in
+Computer access then uses. Cancelling removes the empty project that was made for it. Verified with unit
+tests (a fake `gh`) and in the real Electron app with that fake (signed out, sign-in noticed, list, search,
+clone, set-up, reuse). Not verified: the real `gh` on Windows and macOS (output formats are from gh's
+documentation, version 2.89; this container's GitHub token is limited to the session's repositories, so a
+real listing could not be tried), the terminal flows for install and sign-in, and a push with the sign-in
+that `gh` sets up. Linux has no terminal window here: the command is shown to copy.
+
 **Status 2026-11-25: Gemini as the third tool.** Gemini CLI (`@google/gemini-cli`) runs through the user's own
 Google account login (Google AI Pro, Ultra or the free tier), headless: `gemini -p … -o stream-json`, the
 prompt on stdin, events `init`, `message` (assistant, delta), `result` with token stats (format read from

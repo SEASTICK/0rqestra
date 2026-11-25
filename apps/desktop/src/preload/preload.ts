@@ -131,6 +131,12 @@ contextBridge.exposeInMainWorld("orqestra", {
     addFolder: (projectId: string) => ipcRenderer.invoke("access:add-folder", String(projectId)),
     addCheckout: (projectId: string) => ipcRenderer.invoke("access:add-checkout", String(projectId)),
     setupFolder: (projectId: string) => ipcRenderer.invoke("access:setup-folder", String(projectId)),
+    github: {
+      status: () => ipcRenderer.invoke("github:status"),
+      repos: (refresh?: boolean) => ipcRenderer.invoke("github:repos", refresh === true),
+      openTerminal: (kind: "install" | "signIn") => ipcRenderer.invoke("github:open-terminal", kind === "install" ? "install" : "signIn"),
+      clone: (projectId: string, fullName: string) => ipcRenderer.invoke("github:clone", String(projectId), String(fullName)),
+    },
     openProjectFolder: (projectId: string) => ipcRenderer.invoke("access:open-project-folder", String(projectId)),
     setFolderWrite: (projectId: string, folderId: string, write: boolean) => ipcRenderer.invoke("access:set-folder-write", String(projectId), String(folderId), write === true),
     revokeFolder: (projectId: string, folderId: string) => ipcRenderer.invoke("access:revoke-folder", String(projectId), String(folderId)),

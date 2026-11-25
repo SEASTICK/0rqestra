@@ -215,7 +215,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .folder-option code{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--shell-muted)}
 .folder-checks{display:flex;flex-direction:column;margin:6px 0 8px;padding:10px 12px;border:1px solid var(--shell-line);border-radius:12px}
 .folder-checks>small{font-size:12px;color:var(--shell-muted);margin-bottom:2px}
-.project-kind{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
+.project-kind{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px}
 .project-kind button{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:12px;border-radius:12px;border:1px solid var(--shell-line);background:var(--shell-bg);color:var(--shell-text)}
 .project-kind button strong{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:6px}
 .project-kind button small{font-size:12px;color:var(--shell-muted);line-height:1.4}
@@ -223,3 +223,21 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .chat-panel .panel-header{justify-content:flex-start}
 .chat-panel .panel-header>.panel-heading{margin-right:auto}
 .chat-panel .panel-header .chat-new{margin-left:0}
+
+/* From GitHub */
+.github-step{display:flex;flex-direction:column;gap:8px;padding:12px 14px;border:1px solid var(--shell-line);border-radius:12px;background:var(--shell-bg)}
+.github-step small{font-size:12.5px;color:var(--shell-muted);line-height:1.5}
+.github-command{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--shell-hover);padding:6px 9px;border-radius:7px;align-self:flex-start}
+.github-account{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--shell-muted);margin-bottom:8px}
+.github-search{width:100%;height:38px;border:1px solid var(--shell-line);border-radius:10px;background:var(--shell-bg);color:var(--shell-text);padding:0 12px;font-size:14px;margin-bottom:8px}
+.github-list{list-style:none;margin:0;padding:0;max-height:340px;overflow-y:auto;border:1px solid var(--shell-line);border-radius:12px}
+.github-list li+li{border-top:1px solid var(--shell-line)}
+.github-list button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;color:var(--shell-text)}
+.github-list button:hover:not(:disabled){background:var(--shell-hover);filter:none}
+.github-repo{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex:1;min-width:0}
+.github-repo strong{font-weight:500;font-size:14px}
+.github-repo em{font-style:normal;font-size:11px;padding:1px 6px;border-radius:6px;border:1px solid var(--shell-line);color:var(--shell-muted)}
+.github-repo small{flex-basis:100%;font-size:12px;color:var(--shell-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.github-go{font-size:12.5px;color:var(--shell-muted);white-space:nowrap}
+.github-empty{padding:14px 12px}
+.modal:has(.project-kind){width:min(640px,94vw)}.modal:has(.github-setup){width:min(640px,94vw)}

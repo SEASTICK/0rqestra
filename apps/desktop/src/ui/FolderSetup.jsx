@@ -6,10 +6,11 @@ import React, { useState } from 'react';
 
 const errorText = (e) => String(e?.message || e || 'That did not work.').replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
-export function FolderSetup({ project, Icon, notify, onClose, onDone }) {
+export function FolderSetup({ project, Icon, notify, onClose, onDone, initial = null }) {
   const api = window.orqestra?.access;
-  const [info, setInfo] = useState(null);
-  const [checks, setChecks] = useState(new Set());
+  // `initial`: a folder that is already chosen (just cloned from GitHub).
+  const [info, setInfo] = useState(initial);
+  const [checks, setChecks] = useState(() => new Set((initial?.checks || []).map((c) => c.command)));
   const [allow, setAllow] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -37,7 +38,7 @@ export function FolderSetup({ project, Icon, notify, onClose, onDone }) {
   return <div className="folder-setup">
     <div className="dialog-heading"><span className="dialog-icon"><Icon name="folder" size={21}/></span><button className="icon-button" type="button" aria-label="Close folder setup" onClick={onClose}><Icon name="close"/></button></div>
     <h2 id="dialog-title">Work in a folder</h2>
-    <p className="dialog-description">Choose the folder of an app you already have, for example your checkout of 0rqestra. The team reads the code and proposes changes; you see each change as a diff and decide what reaches the folder. Then you can commit and push.</p>
+    <p className="dialog-description">{initial ? `${initial.repo || 'The repository'} is ready on this computer${initial.reused ? ' (it was already there)' : ''}.` : 'Choose the folder of an app you already have, for example your checkout of 0rqestra.'} The team reads the code and proposes changes; you see each change as a diff and decide what reaches the folder. Then you can commit and push.</p>
     {!info ? <div className="folder-step">
       <button type="button" className="button primary-button" disabled={busy} onClick={choose}><Icon name="folder" size={15}/> {busy ? 'Choosing…' : 'Choose folder'}</button>
     </div> : <>
