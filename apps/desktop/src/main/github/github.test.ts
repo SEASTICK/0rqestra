@@ -86,3 +86,15 @@ describe("GitHub through gh", () => {
     expect(Object.keys(env).some((k) => /^(ELECTRON_|ORQESTRA_)/.test(k) || k === "NODE_OPTIONS")).toBe(false);
   });
 });
+
+describe("Folders that a cloud service keeps in sync", () => {
+  it("knows OneDrive on Windows and other sync folders, and not a plain folder", async () => {
+    const { isSyncedFolder } = await import("./github.js");
+    const env = { OneDrive: "C:\\Users\\philip\\OneDrive - Personligt", OneDriveConsumer: "C:\\Users\\philip\\OneDrive" };
+    expect(isSyncedFolder("C:\\Users\\philip\\OneDrive - Personligt\\Dokument", env, "win32")).toBe(true);
+    expect(isSyncedFolder("C:\\Users\\philip\\repos", env, "win32")).toBe(false);
+    expect(isSyncedFolder("/Users/p/Dropbox/work", {}, "darwin")).toBe(true);
+    expect(isSyncedFolder("/Users/p/Library/Mobile Documents/com~apple~CloudDocs/x", {}, "darwin")).toBe(true);
+    expect(isSyncedFolder("/home/p/repos", {}, "linux")).toBe(false);
+  });
+});

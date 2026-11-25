@@ -1,3 +1,4 @@
+import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { app, dialog, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
@@ -6,7 +7,7 @@ import { AccessService } from "./access-service";
 import { AccessStore } from "./access-store";
 import { gitRunner } from "./git";
 import { suggestedChecks } from "./folder-info";
-import { ghEnv, GithubClient, REPO_NAME } from "../github/github";
+import { ghEnv, GithubClient, isSyncedFolder, REPO_NAME } from "../github/github";
 import { openTerminalWindow } from "../accounts/terminal";
 import { useAccess } from "./registry";
 
@@ -107,15 +108,40 @@ export function registerAccessIpc(
       ? { title: "0rqestra: install GitHub CLI", intro: ["This window installs GitHub's official command line tool, gh:"], command, confirm: true }
       : { title: "0rqestra: sign in to GitHub", intro: ["This window runs gh's own sign-in. 0rqestra never sees your password or token.", "Choose GitHub.com, HTTPS, and Login with a web browser. Say yes to authenticating git."], command, confirm: false }, ghEnv());
   });
+  // Where cloned repositories go: ~/repos unless the user chose another folder (kept in the app's own data).
+  const folderFile = () => path.join(app.getPath("userData"), "github-folder.json");
+  const githubFolder = (): string => {
+    try {
+      const saved = (JSON.parse(fs.readFileSync(folderFile(), "utf8")) as { parent?: unknown }).parent;
+      if (typeof saved === "string" && path.isAbsolute(saved)) return saved;
+    } catch {
+      /* none chosen yet */
+    }
+    return path.join(os.homedir(), "repos");
+  };
+  const folderInfo = () => ({ path: githubFolder(), synced: isSyncedFolder(githubFolder()) });
+  ipcMain.handle("github:folder", (event) => {
+    guard(event);
+    return folderInfo();
+  });
+  ipcMain.handle("github:choose-folder", async (event) => {
+    guard(event);
+    const window = getWindow();
+    const start = githubFolder();
+    const options = { title: "Choose where cloned repositories are put", defaultPath: fs.existsSync(start) ? start : os.homedir(), properties: ["openDirectory" as const, "createDirectory" as const] };
+    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    const chosen = result.filePaths[0];
+    if (result.canceled || !chosen) return folderInfo();
+    fs.writeFileSync(folderFile(), JSON.stringify({ parent: chosen }));
+    return folderInfo();
+  });
   ipcMain.handle("github:clone", async (event, projectId: unknown, fullName: unknown) => {
     guard(event);
     const id = project(projectId);
     if (typeof fullName !== "string" || !REPO_NAME.test(fullName)) throw new Error("Choose a repository from the list.");
-    const window = getWindow();
-    const options = { title: `Choose where to put ${fullName.split("/")[1]}`, defaultPath: app.getPath("documents"), properties: ["openDirectory" as const, "createDirectory" as const] };
-    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
-    const parent = result.filePaths[0];
-    if (result.canceled || !parent) return null;
+    // No dialog: the repository goes into the folder for repositories (see githubFolder), made if it is missing.
+    const parent = githubFolder();
+    fs.mkdirSync(parent, { recursive: true });
     const cloned = await github.clone(fullName, parent);
     return { ...(await setupAt(id, cloned.path)), repo: fullName, reused: cloned.reused };
   });

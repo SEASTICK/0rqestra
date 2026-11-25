@@ -61,6 +61,20 @@ export function findGh(env: NodeJS.ProcessEnv = toolEnvironment.env(), platform:
   return null;
 }
 
+// Is this folder inside a folder that OneDrive (or a similar service) keeps in sync? A repository there is slow:
+// node_modules and .git hold thousands of small files that all get uploaded.
+export function isSyncedFolder(folder: string, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): boolean {
+  const norm = (p: string) => path.resolve(p).toLowerCase();
+  const target = norm(folder);
+  if (platform === "win32") {
+    for (const key of ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]) {
+      const root = env[key];
+      if (root && (target === norm(root) || target.startsWith(`${norm(root)}${path.sep}`))) return true;
+    }
+  }
+  return /[\\/](onedrive|dropbox|google drive|icloud drive|box)([^\\/]*)([\\/]|$)/i.test(folder) || (platform === "darwin" && /[\\/]library[\\/]mobile documents[\\/]/i.test(folder));
+}
+
 export function installCommand(platform: NodeJS.Platform): string {
   return platform === "win32" ? "winget install --id GitHub.cli" : platform === "darwin" ? "brew install gh" : "See https://github.com/cli/cli#installation";
 }

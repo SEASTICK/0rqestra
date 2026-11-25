@@ -314,6 +314,13 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-25: From GitHub clones without a dialog.** First use on Philip's Windows computer (real `gh`, real
+repositories incl. private and organisation ones) showed that clicking a repository opened Explorer, whose
+default was Documents, which is inside OneDrive. Now a click clones at once into ~/repos (made if missing); the
+list shows "Clones into …" with a Change button (the folder is kept in userData/github-folder.json), and a
+folder that OneDrive, Dropbox, iCloud, Google Drive or Box keeps in sync gets a warning (a repository has
+thousands of small files). Verified with unit tests and in the Electron app with a fake `gh`.
+
 **Status 2026-11-25: Import chat with a searchable list.** The + in the message box and the arrow beside "Chats" open
 **Import chat**: choose Claude, ChatGPT, or a file from 0rqestra; for Claude and ChatGPT it shows how to ask for
 the data export, and the zip they email is opened as it is (no unpacking; ChatGPT's split conversations-000.json

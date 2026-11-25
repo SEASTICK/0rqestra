@@ -13,12 +13,13 @@ export function GithubSetup({ project, Icon, onClose, onCloned }) {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [waiting, setWaiting] = useState(false);
+  const [folder, setFolder] = useState(null);
   const live = useRef(true);
   useEffect(() => () => { live.current = false; }, []);
   const load = async () => {
     try { const s = await api.status(); if (live.current) setStatus(s); return s; } catch (e) { if (live.current) setError(errorText(e)); return null; }
   };
-  useEffect(() => { if (api) void load(); }, []);
+  useEffect(() => { if (api) { void load(); api.folder().then((f) => { if (live.current) setFolder(f); }).catch(() => {}); } }, []);
   useEffect(() => {
     if (!status?.signedIn || repos) return;
     api.repos().then((r) => { if (live.current) setRepos(r); }).catch((e) => { if (live.current) setError(errorText(e)); });
@@ -70,6 +71,8 @@ export function GithubSetup({ project, Icon, onClose, onCloned }) {
     </div>}
     {status?.signedIn && <>
       <div className="github-account"><Icon name="check" size={14}/> Signed in{status.account ? ` as ${status.account}` : ''}</div>
+      {folder && <div className="github-folder"><span>Clones into <code title={folder.path}>{folder.path}</code></span><button type="button" className="provider-text-link" disabled={Boolean(busy)} onClick={() => api.chooseFolder().then(setFolder).catch((e) => setError(errorText(e)))}>Change</button></div>}
+      {folder?.synced && <div className="import-note" role="note">This folder is synced by a cloud service such as OneDrive. A repository has thousands of small files, so syncing it is slow. Choose a folder outside it, like C:\\Users\\you\\repos.</div>}
       <input className="github-search" type="search" placeholder="Search repositories" aria-label="Search repositories" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus/>
       {!repos && !error && <p className="agent-muted">Loading your repositories…</p>}
       {repos && <ul className="github-list" role="listbox" aria-label="Your repositories">
