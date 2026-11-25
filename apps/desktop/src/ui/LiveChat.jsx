@@ -9,9 +9,10 @@ import { answersFor, FAILURE_HELP, parsePlan, parsePlanRequest, parseQuestion, r
 // Who answers, as a menu like the model menus of Claude and ChatGPT: Auto or one tool, then the level
 // (Auto or one model) and, where the model has it, the effort. Opens upward from the message box.
 const TOOL_INFO = {
-  auto: 'Picks Claude or ChatGPT and the level for each message',
+  auto: 'Picks Claude, ChatGPT or Gemini and the level for each message',
   claude: 'Writing, explaining, studying, planning and design',
   codex: 'Code, bugs and technical questions',
+  gemini: 'Quick questions, very long texts and PDFs. Your Google plan',
 };
 const MODEL_INFO = { default: 'What your plan uses by default', opus: 'Most capable, for hard problems', sonnet: 'Smart and fast, for everyday work', haiku: 'Fastest, for quick answers' };
 const modelInfo = (m) => MODEL_INFO[m.id] || (/mini|nano|lite|fast/i.test(m.id) ? 'Fast and light' : m.isDefault ? 'Default for your plan' : '');
@@ -31,7 +32,7 @@ export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
     return () => { window.removeEventListener('mousedown', away); window.removeEventListener('keydown', key); };
   }, [open]);
   const set = (patch) => onChange({ provider: target.provider, model: target.model, effort: target.effort, ...patch });
-  if (ready.length === 0) return <span className="chat-target"><button type="button" className="chat-connect" onClick={onAccounts}>Connect Claude Code or Codex</button></span>;
+  if (ready.length === 0) return <span className="chat-target"><button type="button" className="chat-connect" onClick={onAccounts}>Connect Claude Code, Codex or Gemini</button></span>;
   const auto = target.provider === 'auto';
   const label = auto ? 'Auto' : [current?.name || 'Choose', model && target.model !== 'auto' ? model.label : 'Auto level', target.effort].filter(Boolean).join(' · ');
   const Check = ({ on }) => <span className="picker-check" aria-hidden="true">{on ? '✓' : ''}</span>;

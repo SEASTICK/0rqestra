@@ -17,7 +17,7 @@ export class LimitsStore {
     this.file = file;
     try {
       const saved = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, { limits?: unknown; at?: unknown }>;
-      for (const id of ["claude", "codex"] as const) {
+      for (const id of ["claude", "codex", "gemini"] as const) {
         const v = saved[id];
         if (v && Array.isArray(v.limits) && typeof v.at === "number" && !this.latest.has(id)) {
           const limits = (v.limits as RateLimit[]).filter((l) => l && typeof l.label === "string" && typeof l.usedPercent === "number" && Number.isFinite(l.usedPercent));

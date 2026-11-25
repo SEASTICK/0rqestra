@@ -5,7 +5,7 @@
 export const TARGET_KEY = 'orqestra-chat-target';
 // No tool chosen or connected: nothing answers, and the window shows how to set one up.
 export const NO_TOOL = { provider: 'none', model: null, effort: null, name: '', modelLabel: '' };
-const PROVIDERS = ['claude', 'codex'];
+const PROVIDERS = ['claude', 'codex', 'gemini'];
 
 export function readyProviders(statuses) {
   return (Array.isArray(statuses) ? statuses : []).filter((s) => s && s.installed && s.subscription);
@@ -33,7 +33,7 @@ export function saveTarget(storage, target) {
 
 // What will actually answer: the chosen tool if it is ready, with the chosen model if it still
 // exists (otherwise the tool's default), and the chosen effort only if that model supports it.
-const TOOL_NAMES = { claude: 'Claude Code', codex: 'Codex' };
+const TOOL_NAMES = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini' };
 
 export function effectiveTarget(target, statuses) {
   const ready = readyProviders(statuses);
@@ -144,7 +144,7 @@ export const FAILURE_HELP = {
 export const isAutoManager = (node) => Boolean(node && node.role === 'Manager' && node.agent && node.agent.tool === 'auto');
 
 export function isRealAgent(node) {
-  return Boolean(node && node.agent && (node.agent.tool === 'claude' || node.agent.tool === 'codex')) || isAutoManager(node);
+  return Boolean(node && node.agent && PROVIDERS.includes(node.agent.tool)) || isAutoManager(node);
 }
 
 export function agentTarget(node) {
@@ -418,8 +418,17 @@ function toolFor(role, ready, nth) {
   return nth % 2 === 0 || !others.length ? preferred : others[(Math.floor(nth / 2)) % others.length];
 }
 
+// Gemini is not given to agents automatically while Claude Code or Codex is connected: the team's markup (plans,
+// files, reviews) is proven on those two. Gemini is then one the user chooses for an agent (for example a
+// reader of long documents). When Gemini is the only tool, every agent runs on it.
+export function teamTools(statuses) {
+  const ready = readyProviders(statuses);
+  const core = ready.filter((s) => s.provider !== 'gemini');
+  return core.length ? core : ready;
+}
+
 export function autoTeam(graph, statuses) {
-  const ready = readyProviders(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
+  const ready = teamTools(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
   if (!ready.length) return { graph, changed: [] };
   const changed = [];
   const seen = {};
@@ -437,13 +446,13 @@ export function autoTeam(graph, statuses) {
 // When both tools are connected but every agent runs on the same one: move the roles that suit the other
 // tool there (Builder and Tester to Codex, Planner, Designer and reviews to Claude), so they work together.
 export function usesOneTool(graph, statuses) {
-  const ready = readyProviders(statuses);
+  const ready = teamTools(statuses);
   const tools = new Set((graph?.nodes || []).filter((n) => n.role !== 'Manager' && isRealAgent(n)).map((n) => n.agent.tool));
   return ready.length > 1 && tools.size === 1;
 }
 
 export function mixTeam(graph, statuses) {
-  const ready = readyProviders(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
+  const ready = teamTools(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
   if (ready.length < 2) return { graph, changed: [] };
   const changed = [];
   const seen = {};
@@ -747,7 +756,7 @@ export function elapsed(ms) {
 
 // ---- How much of each subscription is left (the sidebar) ----------------------------------------
 const WINDOW_NAME = (l) => (l.windowMinutes === 300 ? '5 hours' : l.windowMinutes >= 7 * 1440 - 60 && l.windowMinutes <= 7 * 1440 + 60 ? 'Week' : l.label);
-const TOOL_NAME = { claude: 'Claude', codex: 'ChatGPT' };
+const TOOL_NAME = { claude: 'Claude', codex: 'ChatGPT', gemini: 'Gemini' };
 export function usageRows(statuses, now = Date.now()) {
   return (statuses || []).filter((s) => s.installed && s.signedIn && s.subscription).map((s) => ({
     provider: s.provider,

@@ -7,6 +7,7 @@ import { fileUrls, windowsFileNames } from "./clipboard-files";
 import { inside, listFiles, projectWorkspace } from "./team/workspace";
 import { ClaudeCodeAdapter } from "./providers/claude-code";
 import { CodexAdapter } from "./providers/codex";
+import { GeminiAdapter } from "./providers/gemini";
 import { toolEnvironment } from "./providers/tool-env";
 import { LimitsStore, recordLimits } from "./providers/limits-store";
 
@@ -18,11 +19,12 @@ export const limitsStore = new LimitsStore();
 
 let service: ChatService | null = null;
 
-export function createAdapters(): { claude: ClaudeCodeAdapter; codex: CodexAdapter } {
+export function createAdapters(): { claude: ClaudeCodeAdapter; codex: CodexAdapter; gemini: GeminiAdapter } {
   limitsStore.persistTo(path.join(app.getPath("userData"), "usage-limits.json"));
   return {
     claude: recordLimits(new ClaudeCodeAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), limitsStore),
     codex: recordLimits(new CodexAdapter(), limitsStore),
+    gemini: recordLimits(new GeminiAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), limitsStore),
   };
 }
 

@@ -627,3 +627,5 @@ body.pane-resizing iframe,body.pane-resizing webview{pointer-events:none}
 
 .usage-check { margin-top: 6px; align-self: flex-start; font-size: 12px; padding: 3px 10px; border-radius: 8px; border: 1px solid var(--line, #d8d8d8); background: var(--surface, #fff); color: inherit; cursor: pointer; }
 .usage-check:disabled { opacity: .6; cursor: default; }
+.tool-gemini{background:light-dark(#e8eefb, #232b3d);color:light-dark(#3556a8, #a9c0f2)}
+.team-task-main .tool-chip.tool-gemini,.plan-agent .tool-chip.tool-gemini{background:light-dark(#e8eefb, #232b3d);color:light-dark(#3556a8, #a9c0f2)}

@@ -1,10 +1,10 @@
 import type { Attachment } from "../attachments";
 // What the chat needs from a provider tool, independent of which tool it is. The first adapters
-// drive the user's own subscription tools (Claude Code, Codex); API-key adapters can be added
+// drive the user's own subscription tools (Claude Code, Codex, Gemini CLI); API-key adapters can be added
 // behind the same interface later (docs/backend-plan.md, phase 7).
 
-export type ProviderId = "claude" | "codex";
-export const PROVIDER_IDS: readonly ProviderId[] = ["claude", "codex"];
+export type ProviderId = "claude" | "codex" | "gemini";
+export const PROVIDER_IDS: readonly ProviderId[] = ["claude", "codex", "gemini"];
 
 export interface ChatTurn {
   role: "user" | "assistant";
@@ -35,7 +35,7 @@ export interface ChatRequest {
 export interface TeamMember {
   name: string;
   role: string;
-  // True when the agent runs on Claude Code or Codex; an agent without a tool cannot work yet.
+  // True when the agent runs on Claude Code, Codex or Gemini; an agent without a tool cannot work yet.
   ready: boolean;
   // The tool and model it runs on, so the Manager can give each task to the agent best suited for it.
   tool?: ProviderId | null;
@@ -127,6 +127,27 @@ export interface ProviderAdapter {
   readonly id: ProviderId;
   status(): Promise<ProviderStatus>;
   chat(request: ChatRequest): ChatHandle;
+}
+
+// The adapters the app runs. Claude Code and Codex are always there; others (Gemini) may be missing, for
+// example in a test that only needs two tools. A missing tool answers as "not installed".
+export type AdapterSet = Record<"claude" | "codex", ProviderAdapter> & Partial<Record<ProviderId, ProviderAdapter>>;
+
+export function adapterOf(set: AdapterSet, id: ProviderId): ProviderAdapter {
+  const found = set[id];
+  if (found) return found;
+  const name = id === "gemini" ? "Gemini CLI" : id === "codex" ? "Codex" : "Claude Code";
+  const events = (): ChatHandle => {
+    const queue = new EventQueue<ChatEvent>();
+    queue.push({ type: "failed", reason: "not_installed", message: `${name} is not available.`, text: "" });
+    queue.end();
+    return { events: queue, stop: () => {} };
+  };
+  return {
+    id,
+    status: async () => ({ provider: id, name, installed: false, version: null, signedIn: false, plan: null, subscription: false, models: [], limits: [], problem: `${name} is not available.` }),
+    chat: events,
+  };
 }
 
 // A small push-based async queue: adapters push events as they arrive, the caller iterates.

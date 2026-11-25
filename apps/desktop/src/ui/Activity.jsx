@@ -60,11 +60,11 @@ export function UsagePanel({ statuses, onAccounts, onCheck, Icon }) {
   const check = () => { if (checking) return; setChecking(true); onCheck(() => setChecking(false)); };
   return <div className="connection-card usage-card">
     <div className="usage-head"><span className="connection-icon"><Icon name="link" size={15} /></span><strong>Usage left</strong></div>
-    {rows.length === 0 && <p>Connect Claude Code or Codex to see how much of your subscription is left.</p>}
+    {rows.length === 0 && <p>Connect Claude Code, Codex or Gemini to see how much of your subscription is left.</p>}
     {rows.map((row) => <div key={row.provider} className="usage-tool">
       <div className="usage-tool-name"><span>{row.name}</span>{row.at && <small title="Claude Code reports this during a reply">as of {new Date(row.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>}</div>
       {row.windows.length === 0
-        ? <small className="usage-unknown">{row.provider === 'claude' ? 'Not known yet. Claude reports it when it answers.' : 'Not reported yet'}</small>
+        ? <small className="usage-unknown">{row.provider === 'claude' ? 'Not known yet. Claude reports it when it answers.' : row.provider === 'gemini' ? 'Google does not tell the Gemini CLI how much is left.' : 'Not reported yet'}</small>
         : row.windows.map((w) => <div key={w.name} className={`usage-window ${w.left <= 10 ? 'is-low' : w.left <= 30 ? 'is-warn' : ''}`} title={w.resets ? resetText(w.resets) : undefined}>
           <span className="usage-window-name">{w.name}</span>
           <i className="usage-bar"><b style={{ width: `${w.left}%` }} /></i>

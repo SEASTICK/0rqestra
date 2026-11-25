@@ -115,8 +115,9 @@ describe("setup states", () => {
   it("labels the cards and reads the PATH again on every check", async () => {
     const t = setup({ claude: SUBSCRIPTION });
     const view = await t.service.refresh();
-    expect(view.map((a) => a.label)).toEqual(["Claude via Claude Code", "ChatGPT via Codex"]);
-    expect(view.map((a) => a.setup)).toEqual(["signed_in", "missing"]);
+    expect(view.map((a) => a.label)).toEqual(["Claude via Claude Code", "ChatGPT via Codex", "Gemini via Gemini CLI"]);
+    // This test has no Gemini adapter, which answers as not installed.
+    expect(view.map((a) => a.setup)).toEqual(["signed_in", "missing", "missing"]);
     expect(t.pathReads()).toBe(1);
     expect(t.invalidated()).toBe(1);
   });
@@ -278,6 +279,9 @@ describe("official commands and the terminal", () => {
       install: "curl -fsSL https://chatgpt.com/codex/install.sh | sh", signIn: "codex login", terminalSignIn: "'/Users/a/.local/bin/codex' login",
     });
     expect(officialCommands("claude", "linux", null, null).install).toBe("curl -fsSL https://claude.ai/install.sh | bash");
+    // Gemini CLI installs with npm and signs in by starting itself (no sign-in argument).
+    expect(officialCommands("gemini", "win32", null, null)).toMatchObject({ install: "npm install -g @google/gemini-cli", signIn: "gemini", version: "gemini --version", terminalSignIn: "gemini" });
+    expect(officialCommands("gemini", "darwin", "/opt/homebrew/bin/gemini", "homebrew").terminalSignIn).toBe("'/opt/homebrew/bin/gemini'");
     expect(officialCommands("claude", "win32", "C:\\O'Brien\\claude.exe", "native").signIn).toBe("& 'C:\\O''Brien\\claude.exe' auth login");
   });
 

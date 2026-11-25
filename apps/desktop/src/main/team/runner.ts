@@ -1,5 +1,5 @@
 import type { ComputerGate } from "../access/access-service";
-import type { ChatEvent, ProviderAdapter, ProviderId, Usage } from "../providers/types";
+import { adapterOf, type AdapterSet, type ChatEvent, type ProviderId, type Usage } from "../providers/types";
 import { REVIEW_ROLES, safeRelativePath, type Plan, type PlanTask } from "./plan";
 import { deliveryProblems, parseFiles, parseReview, reviewPrompt, workerPrompt, type AgentRef, type LoadedSkill } from "./prompts";
 import { loadSkill } from "../capabilities/registry";
@@ -63,7 +63,7 @@ export const DEFAULT_LIMITS: Limits = { maxCalls: 25, maxAttempts: 3, maxParalle
 export interface RunOptions {
   plan: Plan;
   agents: TeamAgent[];
-  adapters: Record<ProviderId, ProviderAdapter>;
+  adapters: AdapterSet;
   workspace: string;
   cwd: string;
   emit: (event: TeamEvent) => void;
@@ -137,7 +137,7 @@ export class TeamRun {
     const seq = this.ledger.open();
     // The task's model when the Manager chose one and this agent's tool offers it; else the agent's own.
     const model = meta.model && agent.models?.includes(meta.model) ? meta.model : agent.model;
-    const handle = this.o.adapters[agent.tool].chat({ provider: agent.tool, model, effort: agent.effort, history: [], text: prompt, cwd: this.o.cwd, raw: true });
+    const handle = adapterOf(this.o.adapters, agent.tool).chat({ provider: agent.tool, model, effort: agent.effort, history: [], text: prompt, cwd: this.o.cwd, raw: true });
     this.active.add(handle);
     let last: ChatEvent | null = null;
     let text = "";
@@ -396,7 +396,7 @@ export class TeamRun {
     emit({ type: "run-started", tasks: assignments });
     const missing = missingRoles(plan, agents);
     if (missing.length) {
-      return this.finish("failed", `No agent in the tree runs on Claude Code or Codex for: ${missing.join(", ")}. Set one in the tree and start again.`);
+      return this.finish("failed", `No agent in the tree runs on Claude Code, Codex or Gemini for: ${missing.join(", ")}. Set one in the tree and start again.`);
     }
     for (const t of plan.tasks) this.set(t, "waiting", null, 0);
 

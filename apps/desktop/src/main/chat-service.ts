@@ -2,7 +2,7 @@ import { MAX_MEMORY, MAX_MESSAGE_CHARS, PLAN_NEEDED, wantsTeamWork } from "./pro
 import { MAX_PER_MESSAGE, type Attachment } from "./attachments";
 import { EFFORT_NAME, MODEL_NAME } from "./providers/process";
 import { parseTeamMembers } from "./team/team-service";
-import { PROVIDER_IDS, type ChatEvent, type ChatHandle, type ChatTurn, type ProviderAdapter, type ProviderId, type ProviderStatus, type TeamMember, type Usage } from "./providers/types";
+import { adapterOf, PROVIDER_IDS, type AdapterSet, type ChatEvent, type ChatHandle, type ChatTurn, type ProviderId, type ProviderStatus, type TeamMember, type Usage } from "./providers/types";
 
 // The chat between the window and the provider tools, free of Electron so it is unit-tested.
 // Everything that arrives from the window is validated here before any tool is started.
@@ -73,21 +73,38 @@ export function autoModel(provider: ProviderId, payload: { text: string; history
     const want = quick ? "haiku" : "sonnet";
     return has(want) ? want : null;
   }
+  // Gemini: Flash for quick questions (fast, and it keeps the other plans' usage), Pro otherwise.
+  if (provider === "gemini") {
+    const want = quick ? "flash" : "pro";
+    return has(want) ? want : null;
+  }
   const light = offered.find((m) => /mini|nano|fast|lite/i.test(m.id));
   if (quick && light) return light.id;
   return offered.find((m) => m.isDefault)?.id ?? null;
 }
 
-// Which tool answers when the user chose "Auto": code and errors go to Codex, writing, studying, planning
-// and design to Claude, and a PDF to Claude (Codex cannot read PDFs here). Only connected tools are chosen.
+// Which tool answers when the user chose "Auto": code and errors go to Codex, a very long text or a PDF to
+// Gemini (or Claude), a quick everyday question in Ask anything to Gemini (fast, and it spares the Claude and
+// ChatGPT plans), and writing, studying, planning and design to Claude. In a project the Manager hands work
+// to a team with its own markup, so there Gemini is not chosen unless it is the only tool. Only connected
+// tools are chosen.
+const WRITING_WORDS = /\b(write|rewrite|draft|essay|email|mail|letter|summari[sz]e|translate|plan|design|story|poem|improve|edit|skriv|skriva|skriv om|mejl|brev|uppsats|sammanfatta|översätt|planera|designa|berättelse|dikt|förbättra)\b/i;
+export const LONG_TEXT_CHARS = 12_000;
 const CODE_WORDS = /```|\b(code|coding|bug|bugs|debug|error|exception|stack ?trace|function|script|regex|sql|api|compile|refactor|unit tests?|typescript|javascript|python|java|rust|golang|c\+\+|html|css|kod|koda|kodar|bugg|buggar|felmeddelande|funktion|skript|programmera|programmering)\b/i;
-export function pickTool(text: string, attachments: { kind: string }[], ready: ProviderId[]): { provider: ProviderId; reason: string } {
+export function pickTool(text: string, attachments: { kind: string }[], ready: ProviderId[], inProject = false, history: ChatTurn[] = []): { provider: ProviderId; reason: string } {
   const has = (p: ProviderId) => ready.includes(p);
   if (!ready.length) return { provider: "claude", reason: "no tool reported as ready" };
   if (ready.length === 1) return { provider: ready[0]!, reason: "the only connected tool" };
-  if (attachments.some((a) => a.kind === "pdf") && has("claude")) return { provider: "claude", reason: "reads the attached PDF" };
+  const gemini = has("gemini") && !inProject;
+  if (attachments.some((a) => a.kind === "pdf")) {
+    if (gemini) return { provider: "gemini", reason: "reads the attached PDF" };
+    if (has("claude")) return { provider: "claude", reason: "reads the attached PDF" };
+  }
+  if (gemini && text.length > LONG_TEXT_CHARS) return { provider: "gemini", reason: "a very long text" };
   if (CODE_WORDS.test(text) && has("codex")) return { provider: "codex", reason: "code" };
-  return { provider: has("claude") ? "claude" : ready[0]!, reason: "writing, explaining and planning" };
+  if (gemini && !WRITING_WORDS.test(text) && !CODE_WORDS.test(text) && isQuick(text, history, attachments.length > 0)) return { provider: "gemini", reason: "a quick question" };
+  if (has("claude")) return { provider: "claude", reason: "writing, explaining and planning" };
+  return { provider: ready.find((p) => p !== "gemini" || !inProject) ?? ready[0]!, reason: "the best connected tool" };
 }
 
 export type Emit = (requestId: string, event: ChatEvent) => void;
@@ -97,7 +114,7 @@ export class ChatService {
   private statusCache: { at: number; value: ProviderStatus[] } | null = null;
 
   constructor(
-    private readonly adapters: Record<ProviderId, ProviderAdapter>,
+    private readonly adapters: AdapterSet,
     private readonly cwd: () => string,
     private readonly now: () => number = Date.now,
     // Teams: what teammates are doing in this project right now (null for a solo project).
@@ -108,7 +125,7 @@ export class ChatService {
 
   async providers(refresh: boolean): Promise<ProviderStatus[]> {
     if (!refresh && this.statusCache && this.now() - this.statusCache.at < 30_000) return this.statusCache.value;
-    const value = await Promise.all(PROVIDER_IDS.map((id) => this.adapters[id].status().catch((error: unknown) => ({
+    const value = await Promise.all(PROVIDER_IDS.map((id) => adapterOf(this.adapters, id).status().catch((error: unknown) => ({
       provider: id, name: id, installed: false, version: null, signedIn: false, plan: null, subscription: false, models: [], limits: [],
       problem: error instanceof Error ? error.message : String(error),
     }))));
@@ -135,7 +152,7 @@ export class ChatService {
     });
     // "Auto" as the tool: the message decides which connected tool answers (pickTool), and then its model.
     const ready = (this.statusCache?.value ?? []).filter((s) => s.installed && s.subscription).map((s) => s.provider);
-    const routed = payload.provider === AUTO ? pickTool(payload.text, attachments, ready) : null;
+    const routed = payload.provider === AUTO ? pickTool(payload.text, attachments, ready, Boolean(payload.team), payload.history) : null;
     const provider: ProviderId = routed ? routed.provider : (payload.provider as ProviderId);
     // "Auto" as the model: a quick question gets a light, fast model; work, files and longer questions a stronger one.
     const model = payload.model === AUTO || routed ? autoModel(provider, payload, attachments.length > 0, this.statusCache?.value ?? []) : payload.model;
@@ -146,7 +163,7 @@ export class ChatService {
       ...(attachments.length ? { attachments } : {}),
       ...(payload.memory?.length ? { memory: payload.memory } : {}),
     };
-    const first = this.adapters[provider].chat(request);
+    const first = adapterOf(this.adapters, provider).chat(request);
     // stop() reaches whichever request is current (the second one, when the Manager asks to plan).
     const current = { handle: first };
     const handle: ChatHandle = { events: first.events, stop: () => current.handle.stop() };
@@ -159,7 +176,7 @@ export class ChatService {
           // never sees the marker; it gets the second reply, with both calls' usage added up.
           // Planning needs the stronger model when "Auto" chose a light one for what looked like a quick question.
           const planModel = payload.model === AUTO || routed ? autoModel(provider, { text: payload.text, history: payload.history }, true, this.statusCache?.value ?? []) : request.model;
-          const second = this.adapters[provider].chat({ ...request, model: planModel, planMode: true });
+          const second = adapterOf(this.adapters, provider).chat({ ...request, model: planModel, planMode: true });
           current.handle = second;
           for await (const event of second.events) emit(payload.requestId, event.type === "completed" ? { ...event, usage: addUsage(answer.usage, event.usage) } : event);
         }

@@ -20,8 +20,8 @@ export function AgentRunsOn({ run, onChange, tools, canAuto = false }) {
           {canAuto && tools.length > 0 && <option value="auto">Auto (0rqestra picks the tool and level)</option>}
           {tools.map((t) => <option key={t.provider} value={t.provider}>{t.name}</option>)}
         </select>
-        {run.provider === 'auto' && <small>For each message, 0rqestra picks Claude Code or Codex and how strong a model, from the task. Code goes to Codex; writing, planning and PDFs go to Claude.</small>}
-        {tools.length === 0 && <small>Connect Claude Code or Codex under AI accounts to run an agent on a real model.</small>}
+        {run.provider === 'auto' && <small>For each message, 0rqestra picks Claude Code, Codex or Gemini and how strong a model, from the task. Code goes to Codex; quick questions, very long texts and PDFs to Gemini; writing and planning to Claude.</small>}
+        {tools.length === 0 && <small>Connect Claude Code, Codex or Gemini under AI accounts to run an agent on a real model.</small>}
       </label>
       {status && (
         <div className="field-row">

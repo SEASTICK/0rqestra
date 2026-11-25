@@ -36,8 +36,8 @@ export function CapabilitiesTab({ node, graph, projectId, Icon, notify, onPatchN
   const off = new Set(node.skillsOff || []);
   const notInstalled = library.filter((s) => !installed.includes(s.id));
   const notInProject = library.filter((s) => !projectSkills.includes(s.id));
-  const real = node.agent && ['claude', 'codex'].includes(node.agent.tool);
-  const provider = node.agent?.tool === 'claude' ? 'Claude Code' : node.agent?.tool === 'codex' ? 'Codex' : 'No tool yet';
+  const real = node.agent && ['claude', 'codex', 'gemini'].includes(node.agent.tool);
+  const provider = node.agent?.tool === 'claude' ? 'Claude Code' : node.agent?.tool === 'codex' ? 'Codex' : node.agent?.tool === 'gemini' ? 'Gemini' : 'No tool yet';
 
   if (!api) return <p className="agent-muted">Capabilities work in the installed app.</p>;
   if (!key) return <p className="agent-muted">Save this agent first; then you can install skills on it.</p>;

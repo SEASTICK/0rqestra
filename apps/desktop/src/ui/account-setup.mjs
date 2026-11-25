@@ -9,8 +9,8 @@ export const STATES = {
   failed: { badge: 'Connection failed', tone: 'is-bad' },
 };
 
-const VENDOR = { claude: 'Anthropic', codex: 'OpenAI' };
-const PLAN = { claude: 'Claude', codex: 'ChatGPT' };
+const VENDOR = { claude: 'Anthropic', codex: 'OpenAI', gemini: 'Google' };
+const PLAN = { claude: 'Claude', codex: 'ChatGPT', gemini: 'Google' };
 
 export function badgeFor(account) {
   const state = STATES[account.setup] || STATES.missing;
@@ -83,10 +83,13 @@ export function stateLine(account) {
   const plan = PLAN[account.provider] || '';
   switch (account.setup) {
     case 'missing':
+      if (account.provider === 'gemini') return 'Gemini CLI is not installed. 0rqestra installs it with npm (Google\'s official way; it needs Node.js), and then you sign in with your Google account, for example with Google AI Pro.';
       return `${account.name} is not installed. 0rqestra installs it with ${VENDOR[account.provider]}'s official installer, and then you sign in with your ${plan} subscription.`;
     case 'signed_out':
       return `${account.name} is installed but not signed in. Sign in opens ${account.name}'s own sign-in in a terminal window; your password and tokens stay with ${VENDOR[account.provider]}.`;
     case 'api_key':
+      // Gemini: signed in with Google, but the CLI did not accept 0rqestra's safety settings (folder permissions).
+      if (account.provider === 'gemini' && account.authMethod === 'subscription' && account.problem) return account.problem;
       return account.authMethod === 'api_key'
         ? `${account.name} is signed in with an API key, which is billed per use. 0rqestra never uses API keys, so this tool stays off until you sign in with your ${plan} subscription.`
         : `${account.name} is signed in through another provider, not a ${plan} subscription. 0rqestra only uses subscriptions, so this tool stays off until you sign in with one.`;

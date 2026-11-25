@@ -314,6 +314,30 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-25: Gemini as the third tool.** Gemini CLI (`@google/gemini-cli`) runs through the user's own
+Google account login (Google AI Pro, Ultra or the free tier), headless: `gemini -p … -o stream-json`, the
+prompt on stdin, events `init`, `message` (assistant, delta), `result` with token stats (format read from
+the CLI's source, version 0.71.1). It is in AI accounts (install with `npm install -g @google/gemini-cli`,
+which needs Node.js; sign in by starting `gemini` and choosing Login with Google), in the chat picker
+(Auto, Pro, Flash, Flash-Lite, the CLI's own aliases), in Auto routing and on agents in the tree.
+Safety, tested against the real CLI on 2026-11-25: with only workspace settings a `GEMINI_API_KEY` in the
+environment was used. So the CLI is started with a system settings file of ours that forces the Google
+login, switches every built-in tool, MCP server, hook, skill and extension off, and turns off updates and
+telemetry; with it a key in the environment (also removed by `providerEnv`) is not used and the CLI asks
+for a login instead. The CLI skips that file when its folder is writable by others (it says so on stderr);
+that is checked before every chat and while it runs, and then nothing is sent. Only when a picture or PDF
+is attached is the file reader turned on, for a copy of the files in the empty chat folder.
+Auto routing: a quick everyday question, a very long text (over 12,000 characters) and a PDF go to Gemini
+in Ask anything (Flash for quick, Pro otherwise); code still goes to Codex, writing and planning to Claude.
+In a project Auto does not choose Gemini, and "Create the team" / "Use both" do not put agents on Gemini
+while Claude Code or Codex is connected: the team's markup is proven on those two. The user can set Gemini
+on an agent by hand. Verified with unit tests and in the real Electron app with a stand-in that follows
+the CLI's real output format (picker, Auto choices, the key not reaching the CLI, accounts card, usage).
+Not verified: a real Google login and a real answer; whether Google AI Pro's limits apply (the CLI does not
+report the plan or what is left, so the usage list says so); the folder-permission check on Windows (it
+uses the CLI's own ACL check and fails closed); `@file` for pictures and PDFs; the npm install flow; and
+Gemini on team agents (plan, file and review markup). The CLI keeps its own session files under ~/.gemini.
+
 **Status 2026-11-24: export and import chats.** The download button at the top of a chat exports it as
 Markdown (the system's save dialog; the window only suggests a name): readable anywhere, for example
 pasted into Claude or ChatGPT, with an invisible marker before each message so 0rqestra reads it back

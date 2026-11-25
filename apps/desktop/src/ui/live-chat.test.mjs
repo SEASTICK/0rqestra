@@ -784,3 +784,36 @@ describe('The greeting on an empty chat', () => {
     expect(greeting(null, 2)).toBe('Up late');
   });
 });
+
+import { teamTools } from './live-chat.mjs';
+describe('Gemini as the third tool', () => {
+  const status = (provider, name) => ({ provider, name, installed: true, signedIn: true, subscription: true, models: [{ id: 'default', label: 'Default', isDefault: true, efforts: [] }, { id: 'flash', label: 'Flash', isDefault: false, efforts: [] }], limits: [] });
+  const all = [status('claude', 'Claude Code'), status('codex', 'Codex'), status('gemini', 'Gemini CLI')];
+  const graph = { nodes: [{ id: 'm', role: 'Manager', name: 'Manager', priority: 1 }, { id: 'b1', role: 'Builder', name: 'B1', priority: 1 }, { id: 'b2', role: 'Builder', name: 'B2', priority: 2 }, { id: 'b3', role: 'Builder', name: 'B3', priority: 3 }, { id: 'b4', role: 'Builder', name: 'B4', priority: 4 }, { id: 'r', role: 'Code Reviewer', name: 'R', priority: 1 }], edges: [] };
+
+  it('is a real tool for an agent and for Auto, with a readable name', () => {
+    expect(isRealAgent({ role: 'Builder', agent: { tool: 'gemini', model: 'pro' } })).toBe(true);
+    expect(agentBadge({ role: 'Builder', provider: 'Gemini CLI', model: 'Pro', agent: { tool: 'gemini', model: 'pro' } })).toBe('Gemini CLI · Pro');
+    expect(effectiveTarget({ provider: 'gemini', model: 'flash', effort: null }, all)).toMatchObject({ provider: 'gemini', model: 'flash', name: 'Gemini CLI' });
+    let m = newAssistant('a1', { provider: 'auto', model: 'auto', name: 'Auto' });
+    m = applyChatEvent(m, { type: 'routed', provider: 'gemini', model: 'flash', reason: 'a quick question' });
+    expect(m).toMatchObject({ provider: 'gemini', providerName: 'Gemini', model: 'flash' });
+  });
+
+  it('is not given to agents automatically while Claude Code or Codex is connected, but is when it is the only tool', () => {
+    expect(teamTools(all).map((s) => s.provider)).toEqual(['claude', 'codex']);
+    const { graph: team } = autoTeam(graph, all);
+    expect(team.nodes.every((n) => n.agent?.tool !== 'gemini')).toBe(true);
+    expect(new Set(team.nodes.map((n) => n.agent?.tool))).toEqual(new Set(['claude', 'codex']));
+    expect(usesOneTool({ nodes: team.nodes.map((n) => ({ ...n, agent: { tool: 'claude', model: null } })) }, all)).toBe(true);
+    expect(mixTeam(team, all).graph.nodes.every((n) => n.agent?.tool !== 'gemini')).toBe(true);
+    const alone = autoTeam(graph, [status('gemini', 'Gemini CLI')]).graph;
+    expect(alone.nodes.every((n) => n.agent?.tool === 'gemini')).toBe(true);
+  });
+
+  it('shows Gemini in the usage list without made-up numbers', () => {
+    const rows = usageRows(all);
+    expect(rows.map((r) => r.name)).toEqual(['Claude', 'ChatGPT', 'Gemini']);
+    expect(rows.find((r) => r.provider === 'gemini').windows).toEqual([]);
+  });
+});
