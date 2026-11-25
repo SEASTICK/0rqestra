@@ -70,3 +70,12 @@ describe('Imported chats keep their names', () => {
     expect(chatList(p).find((c) => c.id === 'c0').title).toBe('hej');
   });
 });
+
+describe('Leaving an empty chat', () => {
+  it('does not keep an empty conversation when switching to another', () => {
+    let p = { id: 'general', messages: [], chats: [{ id: 'c0', title: 'Chat', updatedAt: 1 }, { id: 'c1', title: 'Fotosyntes', updatedAt: 2, messages: [{ kind: 'user', text: 'hej' }] }], chatId: 'c0' };
+    p = switchChat(p, 'c1', 10);
+    expect(p.chats.map((c) => c.id)).toEqual(['c1']);
+    expect(p.chatId).toBe('c1');
+  });
+});

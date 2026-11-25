@@ -27,7 +27,8 @@ export function switchChat(project, chatId, now = Date.now()) {
   if (chatId === p.chatId) return p;
   const target = p.chats.find((c) => c.id === chatId);
   if (!target) return p;
-  const chats = putAway(p, now).map((c) => (c.id === chatId ? { id: c.id, title: c.title, updatedAt: c.updatedAt, ...(c.named ? { named: true } : {}) } : c));
+  // An empty open conversation is not kept when moving to another one.
+  const chats = (p.messages.length ? putAway(p, now) : p.chats.filter((c) => c.id !== p.chatId)).map((c) => (c.id === chatId ? { id: c.id, title: c.title, updatedAt: c.updatedAt, ...(c.named ? { named: true } : {}) } : c));
   return { ...p, chats, chatId, messages: target.messages || [] };
 }
 

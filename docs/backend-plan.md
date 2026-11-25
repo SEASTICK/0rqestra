@@ -314,6 +314,21 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-25: Import chat with a searchable list.** The + in the message box and the arrow beside "Chats" open
+**Import chat**: choose Claude, ChatGPT, or a file from 0rqestra; for Claude and ChatGPT it shows how to ask for
+the data export, and the zip they email is opened as it is (no unpacking; ChatGPT's split conversations-000.json
+files are read too). The export is read in the main process (`main/chat-library.ts`, kept in memory only while the
+dialog is open); the dialog lists every chat with date and size, searches titles and the words inside the chats
+(every word must be found; titles first, with a snippet), and imports the chosen chats (at most 100 at a time).
+Why not straight from the accounts: Claude and ChatGPT give a person's chats out only as a data export; there is
+no public interface for the chat history, and logging in with a session cookie or token would break the rule
+that 0rqestra handles no keys or logins. Also: leaving an empty chat for another one no longer keeps the empty
+one in the list. Verified with unit tests (a zip writer for the tests: stored and compressed files, split files,
+damaged, encrypted, zip64 and oversized zips are refused) and in the real Electron app with a Claude-format zip
+(search by a word that is only inside a chat, select, import, continue). Not verified: a real export from either
+service (formats as documented/observed earlier; a single conversations.json over about 500 MB cannot be read and
+says so). Chats kept locally by Claude Code (~/.claude) and Codex (~/.codex) could be offered the same way later.
+
 **Status 2026-11-25: New project → From GitHub.** Pick one of your GitHub repositories from a searchable list
 (own, shared with you and your organisations', newest push first, archived ones left out), choose where to
 put it, and it is cloned and set up for the team like "Work in a folder" (the project is named after the

@@ -1,8 +1,10 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { app, clipboard, dialog, ipcMain, nativeImage, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { ChatService } from "./chat-service";
 import { AttachmentStore, LIMITS } from "./attachments";
+import { ChatLibrary } from "./chat-library";
 import { fileUrls, windowsFileNames } from "./clipboard-files";
 import { inside, listFiles, projectWorkspace } from "./team/workspace";
 import { ClaudeCodeAdapter } from "./providers/claude-code";
@@ -140,6 +142,43 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
     const stat = fs.lstatSync(file);
     if (!stat.isFile() || stat.size > LIMITS.pdf) throw new Error("This file cannot be attached.");
     return store.add({ name: v.path.split("/").pop(), data: new Uint8Array(fs.readFileSync(file)) });
+  });
+  // Import chat: the user picks a data export from Claude or ChatGPT (the zip as emailed, or conversations.json) in the
+  // system's file picker; it is read here and kept only while the dialog is open. The window gets the list, the
+  // search results and the chosen chats, never a path.
+  const libraries = new Map<string, ChatLibrary>();
+  const library = (token: unknown): ChatLibrary => {
+    const found = typeof token === "string" ? libraries.get(token) : undefined;
+    if (!found) throw new Error("Choose the file again.");
+    return found;
+  };
+  ipcMain.handle("chat:library-open", async (event) => {
+    guard(event);
+    const window = getWindow();
+    const options = { title: "Choose your data export from Claude or ChatGPT", properties: ["openFile" as const], filters: [{ name: "Data export", extensions: ["zip", "json"] }, { name: "All files", extensions: ["*"] }] };
+    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    const file = result.filePaths[0];
+    if (result.canceled || !file) return null;
+    const size = fs.statSync(file).size;
+    if (size > 1_000_000_000) throw new Error("The file is too large for 0rqestra (over 1 GB).");
+    const lib = ChatLibrary.fromFile(fs.readFileSync(file), path.basename(file));
+    libraries.clear();
+    const token = crypto.randomUUID();
+    libraries.set(token, lib);
+    return { token, source: lib.source, items: lib.list() };
+  });
+  ipcMain.handle("chat:library-search", (event, token: unknown, query: unknown) => {
+    guard(event);
+    return library(token).search(query);
+  });
+  ipcMain.handle("chat:library-pick", (event, token: unknown, ids: unknown) => {
+    guard(event);
+    return library(token).pick(ids);
+  });
+  ipcMain.handle("chat:library-close", (event, token: unknown) => {
+    guard(event);
+    if (typeof token === "string") libraries.delete(token);
+    return true;
   });
   // Export a chat: the system's save dialog, then the Markdown the window made. The window never names a
   // path; only a file name is suggested.

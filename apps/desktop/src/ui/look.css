@@ -241,3 +241,26 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .github-go{font-size:12.5px;color:var(--shell-muted);white-space:nowrap}
 .github-empty{padding:14px 12px}
 .modal:has(.project-kind){width:min(640px,94vw)}.modal:has(.github-setup){width:min(640px,94vw)}
+
+/* Import chat */
+.modal:has(.import-chats){width:min(680px,94vw)}
+.import-sources{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.import-sources button{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:12px;border-radius:12px;border:1px solid var(--shell-line);background:var(--shell-bg);color:var(--shell-text)}
+.import-sources button.is-on{border-color:var(--look-orange);box-shadow:0 0 0 1px var(--look-orange) inset}
+.import-sources strong{font-size:14px;font-weight:600}
+.import-sources small{font-size:12px;color:var(--shell-muted)}
+.import-how{display:flex;flex-direction:column;gap:8px;margin-top:14px;padding:12px 14px;border:1px solid var(--shell-line);border-radius:12px}
+.import-how ol{margin:0;padding-left:20px;font-size:13px;line-height:1.55}
+.import-how small{font-size:12px;color:var(--shell-muted);line-height:1.5}
+.import-note{font-size:12.5px;padding:8px 10px;border-radius:8px;background:var(--shell-hover);margin-bottom:8px}
+.import-bar{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--shell-muted);margin:2px 2px 6px}
+.import-bar label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.import-list{list-style:none;margin:0;padding:0;max-height:360px;overflow-y:auto;border:1px solid var(--shell-line);border-radius:12px}
+.import-list li+li{border-top:1px solid var(--shell-line)}
+.import-list label{display:flex;align-items:flex-start;gap:10px;padding:9px 12px;cursor:pointer}
+.import-list label:hover,.import-list label.is-on{background:var(--shell-hover)}
+.import-list input{margin-top:4px}
+.import-row{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.import-row strong{font-weight:500;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.import-row small{font-size:11.5px;color:var(--shell-muted)}
+.import-row em{font-style:normal;font-size:12.5px;color:var(--shell-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

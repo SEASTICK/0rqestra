@@ -99,7 +99,7 @@ const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,application/pdf,text/*
 
 // The + in the message box opens a small menu, like Claude's: add files or photos (also Ctrl+U), add one of
 // the project's own files, start a new chat, or open the project's memory.
-export function AttachMenu({ disabled, onFiles, onProjectFile, projectId, onNewChat, onMemory, Icon }) {
+export function AttachMenu({ disabled, onFiles, onProjectFile, projectId, onNewChat, onMemory, onImport, Icon }) {
   const input = useRef(null);
   const box = useRef(null);
   const [open, setOpen] = useState(false);
@@ -128,6 +128,7 @@ export function AttachMenu({ disabled, onFiles, onProjectFile, projectId, onNewC
         <div className="attach-menu-line" />
         {onNewChat && <button type="button" role="menuitem" onClick={() => choose(onNewChat)}><Icon name="chat" size={16} /><span>New chat</span></button>}
         {onMemory && <button type="button" role="menuitem" onClick={() => choose(onMemory)}><Icon name="spark" size={16} /><span>Project memory</span></button>}
+        {onImport && <button type="button" role="menuitem" onClick={() => choose(onImport)}><Icon name="upload" size={16} /><span>Import chat…</span></button>}
       </> : <>
         <button type="button" role="menuitem" className="attach-menu-back" onClick={() => setFiles(null)}>‹ <span>Files in this project</span></button>
         <div className="attach-menu-files">

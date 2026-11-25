@@ -23,6 +23,12 @@ contextBridge.exposeInMainWorld("orqestra", {
     copy: (text: string) => ipcRenderer.invoke("chat:copy", String(text)),
     projectFiles: (projectId: string) => ipcRenderer.invoke("chat:project-files", String(projectId)),
     paste: () => ipcRenderer.invoke("chat:paste"),
+    library: {
+      open: () => ipcRenderer.invoke("chat:library-open"),
+      search: (token: string, query: string) => ipcRenderer.invoke("chat:library-search", String(token), String(query ?? "")),
+      pick: (token: string, ids: number[]) => ipcRenderer.invoke("chat:library-pick", String(token), Array.isArray(ids) ? ids.map(Number) : []),
+      close: (token: string) => ipcRenderer.invoke("chat:library-close", String(token)),
+    },
     exportChat: (name: string, text: string) => ipcRenderer.invoke("chat:export", { name: String(name ?? ""), text: String(text ?? "") }),
     attachmentImage: (id: string) => ipcRenderer.invoke("chat:attachment-image", String(id)),
     attachProjectFile: (projectId: string, path: string) => ipcRenderer.invoke("chat:attach-project-file", { projectId: String(projectId), path: String(path) }),
