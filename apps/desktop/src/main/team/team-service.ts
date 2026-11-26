@@ -5,7 +5,8 @@ import { extractPlan, plannerPrompt } from "./planner";
 import { listFiles } from "./workspace";
 import { PROVIDER_IDS, type ProviderAdapter, type ProviderId } from "../providers/types";
 import { directPlan, missingProjectFiles, parsePlan, type Plan } from "./plan";
-import { TeamRun, type TeamAgent, type TeamEvent } from "./runner";
+import { agentsFor, reviewerFor, TeamRun, type TeamAgent, type TeamEvent } from "./runner";
+import type { TaskReason } from "./recovery";
 import { pruneHistory, RunSnapshot, undoRun } from "./history";
 import { accessService } from "../access/registry";
 
@@ -79,8 +80,17 @@ export function assignAgents(plan: Plan, agents: TeamAgent[]): Plan {
 
 export type TeamEmit = (runId: string, event: TeamEvent) => void;
 
+// A run the window may still retry a task of: kept in memory after it finished (not across restarts).
+interface KeptRun { projectId: string; run: TeamRun; plan: Plan; coordId: string; retries: number }
+const KEEP_RUNS = 12;
+
+export type RetryPrepared = { kept: KeptRun; runId: string; taskId: string; agents: TeamAgent[]; coordId: string; scope: Plan };
+
 export class TeamService {
   private runs = new Map<string, { projectId: string; run: TeamRun }>();
+  private kept = new Map<string, KeptRun>();
+  // Retries being checked or started, so a double click never starts two attempts.
+  private retrying = new Set<string>();
   private planning = new Map<string, ChatHandle>();
 
   constructor(
@@ -139,19 +149,34 @@ export class TeamService {
     const snapshot = new RunSnapshot(workspace, runId, plan.goal);
     // Computer access: what this project's agents may read or run on this computer (checked at each use).
     const computer = accessService()?.gateFor(projectId, runId);
+    const kept: KeptRun = { projectId, run: null as unknown as TeamRun, plan, coordId: runId, retries: 0 };
     const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace, cwd: this.cwd(), snapshot, ...(writeGuard ? { writeGuard } : {}), ...(computer ? { computer } : {}), emit: (event) => {
       emit(runId, event);
+      // The run's review (Manager chat → Review changes) shows what the app saw: outcomes per task.
+      try {
+        accessService()?.runEvent(projectId, runId, event);
+      } catch {
+        /* recording never affects the run */
+      }
       // What the agents write stays on this computer: it is shown in the window, never shared.
       if (event.type === "output") return;
       try {
-        this.observe?.({ runId, localProjectId: projectId, plan }, event);
+        // A retry is coordinated (reservation, brief) under its own id; the window keeps the run's id.
+        this.observe?.({ runId: kept.coordId, localProjectId: projectId, plan }, event);
       } catch {
         /* an observer never affects the run */
       }
     } });
+    kept.run = run;
+    this.keep(runId, kept);
     this.runs.set(runId, { projectId, run });
     void run.start().catch((error: unknown) => {
       emit(runId, { type: "run-finished", status: "failed", summary: error instanceof Error ? error.message : String(error), files: [], calls: 0, usage: { inputTokens: 0, outputTokens: 0 } });
+      try {
+        accessService()?.runEvent(projectId, runId, { type: "run-finished", status: "failed" });
+      } catch {
+        /* recording never affects the run */
+      }
     }).finally(() => {
       this.runs.delete(runId);
       try {
@@ -161,6 +186,79 @@ export class TeamService {
       }
     });
     return runId;
+  }
+
+  private keep(runId: string, entry: KeptRun): void {
+    this.kept.delete(runId);
+    this.kept.set(runId, entry);
+    while (this.kept.size > KEEP_RUNS) this.kept.delete(this.kept.keys().next().value!);
+  }
+
+  // Validates a retry of one task of a finished run, without starting it. Throws with a message the
+  // card shows; the caller then checks the tools and Teams reservations and calls launchRetry.
+  prepareRetry(raw: unknown): RetryPrepared {
+    const v = (raw ?? {}) as Record<string, unknown>;
+    if (typeof v.runId !== "string" || !ID.test(v.runId)) throw new Error("Invalid run id.");
+    if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
+    if (typeof v.taskId !== "string" || !ID.test(v.taskId)) throw new Error("Invalid task id.");
+    const kept = this.kept.get(v.runId);
+    if (!kept || kept.projectId !== v.projectId) throw new Error("This run's details are no longer in memory (the app was restarted), so its task cannot be retried here. Ask the Manager to fix it instead.");
+    if (this.retrying.has(v.runId) || kept.run.running) throw new Error("This task is already being retried.");
+    if ([...this.runs.values()].some((r) => r.projectId === v.projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
+    const task = kept.plan.tasks.find((t) => t.id === v.taskId);
+    if (!task) throw new Error("Unknown task.");
+    if (!["failed", "blocked", "stopped"].includes(kept.run.statusOf(task.id) ?? "")) throw new Error("Only a task that failed or is blocked can be retried.");
+    const agents = parseAgents(v.agents);
+    this.retrying.add(v.runId);
+    kept.retries += 1;
+    // Coordinated under a new id: the earlier attempt's reservation and brief are final.
+    const coordId = `${v.runId}-retry${kept.retries}`.slice(0, 100);
+    const dependents = kept.plan.tasks.filter((t) => t.dependsOn.includes(task.id));
+    const scope: Plan = { ...kept.plan, tasks: [task, ...dependents] };
+    return { kept, runId: v.runId, taskId: task.id, agents, coordId, scope };
+  }
+
+  // Whether the tools the retried task needs are signed in, as a reason the card can act on.
+  async retryReadiness(p: RetryPrepared): Promise<TaskReason | null> {
+    const task = p.kept.plan.tasks.find((t) => t.id === p.taskId)!;
+    const workers = agentsFor(task.role, p.agents);
+    if (!workers.length) return { kind: "agent_missing", title: `No agent in the tree has the role ${task.role} and runs on Claude Code or Codex.`, detail: `Missing role: ${task.role}.`, role: task.role };
+    const reviewer = reviewerFor(workers[0]!, p.agents);
+    const tools = [...new Set([workers[0]!.tool, ...(reviewer ? [reviewer.tool] : [])])];
+    for (const tool of tools) {
+      let ready = false;
+      let problem: string;
+      try {
+        const status = await this.adapters[tool].status();
+        ready = status.installed && status.signedIn && status.subscription;
+        problem = status.problem ?? (status.installed ? (status.signedIn ? "Not signed in with a subscription." : "Not signed in.") : "Not installed.");
+      } catch (error) {
+        problem = error instanceof Error ? error.message : String(error);
+      }
+      if (!ready) {
+        const who = tool === workers[0]!.tool ? workers[0]! : reviewer!;
+        return { kind: "signed_out", title: `${tool === "claude" ? "Claude Code" : tool === "codex" ? "Codex" : tool} is not ready for ${who.name}. Sign in, then retry.`, detail: problem, provider: tool, agentId: who.id, agentName: who.name };
+      }
+    }
+    return null;
+  }
+
+  // Starts a prepared retry. Events go to the window under the run's own id, so its card updates.
+  launchRetry(p: RetryPrepared, emit: TeamEmit, writeGuard?: { authorize(paths: string[]): Promise<void> }): void {
+    const { kept, runId } = p;
+    kept.coordId = p.coordId;
+    this.runs.set(runId, { projectId: kept.projectId, run: kept.run });
+    void kept.run.retry(p.taskId, p.agents, writeGuard).catch((error: unknown) => {
+      emit(runId, { type: "run-finished", status: "failed", summary: error instanceof Error ? error.message : String(error), files: [], calls: 0, usage: { inputTokens: 0, outputTokens: 0 } });
+    }).finally(() => {
+      this.runs.delete(runId);
+      this.retrying.delete(runId);
+    });
+  }
+
+  // A retry that was refused before it started (tools not ready, reservation conflict).
+  cancelRetry(p: RetryPrepared): void {
+    this.retrying.delete(p.runId);
   }
 
   private safeTeamNow(projectId: string): string | null {
@@ -216,7 +314,10 @@ export class TeamService {
     if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
     const projectId = v.projectId;
     if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is working in this project. Undo when it is done.");
-    return undoRun(this.workspaceFor(projectId), v.runId);
+    const undone = undoRun(this.workspaceFor(projectId), v.runId);
+    // The run's files are back as they were, so none of them waits to be applied any more.
+    accessService()?.dismissRun(projectId, v.runId);
+    return undone;
   }
 
   stop(runId: unknown): boolean {

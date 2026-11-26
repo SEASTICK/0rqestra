@@ -9,6 +9,7 @@ import { completeBrief, parseBrief, parseNeeds, type ContextNeed, type ReturnBri
 import { UsageLedger, type CallKind, type UsageEntry, type UsageTotals } from "./usage-ledger";
 import { outputProblems, unifiedDiff } from "./diff";
 import { listFiles, readFiles, writeFiles } from "./workspace";
+import { isStuck, ProviderFailure, providerReason, type ReservationConflict, type TaskReason } from "./recovery";
 
 // Runs an approved plan with the agents in the tree. Plain code, no AI: the order, the limits, the
 // retries and the choice of agent are decided here (docs/backend-plan.md, phase 3).
@@ -34,7 +35,10 @@ export const MAX_CONTEXT_ROUNDS = 2;
 
 export type TeamEvent =
   | { type: "run-started"; tasks: { id: string; title: string; role: string; agentId: string; agentName: string; deliverables: string[] }[] }
-  | { type: "task"; taskId: string; status: TaskStatus; agentId: string | null; attempt: number; note?: string }
+  // reason: why a failed or blocked task stopped, and what helps next (recovery.ts).
+  | { type: "task"; taskId: string; status: TaskStatus; agentId: string | null; attempt: number; note?: string; reason?: TaskReason }
+  // Retry: the run continues with these tasks again (and the ones waiting for them).
+  | { type: "run-resumed"; taskIds: string[] }
   | { type: "review"; taskId: string; reviewerId: string; approved: boolean; problems: string[] }
   | { type: "files"; taskId: string; files: { path: string; bytes: number }[] }
   | { type: "brief"; taskId: string; brief: ReturnBrief }
@@ -112,9 +116,27 @@ export class TeamRun {
   // What tasks need from the user or the Manager, and requests that were refused (Stage 2).
   private readonly escalations: string[] = [];
   private readonly notices: string[] = [];
+  // Why a task is blocked or stopped: its own problem, an earlier task it needs, or the run halting.
+  private readonly cause = new Map<string, "own" | "dependency" | "halted">();
+  // A failed task's last findings and submitted files, so a retry fixes them instead of starting over.
+  private readonly carry = new Map<string, { problems: string[]; files: { path: string; content: string }[] }>();
+  private callLimit: number;
+  private active_ = false;
+  private readonly o: RunOptions;
 
-  constructor(private readonly o: RunOptions) {
-    this.limits = { ...DEFAULT_LIMITS, ...o.limits };
+  constructor(options: RunOptions) {
+    this.o = { ...options };
+    this.limits = { ...DEFAULT_LIMITS, ...options.limits };
+    this.callLimit = this.limits.maxCalls;
+  }
+
+  get running(): boolean {
+    return this.active_;
+  }
+
+  // The task's status now (tests and the retry checks).
+  statusOf(taskId: string): TaskStatus | undefined {
+    return this.status.get(taskId);
   }
 
   stop(): void {
@@ -122,9 +144,10 @@ export class TeamRun {
     for (const handle of this.active) handle.stop();
   }
 
-  private set(task: PlanTask, status: TaskStatus, agentId: string | null, attempt: number, note?: string): void {
+  private set(task: PlanTask, status: TaskStatus, agentId: string | null, attempt: number, note?: string, reason?: TaskReason, cause: "own" | "dependency" | "halted" = "own"): void {
     this.status.set(task.id, status);
-    this.o.emit({ type: "task", taskId: task.id, status, agentId, attempt, ...(note ? { note } : {}) });
+    this.cause.set(task.id, cause);
+    this.o.emit({ type: "task", taskId: task.id, status, agentId, attempt, ...(note ? { note } : {}), ...(reason ? { reason } : {}) });
   }
 
   // One request to one agent. Returns the full text, or throws with a message for the next attempt.
@@ -132,7 +155,7 @@ export class TeamRun {
   // only the final event of a reply counts, so streamed updates never add up twice.
   private async ask(agent: TeamAgent, prompt: string, meta: { taskId: string; kind: CallKind; attempt: number; model?: string | undefined }): Promise<string> {
     if (this.stopped) throw new Stopped();
-    if (this.calls >= this.limits.maxCalls) throw new Error(`The limit of ${this.limits.maxCalls} agent requests for this run is reached.`);
+    if (this.calls >= this.callLimit) throw new Error(`The limit of ${this.limits.maxCalls} agent requests for this run is reached.`);
     this.calls += 1;
     const seq = this.ledger.open();
     // The task's model when the Manager chose one and this agent's tool offers it; else the agent's own.
@@ -164,7 +187,7 @@ export class TeamRun {
     if (last?.type === "completed") text = last.text || text;
     output(true, last?.type === "failed" ? last.message : last?.type === "completed" ? undefined : this.stopped || last?.type === "cancelled" ? "Stopped." : "No answer.");
     if (this.stopped || last?.type === "cancelled") throw new Stopped();
-    if (last?.type === "failed") throw new Error(`${agent.name}: ${last.message}`);
+    if (last?.type === "failed") throw new ProviderFailure(`${agent.name}: ${last.message}`, last.reason, agent.tool, agent.id, agent.name, model);
     if (last?.type !== "completed") throw new Error(`${agent.name} gave no answer.`);
     return last.text;
   }
@@ -180,15 +203,21 @@ export class TeamRun {
     // reference that cannot be resolved stops the task here: no agent is asked without it.
     const resolved = resolveHandoff(plan, task, workspace, this.outputs, this.limits.contextChars);
     if (resolved.problems.length) {
-      this.set(task, "blocked", null, 0, `Missing context: ${resolved.problems.join(" ")}`);
+      this.set(task, "blocked", null, 0, `Missing context: ${resolved.problems.join(" ")}`, { kind: "needs_context", title: "This task is missing context it needs before an agent can start.", detail: resolved.problems.join(" "), needs: resolved.problems, role: task.role });
       return;
     }
     // Context requests (Stage 2): answered once each, in a bounded number of rounds.
     const asked = new Set<string>();
     let rounds = 0;
-    let problems: string[] = [];
+    // A retry of this task starts from the last findings and the last submitted files.
+    const carried = this.carry.get(task.id);
+    this.carry.delete(task.id);
+    let problems: string[] = carried?.problems ?? [];
     // The latest submitted version: a retry fixes it instead of starting over (Stage 3).
-    let current: { path: string; content: string }[] = [];
+    let current: { path: string; content: string }[] = carried?.files ?? [];
+    // Why the last attempt did not pass, for the card if this task fails.
+    let lastReason: TaskReason | null = null;
+    const stuck = new Set<string>();
     for (let attempt = 1; attempt <= this.limits.maxAttempts; attempt += 1) {
       // A retry goes to the next agent with the same role, if there is one (escalation by priority).
       const worker = workers[(attempt - 1) % workers.length]!;
@@ -201,6 +230,16 @@ export class TeamRun {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
         problems = [(error as Error).message];
+        lastReason = error instanceof ProviderFailure ? providerReason(error) : { kind: "unknown", title: `${worker.name} did not answer.`, detail: (error as Error).message, agentId: worker.id, agentName: worker.name };
+        // Signed out or out of usage: asking the same tool again cannot help.
+        if (isStuck(error)) {
+          stuck.add(worker.id);
+          if (workers.every((w) => stuck.has(w.id))) {
+            this.carry.set(task.id, { problems: [], files: current });
+            this.set(task, "failed", worker.id, attempt, lastReason.title, lastReason);
+            return;
+          }
+        }
         continue;
       }
       const needs = parseNeeds(text);
@@ -208,7 +247,8 @@ export class TeamRun {
         rounds += 1;
         const blocker = await this.answerNeeds(task, worker, needs, asked, resolved, rounds);
         if (blocker) {
-          this.set(task, "blocked", worker.id, attempt, blocker);
+          const asks = blocker.replace(/^Needs the Manager or you: /, "");
+          this.set(task, "blocked", worker.id, attempt, blocker, { kind: "needs_context", title: `${worker.name} needs something from the Manager or you before it can continue.`, detail: blocker, needs: [asks], agentId: worker.id, agentName: worker.name, role: task.role });
           return;
         }
         // Asking for context is not a failed attempt.
@@ -231,13 +271,27 @@ export class TeamRun {
       const invalid = delivery.length ? [] : outputProblems(outgoing);
       if (delivery.length || invalid.length) {
         problems = [...delivery, ...invalid];
+        lastReason = { kind: "review_rejected", title: "The delivered files did not pass the app's checks.", detail: problems.join(" "), findings: problems, reviewer: "The app's checks", agentId: worker.id, agentName: worker.name };
         if (outgoing.length) current = outgoing;
         continue;
       }
       // What the files were before this answer, so the reviewer can read the change.
       const previous = new Map(readFiles(workspace, outgoing.map((f) => f.path), Number.MAX_SAFE_INTEGER).map((f) => [f.path.toLowerCase(), f.content]));
       if (this.o.writeGuard) {
-        await this.o.writeGuard.authorize(outgoing.map((f) => f.path));
+        try {
+          await this.o.writeGuard.authorize(outgoing.map((f) => f.path));
+        } catch (error) {
+          if (error instanceof Stopped) throw error;
+          // A teammate's reservation (or lost coordination): nothing is written; the answer is kept for a retry.
+          const conflicts = ((error as { conflicts?: ReservationConflict[] }).conflicts ?? []);
+          this.carry.set(task.id, { problems: [], files: outgoing });
+          this.notices.push(`${task.title}: ${(error as Error).message}`);
+          this.set(task, "blocked", worker.id, attempt, (error as Error).message, {
+            kind: "reservation", title: conflicts.length ? `${conflicts.map((c) => c.name).join(", ")} reserved files this task writes, so nothing was written.` : "Your team's reservation for these files could not be confirmed, so nothing was written.",
+            detail: (error as Error).message, conflicts, agentId: worker.id, agentName: worker.name,
+          });
+          return;
+        }
         if (this.stopped) throw new Stopped();
       }
       this.o.snapshot?.before(outgoing.map((f) => f.path));
@@ -295,8 +349,10 @@ export class TeamRun {
         return;
       }
       problems = review.problems;
+      lastReason = { kind: "review_rejected", title: `${reviewer.name} did not approve the work after ${attempt} attempt${attempt === 1 ? "" : "s"}.`, detail: review.problems.join(" ") || "Not approved.", findings: review.problems, reviewer: reviewer.name, agentId: worker.id, agentName: worker.name };
     }
-    this.set(task, "failed", null, this.limits.maxAttempts, problems[0] ?? "Not approved.");
+    this.carry.set(task.id, { problems, files: current });
+    this.set(task, "failed", null, this.limits.maxAttempts, problems[0] ?? "Not approved.", lastReason ?? { kind: "unknown", title: "The task did not pass.", detail: problems.join(" ") || "Not approved." });
   }
 
   // The skills a task's handoff names that this agent has: their full instructions, loaded now. A
@@ -396,38 +452,96 @@ export class TeamRun {
     emit({ type: "run-started", tasks: assignments });
     const missing = missingRoles(plan, agents);
     if (missing.length) {
+      for (const t of plan.tasks) {
+        if (missing.includes(t.role)) this.set(t, "blocked", null, 0, `No agent with the role ${t.role}.`, { kind: "agent_missing", title: `No agent in the tree has the role ${t.role} and runs on Claude Code or Codex.`, detail: `Missing role: ${t.role}.`, role: t.role });
+        else this.set(t, "blocked", null, 0, "Not started: the team is missing agents.", { kind: "dependency", title: "Not started: the team is missing agents for other tasks.", detail: `Missing roles: ${missing.join(", ")}.`, after: [] }, "halted");
+      }
       return this.finish("failed", `No agent in the tree runs on Claude Code or Codex for: ${missing.join(", ")}. Set one in the tree and start again.`);
     }
     for (const t of plan.tasks) this.set(t, "waiting", null, 0);
+    await this.schedule();
+  }
 
+  // Retry (run card): runs one failed or blocked task again, with the agents as they are now, and
+  // then the tasks that were waiting for it. Finished tasks keep their output and never run again.
+  async retry(taskId: string, agents: TeamAgent[], writeGuard?: { authorize(paths: string[]): Promise<void> }): Promise<void> {
+    const { plan } = this.o;
+    if (this.active_) throw new Error("The team is still working on this run.");
+    const task = plan.tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error("Unknown task.");
+    if (!["failed", "blocked", "stopped"].includes(this.status.get(taskId) ?? "")) throw new Error("Only a task that failed or is blocked can be retried.");
+    const missing = missingRoles({ ...plan, tasks: [task] }, agents);
+    if (missing.length) throw new Error(`No agent in the tree has the role ${missing.join(", ")}.`);
+    this.o.agents = agents;
+    if (writeGuard) this.o.writeGuard = writeGuard;
+    else delete this.o.writeGuard;
+    this.stopped = false;
+    // A fresh request budget for the retry; usage keeps adding up for the whole run.
+    this.callLimit = this.calls + this.limits.maxCalls;
+    // The task, and every task that waited for it (directly or through others) or never started
+    // because the run halted. Tasks blocked for their own reasons stay as they are.
+    const again = new Set([taskId]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const t of plan.tasks) {
+        if (again.has(t.id)) continue;
+        const s = this.status.get(t.id);
+        const cause = this.cause.get(t.id);
+        if (!["blocked", "stopped", "waiting"].includes(s ?? "") || cause === "own") continue;
+        if (cause === "halted" || s === "stopped" || t.dependsOn.some((d) => again.has(d))) { again.add(t.id); grew = true; }
+      }
+    }
+    for (let i = this.escalations.length - 1; i >= 0; i -= 1) if ([...again].some((id) => this.escalations[i]!.startsWith(`${id} (`))) this.escalations.splice(i, 1);
+    this.notices.length = 0;
+    this.o.emit({ type: "run-resumed", taskIds: [...again] });
+    for (const t of plan.tasks) if (again.has(t.id)) this.set(t, "waiting", null, 0);
+    await this.schedule();
+  }
+
+  private async schedule(): Promise<void> {
+    const { plan } = this.o;
+    this.active_ = true;
     const running = new Map<string, Promise<void>>();
     let failure: string | null = null;
-    while (true) {
-      const finished = (id: string) => ["done", "unverified"].includes(this.status.get(id) ?? "");
-      for (const t of plan.tasks) {
-        if (!this.stopped && this.status.get(t.id) === "waiting" && t.dependsOn.some((d) => ["failed", "blocked", "stopped"].includes(this.status.get(d) ?? ""))) {
-          this.set(t, "blocked", null, 0, "An earlier task it needs did not finish.");
-        }
-      }
-      if (!this.stopped && !failure) {
+    try {
+      while (true) {
+        const finished = (id: string) => ["done", "unverified"].includes(this.status.get(id) ?? "");
         for (const t of plan.tasks) {
-          if (running.size >= this.limits.maxParallel) break;
-          if (this.status.get(t.id) !== "waiting" || running.has(t.id) || !t.dependsOn.every(finished)) continue;
-          const job = this.runTask(t).catch((error: unknown) => {
-            if (error instanceof Stopped) this.set(t, "stopped", null, 0);
-            else {
-              failure = (error as Error).message;
-              this.set(t, "failed", null, 0, failure);
-            }
-          }).finally(() => running.delete(t.id));
-          running.set(t.id, job);
+          const failedDeps = t.dependsOn.filter((d) => ["failed", "blocked", "stopped"].includes(this.status.get(d) ?? ""));
+          if (!this.stopped && this.status.get(t.id) === "waiting" && failedDeps.length) {
+            const names = failedDeps.map((d) => plan.tasks.find((x) => x.id === d)?.title ?? d);
+            this.set(t, "blocked", null, 0, "An earlier task it needs did not finish.", { kind: "dependency", title: `Waiting for ${names.join(", ")} to pass. Retry that task first.`, detail: `Depends on ${failedDeps.join(", ")}.`, after: failedDeps }, "dependency");
+          }
+        }
+        if (!this.stopped && !failure) {
+          for (const t of plan.tasks) {
+            if (running.size >= this.limits.maxParallel) break;
+            if (this.status.get(t.id) !== "waiting" || running.has(t.id) || !t.dependsOn.every(finished)) continue;
+            const job = this.runTask(t).catch((error: unknown) => {
+              if (error instanceof Stopped) this.set(t, "stopped", null, 0);
+              else {
+                failure = (error as Error).message;
+                const limit = /limit of \d+ agent requests/.test(failure);
+                this.set(t, "failed", null, 0, failure, limit
+                  ? { kind: "limit", title: "The run reached its limit of agent requests before this task passed.", detail: failure }
+                  : { kind: "unknown", title: "The task stopped with an error the app did not expect.", detail: failure });
+              }
+            }).finally(() => running.delete(t.id));
+            running.set(t.id, job);
+          }
+        }
+        if (running.size === 0) break;
+        await Promise.race(running.values());
+      }
+      for (const t of plan.tasks) {
+        if (this.status.get(t.id) === "waiting") {
+          if (this.stopped) this.set(t, "stopped", null, 0, undefined, undefined, "halted");
+          else this.set(t, "blocked", null, 0, failure ?? undefined, { kind: "dependency", title: "Not started: the run stopped before this task.", detail: failure ?? "The run stopped.", after: [] }, "halted");
         }
       }
-      if (running.size === 0) break;
-      await Promise.race(running.values());
-    }
-    for (const t of plan.tasks) {
-      if (this.status.get(t.id) === "waiting") this.set(t, this.stopped ? "stopped" : "blocked", null, 0, failure ?? undefined);
+    } finally {
+      this.active_ = false;
     }
     if (this.stopped) return this.finish("stopped", "Stopped. Files already written stay in the project folder.");
     const all = plan.tasks.map((t) => this.status.get(t.id));

@@ -350,7 +350,9 @@ function applyTeamEventCore(run, event) {
   const patch = (taskId, fn) => ({ ...run, tasks: run.tasks.map((t) => (t.id === taskId ? fn(t) : t)) });
   switch (event && event.type) {
     case 'run-started': return { ...run, tasks: run.tasks.map((t) => { const a = event.tasks.find((x) => x.id === t.id); return a ? { ...t, plannedAgentId: a.agentId, plannedAgentName: a.agentName } : t; }) };
-    case 'task': return patch(event.taskId, (t) => ({ ...t, status: event.status, agentId: event.agentId ?? t.agentId, attempt: event.attempt || t.attempt, note: event.note ?? null }));
+    case 'task': return patch(event.taskId, (t) => ({ ...t, status: event.status, agentId: event.agentId ?? t.agentId, attempt: event.attempt || t.attempt, note: event.note ?? null, reason: event.reason ?? null }));
+    // Retry from the run card: the run works again on these tasks; finished tasks stay as they are.
+    case 'run-resumed': return { ...run, status: 'running', summary: null, endedAt: null, retriedAt: Date.now(), tasks: run.tasks.map((t) => ((event.taskIds || []).includes(t.id) ? { ...t, status: 'waiting', note: null, reason: null } : t)) };
     case 'review': return patch(event.taskId, (t) => ({ ...t, review: { reviewerId: event.reviewerId, approved: event.approved, problems: event.problems } }));
     case 'files': return patch(event.taskId, (t) => ({ ...t, files: event.files }));
     case 'brief': return patch(event.taskId, (t) => ({ ...t, brief: event.brief }));
@@ -685,6 +687,7 @@ export const MAX_LOG = 200;
 function logEntry(event) {
   switch (event && event.type) {
     case 'run-started': return { type: 'run-started', count: (event.tasks || []).length };
+    case 'run-resumed': return { type: 'run-resumed', taskIds: (event.taskIds || []).slice(0, 8).map(String) };
     case 'task': return { type: 'task', taskId: event.taskId, status: event.status, agentId: event.agentId ?? null, attempt: event.attempt || 1, note: event.note ? String(event.note).slice(0, 300) : null };
     case 'review': return { type: 'review', taskId: event.taskId, reviewerId: event.reviewerId, approved: Boolean(event.approved), problems: (event.problems || []).slice(0, 2).map((p) => String(p).slice(0, 200)) };
     case 'files': return { type: 'files', taskId: event.taskId, files: (event.files || []).slice(0, 12).map((f) => ({ path: String(f.path), bytes: Number(f.bytes) || 0 })) };
@@ -710,6 +713,10 @@ export function logLine(entry, run, nameOf) {
   const who = (id) => (id ? nameOf(id) : 'The team');
   switch (entry.type) {
     case 'run-started': return { kind: 'start', text: `The team started ${entry.count} task${entry.count === 1 ? '' : 's'}` };
+    case 'run-resumed': {
+      const names = entry.taskIds.map((id) => run.tasks.find((t) => t.id === id)?.title || id);
+      return { kind: 'retry', text: `You retried “${names[0]}”${names.length > 1 ? `; ${names.slice(1).map((n) => `“${n}”`).join(', ')} wait${names.length === 2 ? 's' : ''} for it` : ''}` };
+    }
     case 'task':
       if (entry.status === 'waiting') return null;
       if (entry.status === 'working' && entry.attempt > 1) return { kind: 'retry', text: `${who(entry.agentId)} tries ${title} again (attempt ${entry.attempt})${entry.note ? ` — ${entry.note}` : ''}` };

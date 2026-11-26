@@ -567,10 +567,11 @@
 .teams-list li .team-member-actions{flex:0 0 auto;display:inline-flex;gap:12px}
 .danger-button{color:light-dark(#9a4a32, #e0a088)}
 .nav-project{position:relative}
-.project-menu{position:absolute;right:4px;top:4px}
-.project-menu-button{opacity:.55;font-size:15px;line-height:1;padding:3px 6px}
+.project-menu{position:static}
+.nav-project>.project-button{padding-right:36px}
+.project-menu-button{position:absolute;right:4px;top:5px;opacity:.55;font-size:15px;line-height:1;padding:3px 6px}
 .nav-project:hover .project-menu-button,.project-menu-button[aria-expanded="true"]{opacity:1}
-.project-menu-list{left:auto;right:0;top:calc(100% + 4px);bottom:auto;width:250px}
+.project-menu-list{left:0;right:0;top:36px;bottom:auto;width:auto;transform-origin:top center}
 .project-menu-list>button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 10px;border-radius:8px;font-size:12px}
 .project-menu-list>button:hover{background:var(--shell-hover, light-dark(#f0f0f0, #3a3a3a))}
 .project-menu-line{height:1px;margin:4px 6px;background:var(--shell-line)}
@@ -592,6 +593,69 @@
 .access-diff-text{max-height:240px;overflow:auto;font-size:11px;background:light-dark(#f6f6f6, #262626);border-radius:6px;padding:8px;margin:6px 0 0;white-space:pre}
 .access-log{list-style:none;padding:0;margin:0;font-size:11px;display:flex;flex-direction:column;gap:3px}
 .access-log .is-refused{color:light-dark(#9a4a32, #e0a088)}
+
+/* "Get started" checklist in a new project's chat (GetStarted.jsx). */
+.get-started{margin:18px 26px 0;border:1px solid var(--shell-line);border-radius:12px;background:var(--shell-card);padding:14px 16px}
+.get-started-head{display:flex;align-items:flex-start;gap:12px}
+.get-started-head>div{flex:1;display:flex;flex-direction:column;gap:4px}
+.get-started-head strong{font-size:14px;font-weight:550}
+.get-started-count{font-size:12px;color:var(--shell-muted);white-space:nowrap;padding-top:2px}
+.get-started-steps{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
+.gs-step{display:flex;gap:12px;padding:10px 8px;border-radius:9px}
+.gs-step.gs-next{background:light-dark(#f6f6f6, #2b2b2b)}
+.gs-mark{flex:0 0 24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border:1px solid var(--shell-line);color:var(--shell-muted)}
+.gs-done .gs-mark{background:light-dark(#e6f2e8, #263a2b);color:light-dark(#2f6b3a, #9fd3a9);border-color:transparent}
+.gs-warn .gs-mark{background:light-dark(#f6efdf, #3d3523);color:light-dark(#7a5c1c, #d8bd7f);border-color:transparent}
+.gs-active .gs-mark{border-color:var(--shell-accent);color:var(--shell-text)}
+.gs-body{flex:1;min-width:0}
+.gs-title{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px}
+.gs-title small{font-size:11px;color:var(--shell-muted)}
+.gs-badge{font-size:10px;font-weight:600;letter-spacing:.4px;padding:1px 7px;border-radius:9px;background:var(--shell-accent);color:light-dark(#fff, #222)}
+.gs-detail{margin:3px 0 0;font-size:12px;color:var(--shell-muted);overflow-wrap:anywhere}
+.gs-done .gs-title strong{color:var(--shell-muted)}
+.gs-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.gs-finish{justify-content:flex-end}
+.view-split .get-started{margin:14px 14px 0}
+
+/* Run recovery on a failed or blocked task (TeamRun.jsx TaskRecovery). */
+.task-recovery{margin:8px 0 2px;padding:10px 12px;border-radius:9px;border:1px solid light-dark(#e5c9bd, #5a4037);background:light-dark(#fbf3ef, #33292a);font-size:13px;display:flex;flex-direction:column;gap:6px}
+.task-recovery.reason-dependency{border-color:var(--shell-line);background:transparent}
+.recovery-title{margin:0;color:var(--shell-text);line-height:1.45}
+.recovery-line{margin:0;font-size:12px;color:var(--shell-muted)}
+.recovery-needs{font-size:12px}
+.recovery-needs ul,.recovery-panel ul{margin:4px 0 0;padding-left:18px;line-height:1.5}
+.recovery-panel{font-size:12px;padding:8px 10px;border-radius:7px;background:light-dark(#ffffff, #2a2a2a);border:1px solid var(--shell-line)}
+.recovery-panel p{margin:4px 0}
+.recovery-actions{display:flex;flex-wrap:wrap;gap:8px}
+.recovery-details summary{font-size:11px;color:var(--shell-muted);cursor:pointer}
+.recovery-details pre{white-space:pre-wrap;font-size:11px;margin:6px 0 0;max-height:180px;overflow:auto}
+.provider-card.is-focused{outline:2px solid var(--shell-accent);outline-offset:2px}
+
+/* Review changes from a run card (RunReview.jsx). Computer access and the review get a wide modal. */
+.modal:has(.access-page){width:min(880px,100%)}
+.modal .access-page{min-width:0}
+.run-review{max-height:none;overflow:visible}
+.access-page .setup-path{overflow-wrap:anywhere;min-width:0}
+.run-review .access-diff-text{max-width:100%}
+.team-pending{margin:0;padding:10px 16px;font-size:13px;color:var(--shell-text);border-top:1px solid var(--shell-line)}
+.run-review .provider-line{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.review-tag{font-size:11px;padding:2px 7px;border-radius:5px;border:1px solid var(--shell-line);color:var(--shell-muted)}
+.review-tag.is-warn{color:light-dark(#9a4a32, #e0a088);border-color:currentColor}
+.review-folder{display:flex;gap:8px;align-items:center;font-size:12px;margin:6px 0}
+.review-access,.review-stale{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0;padding:10px 12px;border-radius:8px;font-size:12px;border:1px solid light-dark(#e5c9bd, #5a4037);background:light-dark(#fbf3ef, #33292a)}
+.review-file label{flex-wrap:wrap}
+.review-file.is-replaced,.review-file.is-blocked{opacity:.85}
+.review-note{display:block;font-size:11px;color:var(--shell-muted);margin:2px 0 0 22px}
+.review-verify{font-size:11px;padding:1px 7px;border-radius:9px;white-space:nowrap}
+.verify-reviewed{background:light-dark(#e6f2e8, #263a2b);color:light-dark(#2f6b3a, #9fd3a9)}
+.verify-unverified{background:light-dark(#f6efdf, #3d3523);color:light-dark(#7a5c1c, #d8bd7f)}
+.verify-blocked{background:light-dark(#f8e6e1, #40292a);color:light-dark(#9a4a32, #e0a088)}
+.review-outcome.is-applied{font-size:12px;color:light-dark(#2f6b3a, #9fd3a9);margin:4px 0 0 22px}
+.review-checks>li{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.review-result{font-size:12px;margin-top:12px}
+.review-result p{margin:4px 0}
+.review-skip{color:light-dark(#9a4a32, #e0a088)}
+.review-actions{margin-top:14px}
 
 /* Resizable split between the Manager chat and the Work Tree (pane-layout.mjs). */
 .main-area .content-panels.split-panels{gap:0}

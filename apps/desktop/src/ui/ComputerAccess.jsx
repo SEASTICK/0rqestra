@@ -122,7 +122,8 @@ function ApplyChanges({ api, projectId, view, notify, onView }) {
   );
 }
 
-export function ComputerAccess({ project, Icon, notify, onClose }) {
+// onBack: opened from a run's Review changes; returns there with the same run.
+export function ComputerAccess({ project, Icon, notify, onClose, onBack }) {
   const { api, view, busy, run, setView } = useAccess(project.id, notify);
   if (!api) return <div><h2 id="dialog-title">Computer access</h2><p className="dialog-description">Computer access works in the installed app.</p></div>;
   const agents = agentsOf(project);
@@ -132,6 +133,7 @@ export function ComputerAccess({ project, Icon, notify, onClose }) {
       <div className="dialog-heading"><span className="dialog-icon"><Icon name="link" size={21}/></span><button className="icon-button" type="button" aria-label="Close computer access" onClick={onClose}><Icon name="close"/></button></div>
       <h2 id="dialog-title">Computer access · {project.name}</h2>
       <p className="dialog-description">Folders on this computer that agents in this project may read, and where they may apply changes you reviewed. Access is given per agent, stays on this computer and is never shared with your team. Nothing is allowed until you allow it.</p>
+      {onBack && <div className="review-access"><span>When agents may change the folder the run’s files should land in, go back to the run’s changes.</span><button type="button" className="button primary-button" onClick={onBack}>Back to Review changes</button></div>}
       <div className="setup-actions">
         <button type="button" className="button primary-button" disabled={busy} onClick={() => run((a) => a.addFolder(project.id))}><Icon name="plus" size={14}/> Add folder</button>
         <button type="button" className="button" disabled={busy} onClick={() => run(async (a) => { await a.openProjectFolder(project.id); return null; })}><Icon name="folder" size={14}/> Open project folder</button>

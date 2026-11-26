@@ -9,7 +9,7 @@ import { TeamService } from "./team-service";
 export type StartGate =
   | { kind: "solo" }
   | { kind: "granted"; guard: { authorize(paths: string[]): Promise<void>; release(): Promise<void> } }
-  | { kind: "conflict" | "unavailable" | "no_scope"; message: string };
+  | { kind: "conflict" | "unavailable" | "no_scope"; message: string; conflicts?: { name: string; task: string; branch: string | null; overlaps: { yours: string; theirs: string }[] }[] };
 import { projectWorkspace } from "./workspace";
 import { findProducts } from "../preview/products";
 import { rememberPreviewHost } from "../preview/preview-protocol";
@@ -63,6 +63,35 @@ export function registerTeamIpc(
   ipcMain.handle("team:direct", async (event, payload: unknown) => {
     guard(event);
     return launch(event.sender, service.prepareDirect(payload));
+  });
+  // Retry one failed or blocked task of a finished run (its run card). Checked first: the run and
+  // task, the tools it needs, and Teams reservations. Returns { ok: true } once it started, or
+  // { ok: false, reason } with a reason the card can act on; nothing has started then.
+  ipcMain.handle("team:retry", async (event, payload: unknown) => {
+    guard(event);
+    const prepared = service.prepareRetry(payload);
+    const sender = event.sender;
+    try {
+      const notReady = await service.retryReadiness(prepared);
+      if (notReady) {
+        service.cancelRetry(prepared);
+        return { ok: false, reason: notReady };
+      }
+      const decision = gate ? await gate({ runId: prepared.coordId, localProjectId: prepared.kept.projectId, plan: prepared.scope }) : { kind: "solo" as const };
+      if (decision.kind !== "solo" && decision.kind !== "granted") {
+        service.cancelRetry(prepared);
+        const conflicts = decision.kind === "conflict" ? decision.conflicts ?? [] : [];
+        return { ok: false, reason: { kind: decision.kind === "conflict" ? "reservation" : "unknown", title: decision.kind === "conflict" ? `${conflicts.map((c) => c.name).join(", ") || "A teammate"} still holds files this task writes.` : "The retry could not be coordinated with your team.", detail: decision.message, conflicts } };
+      }
+      service.launchRetry(prepared, (id, teamEvent) => {
+        const window = getWindow();
+        if (window && !window.isDestroyed() && window.webContents === sender && !sender.isDestroyed()) sender.send("team:event", { runId: id, event: teamEvent });
+      }, decision.kind === "granted" ? decision.guard : undefined);
+      return { ok: true };
+    } catch (error) {
+      service.cancelRetry(prepared);
+      throw error;
+    }
   });
   ipcMain.handle("team:undo", (event, payload: unknown) => {
     guard(event);

@@ -23,7 +23,11 @@ export function registerAccessIpc(
     const w = getWindow();
     if (w && !w.isDestroyed()) w.webContents.send(channel, payload);
   };
-  const service = new AccessService(new AccessStore(base()), (projectId) => projectWorkspace(base(), projectId), (event) => send("access:event", event), (projectId, paths) => teams.reservedByOthers(projectId, paths));
+  const service = new AccessService(new AccessStore(base()), (projectId) => projectWorkspace(base(), projectId), (event) => send("access:event", event), (projectId, paths) => teams.reservedByOthers(projectId, paths), {
+    ledgerDir: path.join(base(), "access", "changes"),
+    checkoutFor: (projectId) => teams.linkFor(projectId)?.path ?? null,
+    onChanges: (projectId) => send("access:event", { projectId, kind: "changes" }),
+  });
   useAccess(service);
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
@@ -36,7 +40,8 @@ export function registerAccessIpc(
     ...service.store.view(projectId),
     checkout: teams.linkFor(projectId)?.path ?? null,
     workspace: projectWorkspace(base(), projectId),
-    pending: service.pendingFiles(projectId).map((f) => ({ path: f.path, agent: f.agentName, taskId: f.taskId })),
+    pending: service.pendingFiles(projectId).map((f) => ({ path: f.path, agent: f.agentName, taskId: f.taskId, runId: f.runId })),
+    pendingByRun: service.pendingByRun(projectId),
     recent: service.recent(projectId).slice(0, 30),
   });
 
@@ -115,6 +120,19 @@ export function registerAccessIpc(
     guard(event);
     const id = project(projectId);
     return { result: service.apply(id, previewId, paths), view: state(id) };
+  });
+  // One run's changes, from its card in Manager chat (scoped to that run in the main process).
+  ipcMain.handle("access:pending-by-run", (event, projectId: unknown) => {
+    guard(event);
+    return service.pendingByRun(project(projectId));
+  });
+  ipcMain.handle("access:review-run", (event, projectId: unknown, runId: unknown, folderId: unknown) => {
+    guard(event);
+    return service.reviewRun(project(projectId), runId, typeof folderId === "string" && folderId ? folderId : undefined);
+  });
+  ipcMain.handle("access:apply-run", async (event, projectId: unknown, runId: unknown, previewId: unknown, paths: unknown) => {
+    guard(event);
+    return service.applyRun(project(projectId), runId, previewId, paths);
   });
   ipcMain.handle("access:forget-project", (event, projectId: unknown) => {
     guard(event);

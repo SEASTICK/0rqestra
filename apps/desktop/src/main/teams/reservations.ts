@@ -102,7 +102,12 @@ function parseConflicts(raw: unknown): Conflict[] {
   }));
 }
 
-export class WriteRefused extends Error {}
+// conflicts: the teammates whose reservations overlap, when that is why (shown by the run card).
+export class WriteRefused extends Error {
+  constructor(message: string, readonly conflicts: Conflict[] = []) {
+    super(message);
+  }
+}
 
 class Lease implements WriteGuard {
   token: string;
@@ -212,7 +217,10 @@ class Lease implements WriteGuard {
       this.c.changed();
       return;
     }
-    if (r.status === "conflict") throw new WriteRefused(`Not written: ${conflictMessage(parseConflicts((r as { conflicts: unknown }).conflicts))}`);
+    if (r.status === "conflict") {
+      const conflicts = parseConflicts((r as { conflicts: unknown }).conflicts);
+      throw new WriteRefused(`Not written: ${conflictMessage(conflicts)}`, conflicts);
+    }
     this.state = "paused";
     this.c.changed();
     throw new WriteRefused("This run's reservation is no longer held, so writing is paused.");

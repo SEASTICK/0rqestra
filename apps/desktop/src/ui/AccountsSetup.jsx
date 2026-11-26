@@ -55,7 +55,7 @@ function UseChoices({ account, managerProvider, agents, onUseForManager, onUseFo
   );
 }
 
-function AccountCard({ account, api, now, notify, refresh, use }) {
+function AccountCard({ account, api, now, notify, refresh, use, focused }) {
   const { badge, tone } = badgeFor(account);
   const action = mainAction(account);
   const [pending, setPending] = useState(false);
@@ -75,7 +75,7 @@ function AccountCard({ account, api, now, notify, refresh, use }) {
   const showInstallHelp = account.setup === 'missing';
   const showSignInHelp = ['signed_out', 'api_key'].includes(account.setup) || activity?.kind === 'waiting_sign_in';
   return (
-    <article className={`provider-card setup-card setup-${account.setup}`} aria-label={account.label}>
+    <article id={`account-${account.provider}`} className={`provider-card setup-card setup-${account.setup}${focused ? " is-focused" : ""}`} aria-label={account.label}>
       <header className="provider-card-head">
         <div><h2>{account.label}</h2><small>{subtitle(account)}</small></div>
         <span className={`provider-badge ${tone}`}>{badge}</span>
@@ -120,7 +120,9 @@ function AccountCard({ account, api, now, notify, refresh, use }) {
   );
 }
 
-export function AccountsPage({ onBack, notify, onProvidersChanged, managerProvider, agents, onUseForManager, onUseForAgent }) {
+// focus: the provider a run card sent the user here to sign in to (highlighted, scrolled to);
+// backLabel: the Back button then returns to that run.
+export function AccountsPage({ onBack, notify, onProvidersChanged, managerProvider, agents, onUseForManager, onUseForAgent, focus = null, backLabel = null }) {
   const api = typeof window !== 'undefined' ? window.orqestra?.accounts : null;
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -143,6 +145,9 @@ export function AccountsPage({ onBack, notify, onProvidersChanged, managerProvid
   }, []);
   const busy = accounts.some((a) => a.activity);
   useEffect(() => {
+    if (focus && accounts.length) document.getElementById(`account-${focus}`)?.scrollIntoView?.({ block: "center" });
+  }, [focus, accounts.length > 0]);
+  useEffect(() => {
     if (!busy) return undefined;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -158,7 +163,7 @@ export function AccountsPage({ onBack, notify, onProvidersChanged, managerProvid
         </div>
         <div className="accounts-actions">
           {api && <button className="button" disabled={loading} onClick={refresh}>{loading ? 'Checking…' : 'Check again'}</button>}
-          <button className="button" onClick={onBack}>Back</button>
+          <button className={`button${backLabel ? " primary-button" : ""}`} onClick={onBack}>{backLabel || "Back"}</button>
         </div>
       </div>
       {!api ? (
@@ -166,7 +171,7 @@ export function AccountsPage({ onBack, notify, onProvidersChanged, managerProvid
       ) : accounts.length === 0 ? (
         <p className="provider-line">{loading ? 'Looking for Claude Code and Codex…' : 'No information yet. Choose Check again.'}</p>
       ) : (
-        <div className="provider-grid">{accounts.map((a) => <AccountCard key={a.provider} account={a} api={api} now={now} notify={notify} refresh={refresh} use={use}/>)}</div>
+        <div className="provider-grid">{accounts.map((a) => <AccountCard key={a.provider} account={a} api={api} now={now} notify={notify} refresh={refresh} use={use} focused={a.provider === focus}/>)}</div>
       )}
       <p className="setup-demo">Without a connected tool your Manager does not answer, and nothing is sent anywhere. Your projects, chats and team trees are kept on this computer either way.</p>
     </section>

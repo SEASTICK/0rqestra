@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld("orqestra", {
     start: (payload: unknown) => ipcRenderer.invoke("team:start", payload),
     direct: (payload: unknown) => ipcRenderer.invoke("team:direct", payload),
     undo: (payload: unknown) => ipcRenderer.invoke("team:undo", payload),
+    retry: (payload: unknown) => ipcRenderer.invoke("team:retry", payload),
     // Apps the team built, run in a locked container (main/sandbox).
     appDocker: () => ipcRenderer.invoke("team:app-docker"),
     appStatus: (projectId: string) => ipcRenderer.invoke("team:app-status", String(projectId)),
@@ -136,6 +137,9 @@ contextBridge.exposeInMainWorld("orqestra", {
     removeCommand: (projectId: string, commandId: string) => ipcRenderer.invoke("access:remove-command", String(projectId), String(commandId)),
     previewApply: (projectId: string, folderId: string) => ipcRenderer.invoke("access:preview-apply", String(projectId), String(folderId)),
     apply: (projectId: string, previewId: string, paths: string[]) => ipcRenderer.invoke("access:apply", String(projectId), String(previewId), Array.isArray(paths) ? paths.map(String) : []),
+    pendingByRun: (projectId: string) => ipcRenderer.invoke("access:pending-by-run", String(projectId)),
+    reviewRun: (projectId: string, runId: string, folderId?: string) => ipcRenderer.invoke("access:review-run", String(projectId), String(runId), folderId ? String(folderId) : ""),
+    applyRun: (projectId: string, runId: string, previewId: string, paths: string[]) => ipcRenderer.invoke("access:apply-run", String(projectId), String(runId), String(previewId), Array.isArray(paths) ? paths.map(String) : []),
     forgetProject: (projectId: string) => ipcRenderer.invoke("access:forget-project", String(projectId)),
     subscribe: (listener: (event: unknown) => void) => {
       const handler = (_event: unknown, payload: unknown) => listener(payload);
