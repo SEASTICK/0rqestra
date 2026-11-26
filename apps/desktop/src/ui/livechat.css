@@ -704,3 +704,50 @@ body.pane-resizing iframe,body.pane-resizing webview{pointer-events:none}
 .usage-check:disabled { opacity: .6; cursor: default; }
 .tool-gemini{background:light-dark(#e8eefb, #232b3d);color:light-dark(#3556a8, #a9c0f2)}
 .team-task-main .tool-chip.tool-gemini,.plan-agent .tool-chip.tool-gemini{background:light-dark(#e8eefb, #232b3d);color:light-dark(#3556a8, #a9c0f2)}
+
+/* Starting a project together (Friends) */
+.friends-row{display:flex;flex-direction:column;align-items:stretch;gap:6px}
+.friends-row-head{display:flex;align-items:center;gap:10px}
+.friends-together-pending,.friends-together-project{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:8px 10px;border-radius:8px;background:light-dark(#f6f6f6, #2b2b2b);font-size:12.5px}
+.friends-together-project>span,.friends-together-pending>span{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.friends-together-project small,.friends-together-team{color:var(--shell-muted)}
+.friends-together-link{flex-basis:100%}
+.friends-together-modes{display:flex;flex-wrap:wrap;gap:14px;font-size:13px}
+.friends-together-list label{display:flex;gap:8px;align-items:flex-start;cursor:pointer}
+.friends-together-list label>span{display:flex;flex-direction:column}
+.friends-together-list label.is-disabled{opacity:.55;cursor:default}
+.friends-together-list small{color:var(--shell-muted)}
+.friends-together-summary{margin:10px 0 0;font-size:13px}
+
+/* Shared checklist (ChecklistPanel.jsx) */
+.checklist-tab{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:13px;border:1px solid var(--shell-line);background:transparent;color:var(--shell-text);font-size:12px;cursor:pointer;margin-left:auto}
+.checklist-tab span{color:var(--shell-muted);font-variant-numeric:tabular-nums}
+.checklist-tab.is-active{background:light-dark(#eeeeee, #333333)}
+.checklist-body{display:flex;flex-direction:column;gap:12px}
+.checklist-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.checklist-filters{display:inline-flex;gap:4px;margin-right:auto}
+.checklist-filter{height:26px;padding:0 10px;border-radius:13px;border:1px solid var(--shell-line);background:transparent;color:var(--shell-text);font-size:12px;cursor:pointer}
+.checklist-filter.is-active{background:light-dark(#eeeeee, #333333)}
+.checklist-form{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--shell-line);border-radius:10px}
+.checklist-form input,.checklist-form textarea,.checklist-form select,.checklist-inline input,.checklist-inline select{font:inherit;font-size:13px;padding:6px 8px;border-radius:7px;border:1px solid var(--shell-line);background:transparent;color:var(--shell-text)}
+.checklist-assignee{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--shell-muted)}
+.checklist-form-actions,.checklist-inline{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.checklist-inline input{flex:1;min-width:160px}
+.checklist-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.checklist-item{padding:10px 12px;border:1px solid var(--shell-line);border-radius:10px;display:flex;flex-direction:column;gap:6px}
+.checklist-item-head{display:flex;gap:10px;align-items:flex-start}
+.checklist-check{flex:0 0 20px;height:20px;border-radius:6px;border:1.5px solid var(--shell-muted);background:transparent;color:var(--shell-text);font-size:12px;line-height:1;cursor:pointer;margin-top:1px}
+.checklist-done .checklist-check{background:light-dark(#e6f2e8, #263a2b);border-color:transparent;color:light-dark(#2f6b3a, #9fd3a9)}
+.checklist-done .checklist-item-main>strong{text-decoration:line-through;color:var(--shell-muted)}
+.checklist-item-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.checklist-item-main small{font-size:11.5px;color:var(--shell-muted)}
+.checklist-status{font-weight:600}
+.checklist-status-blocked{color:light-dark(#9a3b1f, #f0a58a)}
+.checklist-status-in_progress{color:light-dark(#2c5d8f, #9cc4ee)}
+.checklist-notes,.checklist-blocked,.checklist-run{margin:2px 0 0;font-size:12.5px;overflow-wrap:anywhere}
+.checklist-blocked{color:light-dark(#9a3b1f, #f0a58a)}
+.checklist-run{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--shell-muted)}
+.checklist-mark-done{height:24px;padding:0 10px;font-size:12px}
+.checklist-actions{display:flex;flex-wrap:wrap;gap:4px 12px;padding-left:30px}
+.checklist-foot{font-size:11.5px}
+.bridge-checklist p{margin:0 0 8px}

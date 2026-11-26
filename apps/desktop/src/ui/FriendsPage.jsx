@@ -3,7 +3,8 @@
 // main process does every step (main/teams); this page never handles a token.
 import React, { useEffect, useState } from 'react';
 import { AccountForms, UsernameForm } from './AccountWelcome.jsx';
-import { candidateState, errorText, friendGroups, friendLabel, incomingTeamInvites, sendOutcomeText } from './teams-ui.mjs';
+import { candidateState, errorText, friendGroups, friendLabel, incomingProjectInvites, incomingTeamInvites, projectChoices, projectInvitesWith, projectsTogether, repoName, sendOutcomeText, togetherChoices, togetherStatus } from './teams-ui.mjs';
+import { CheckoutPicker, LinkCheckout, ProjectSelect } from './TeamsCheckout.jsx';
 import { USERNAME_RULE, cleanUsername } from './account-ui.mjs';
 
 function useAction(notify) {
@@ -107,7 +108,141 @@ function AddFriend({ api, onView, onAccept }) {
   );
 }
 
-export function FriendsPage({ view, onView: setView, onBack, notify, onTeams }) {
+const repoLine = (repo) => (repo ? `github.com/${repoName(repo)}` : 'No GitHub repository linked');
+
+// "Start a project together": choose an existing shared project that is alone in its team, or make
+// a new shared project of its own from a project and its GitHub checkout. The summary shows what
+// will be shared before the invitation is sent.
+function StartTogether({ api, friend, view, projects, onCreateProject, notify, onView, onDone }) {
+  const choices = togetherChoices(view, friend.userId);
+  const ready = choices.filter((c) => c.ok);
+  const [mode, setMode] = useState(ready.length ? 'existing' : 'new');
+  const [chosen, setChosen] = useState(ready[0]?.id || '');
+  const [local, setLocal] = useState('');
+  const [selection, setSelection] = useState(null);
+  const [name, setName] = useState('');
+  const [pending, run] = useAction(notify);
+  const label = friendLabel(friend).name;
+  const existing = choices.find((c) => c.id === chosen && c.ok);
+  const locals = projectChoices(projects, view.teams);
+  const newName = name.trim() || selection?.repo?.name || '';
+  const canSend = mode === 'existing' ? Boolean(existing) : Boolean(local && selection?.id && selection.repo && newName);
+  const summary = mode === 'existing' ? (existing ? { name: existing.name, repo: existing.repo } : null) : (selection?.repo && newName ? { name: newName, repo: selection.repo } : null);
+  const send = () => run(async () => {
+    if (mode === 'existing') onView(await api.startProjectTogether({ friendUserId: friend.userId, sharedProjectId: existing.id }));
+    else {
+      const localProjectId = local === '__new__' ? onCreateProject(newName) : local;
+      onView(await api.startProjectTogether({ friendUserId: friend.userId, localProjectId, selectionId: selection.id, name: newName, remote: selection.repo.remote }));
+    }
+    notify?.(`Invitation sent to ${label}.`);
+    onDone();
+  });
+  return (
+    <div className="teams-subform friends-together">
+      <h4>Start a project together with {label}</h4>
+      <div className="friends-together-modes" role="radiogroup" aria-label="Which project">
+        <label><input type="radio" checked={mode === 'existing'} onChange={() => setMode('existing')} disabled={!choices.length}/> A shared project I own</label>
+        <label><input type="radio" checked={mode === 'new'} onChange={() => setMode('new')}/> A new shared project</label>
+      </div>
+      {mode === 'existing' ? (
+        choices.length ? (
+          <ul className="teams-list friends-together-list">
+            {choices.map((c) => (
+              <li key={c.id}>
+                <label className={c.ok ? '' : 'is-disabled'}>
+                  <input type="radio" name={`together-${friend.userId}`} disabled={!c.ok} checked={chosen === c.id} onChange={() => setChosen(c.id)}/>
+                  <span><strong>{c.name}</strong><small>{repoLine(c.repo)}{c.reason ? ` · ${c.reason}` : ''}</small></span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="provider-line">You own no shared projects yet. Start a new one.</p>
+      ) : (
+        <>
+          <ProjectSelect choices={locals} value={local} onChange={(v) => { setLocal(v); const p = projects.find((x) => x.id === v); if (p && !name) setName(p.name); }} newName={newName || 'Shared project'}/>
+          <CheckoutPicker api={api} notify={notify} selection={selection} onSelection={(sel) => { setSelection(sel); if (sel?.repo && !name) setName(sel.repo.name); }}/>
+          <label className="teams-field">Shared project name<input value={name} onChange={(e) => setName(e.target.value)} maxLength={80}/></label>
+          <p className="provider-line">It gets a team of its own, so {label} sees only this project. Your folder and branch stay on this computer.</p>
+        </>
+      )}
+      {summary && <p className="friends-together-summary">Invite <strong>{label}</strong> to <strong>{summary.name}</strong> · {repoLine(summary.repo)}</p>}
+      <div className="setup-actions">
+        <button type="button" className="button primary-button" disabled={pending || !canSend} onClick={send}>Send invitation</button>
+        <button type="button" className="button" onClick={onDone}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// One shared project we are both in: membership, their presence and my checkout, each on its own,
+// and "Open shared project" (or linking my checkout first).
+function TogetherProject({ api, view, project, team, friend, projects, onCreateProject, onOpenProject, notify, onView }) {
+  const [linking, setLinking] = useState(false);
+  const status = togetherStatus(view, project, friend.userId);
+  const open = () => (project.link?.state === 'linked' ? onOpenProject?.(project.link.localProjectId) : setLinking(true));
+  return (
+    <div className="friends-together-project">
+      <span><strong>{project.name}</strong><small>Member · {status.presence === 'unknown' ? 'status unknown' : status.presence} · your checkout {status.myCheckout} · {repoLine(project.repo)}</small></span>
+      {linking ? (
+        <div className="friends-together-link">
+          <p className="provider-line">No copy of {repoName(project.repo)} on this computer yet? Clone it first (for example with New project → From GitHub, or git clone), then choose that folder. Your folder and branch stay on this computer.</p>
+          <LinkCheckout api={api} project={project} teams={view.teams} projects={projects} onCreateProject={onCreateProject} notify={notify} onView={onView} onDone={() => setLinking(false)}/>
+        </div>
+      ) : <button type="button" className="button" onClick={open}>{project.link?.state === 'linked' ? 'Open shared project' : 'Set up my checkout'}</button>}
+      <small className="friends-together-team">Team {team.name}</small>
+    </div>
+  );
+}
+
+function FriendRow({ api, friend, view, projects, onCreateProject, onOpenProject, notify, onView, pending, run }) {
+  const [starting, setStarting] = useState(false);
+  const waiting = projectInvitesWith(view, friend.userId, 'outgoing');
+  const together = projectsTogether(view, friend.userId);
+  return (
+    <li className="friends-row">
+      <div className="friends-row-head">
+        <Person person={friend}/>
+        <span className="friends-actions">
+          {!starting && <button type="button" className="button" onClick={() => setStarting(true)}>Start a project together</button>}
+          <button type="button" className="provider-text-link" disabled={pending} onClick={() => { if (window.confirm(`Remove @${friend.username} from your friends? You both lose the friendship, and pending project invitations between you are cancelled.`)) run(async () => { onView(await api.removeFriend(friend.userId)); notify?.(`@${friend.username} is no longer your friend.`); }); }}>Remove</button>
+        </span>
+      </div>
+      {waiting.map((i) => (
+        <div key={i.id} className="friends-together-pending">
+          <span>Invitation pending · <strong>{i.projectName}</strong> · {repoLine(i.repo)}</span>
+          <button type="button" className="provider-text-link" disabled={pending} onClick={() => run(async () => { onView(await api.revokeProjectInvite(i.id)); notify?.(`Invitation to ${i.projectName} cancelled.`); })}>Cancel invitation</button>
+        </div>
+      ))}
+      {together.map(({ project, team }) => <TogetherProject key={project.id} api={api} view={view} project={project} team={team} friend={friend} projects={projects} onCreateProject={onCreateProject} onOpenProject={onOpenProject} notify={notify} onView={onView}/>)}
+      {starting && <StartTogether api={api} friend={friend} view={view} projects={projects} onCreateProject={onCreateProject} notify={notify} onView={onView} onDone={() => setStarting(false)}/>}
+    </li>
+  );
+}
+
+// Project invitations sent to me: who, which project, which repository.
+function ProjectInvitesInbox({ api, view, notify, onView }) {
+  const [pending, run] = useAction(notify);
+  const invites = incomingProjectInvites(view);
+  if (!invites.length) return null;
+  return (
+    <div className="provider-card teams-card friends-inbox" aria-label="Project invitations">
+      <h2>Project invitations</h2>
+      <ul className="teams-list">
+        {invites.map((i) => (
+          <li key={i.id}>
+            <span className="friend-person"><strong>{i.projectName}</strong><small>from {friendLabel(i).name}{friendLabel(i).handle ? ` (${friendLabel(i).handle})` : ''} · {repoLine(i.repo)}</small></span>
+            <span className="friends-actions">
+              <button type="button" className="button primary-button" disabled={pending} onClick={() => run(async () => { const r = await api.respondProjectInvite(i.id, true); onView(r.view); notify?.(`You joined ${i.projectName}. Open it from ${friendLabel(i).name}'s row below.`); })}>Accept</button>
+              <button type="button" className="button" disabled={pending} onClick={() => run(async () => { const r = await api.respondProjectInvite(i.id, false); onView(r.view); })}>Decline</button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export function FriendsPage({ view, onView: setView, onBack, notify, onTeams, projects = [], onCreateProject, onOpenProject }) {
   const api = typeof window !== 'undefined' ? window.orqestra?.teams : null;
   const onView = (v) => { if (v && typeof v === 'object' && v.status) setView(v); };
   const [pending, run] = useAction(notify);
@@ -149,16 +284,14 @@ export function FriendsPage({ view, onView: setView, onBack, notify, onTeams }) 
         <>
           {view.serverProblem && <div className="setup-error" role="alert"><span>Could not reach the 0rqestra server: {view.serverProblem}</span></div>}
           <ShareUsername username={view.username}/>
+          <ProjectInvitesInbox api={api} view={view} notify={notify} onView={onView}/>
           <TeamInvitesInbox api={api} view={view} notify={notify} onView={onView}/>
           <AddFriend api={api} onView={onView} onAccept={(id) => respond(id, true)}/>
           <div className="provider-card teams-card" aria-label="Your friends">
             <h2>Friends <span className="friends-count">{groups.friends.length}</span></h2>
             {groups.friends.length === 0 ? <p className="provider-line">No friends yet. Add someone by their username.</p> : (
               <ul className="teams-list">
-                {groups.friends.map((f) => (
-                  <li key={f.requestId}><Person person={f}/>
-                    <button type="button" className="provider-text-link" disabled={pending} onClick={() => { if (window.confirm(`Remove @${f.username} from your friends? You both lose the friendship.`)) run(async () => { onView(await api.removeFriend(f.userId)); notify?.(`@${f.username} is no longer your friend.`); }); }}>Remove</button></li>
-                ))}
+                {groups.friends.map((f) => <FriendRow key={f.requestId} api={api} friend={f} view={view} projects={projects} onCreateProject={onCreateProject} onOpenProject={onOpenProject} notify={notify} onView={onView} pending={pending} run={run}/>)}
               </ul>
             )}
           </div>

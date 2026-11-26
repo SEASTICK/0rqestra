@@ -361,3 +361,27 @@ describe("friend changes", () => {
     expect(h.last()[P]!.connection).toBe("live");
   });
 });
+
+describe("checklist changes", () => {
+  it("reads the checklist again on a checklist_changed broadcast and when the project channel is (re)joined", async () => {
+    const changed: string[] = [];
+    const h = harness();
+    (h.hub as unknown as { deps: { onChecklist: (p: string) => void } }).deps.onChecklist = (p) => changed.push(p);
+    h.hub.setTargets([{ projectId: P, selfId: ME, memberIds: [ME] }]);
+    const s = h.sockets[0]!;
+    s.onopen?.();
+    await h.flush();
+    s.acceptJoins();
+    expect(changed).toEqual([P]);
+    s.serverSends({ topic: `realtime:teams:${P}:briefs`, event: "broadcast", payload: { type: "broadcast", event: "checklist_changed", payload: { item_id: "x" } }, ref: null });
+    expect(changed).toEqual([P, P]);
+    // After a lost connection the rejoin reads it again, recovering missed changes.
+    s.onclose?.();
+    h.advance(1_000);
+    const s2 = h.sockets.at(-1)!;
+    s2.onopen?.();
+    await h.flush();
+    s2.acceptJoins();
+    expect(changed).toEqual([P, P, P]);
+  });
+});

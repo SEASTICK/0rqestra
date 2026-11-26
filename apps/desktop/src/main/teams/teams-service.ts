@@ -37,6 +37,8 @@ export interface FriendCandidate { userId: string; username: string; displayName
 // What sending a request did: "sent", or why nothing new was needed.
 export type FriendSendOutcome = "sent" | "already_pending" | "already_friends" | "incoming_pending" | "accepted";
 // A pending invitation to a team: to me (incoming), or from a team I own (outgoing).
+// An invitation to one shared project, sent to a friend (incoming: to me; outgoing: from me).
+export interface ProjectInviteView { id: string; projectId: string; teamId: string; projectName: string; repo: { owner: string; name: string } | null; userId: string; username: string; displayName: string | null; direction: "incoming" | "outgoing" }
 export interface TeamInviteView { id: string; teamId: string; teamName: string; userId: string; username: string; direction: "incoming" | "outgoing" }
 export interface InviteView { id: string; email: string; expiresAt: string; state: "pending" | "used" | "revoked" | "expired" }
 export interface LinkView {
@@ -64,6 +66,16 @@ export interface SharedProjectView { id: string; name: string; repo: { owner: st
 export interface TeamMessageView { id: string; authorId: string; authorName: string; kind: "message" | "summary"; body: string; createdAt: string }
 // A shared project's team chat: the latest messages, when they were read, and why they could not be.
 // "needs_update": the Teams server does not have the team chat yet (its database migration is missing).
+// One item of a shared project's checklist. The people are user ids; the window names them from the
+// team's members. run: the linked team run as its work brief shows it (status and outcome), if known.
+export type ChecklistStatus = "todo" | "in_progress" | "blocked" | "done";
+export interface ChecklistItemView {
+  id: string; projectId: string; title: string; notes: string; status: ChecklistStatus; assigneeId: string | null; blockedReason: string | null;
+  archived: boolean; runId: string | null; run: { status: string; outcome: string | null; title: string } | null;
+  createdBy: string | null; updatedBy: string | null; updatedAt: string; version: number;
+}
+// needsUpdate: the Teams server does not have the checklist yet (its database migration is missing).
+export interface ChecklistView { items: ChecklistItemView[]; at: number | null; problem: string | null; needsUpdate: boolean }
 export interface TeamChatView { messages: TeamMessageView[]; at: number | null; problem: string | null; needsUpdate: boolean }
 export interface TeamView { id: string; name: string; isOwner: boolean; members: MemberView[]; invites: InviteView[]; projects: SharedProjectView[] }
 
@@ -80,6 +92,7 @@ export interface TeamsView {
   needsUsername: boolean;
   friends: FriendView[];
   teamInvites: TeamInviteView[];
+  projectInvites: ProjectInviteView[];
   // Set while the 0rqestra server cannot be reached.
   serverProblem: string | null;
   pendingEmail: string | null;
@@ -101,6 +114,8 @@ export interface TeamsView {
   localBriefs: Record<string, LocalBriefView[]>;
   // The team chat per shared project.
   chat: Record<string, TeamChatView>;
+  // The shared checklist per shared project.
+  checklist: Record<string, ChecklistView>;
 }
 
 export interface CheckoutSelection {
@@ -133,6 +148,7 @@ interface CandidateRow { user_id: string; username: string; display_name: string
 const cleanDisplayName = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim().slice(0, 60) : null);
 // A database function this server does not have yet (its migration is not applied).
 const missingFunction = (error: unknown) => error instanceof SupabaseError && (error.code === "PGRST202" || error.code === "42883");
+interface ProjectInviteRow { invite_id: string; project_id: string; team_id: string; project_name: string; repo_owner: string | null; repo_name: string | null; user_id: string; username: string; display_name: string | null; direction: string }
 interface TeamInviteRow { invite_id: string; team_id: string; team_name: string; user_id: string; username: string; direction: string }
 
 const MESSAGES: Record<string, string> = {
@@ -169,6 +185,16 @@ const MESSAGES: Record<string, string> = {
   try_again: "Something changed at the same moment. Try again.",
 };
 
+// Project invitations to friends.
+const PROJECT_INVITE_MESSAGES: Record<string, string> = {
+  invite_not_found: "That project invitation is no longer there.",
+  invite_revoked: "Your friend cancelled that project invitation.",
+  project_team_has_other_projects: "This project shares its team with other projects, so your friend would see those too. Start a new shared project for the two of you instead.",
+  already_member: "Your friend is already in this project.",
+  not_team_owner: "Only the project's team owner can invite people to it.",
+  too_many_invites: "You have 50 project invitations waiting. Cancel some first.",
+};
+
 // Invitations to friends have no code, so their errors are worded differently.
 const FRIEND_INVITE_MESSAGES: Record<string, string> = {
   invite_not_found: "That invitation is no longer there. Ask the team owner to invite you again.",
@@ -192,6 +218,29 @@ export const CHAT_LIMIT = 100;
 const messageView = (r: MessageRow): TeamMessageView => ({ id: r.id, authorId: r.author_id, authorName: r.author_name ?? "", kind: r.kind === "summary" ? "summary" : "message", body: r.body, createdAt: r.created_at });
 
 // PostgREST says a table or function is not there (the server has not got that migration yet).
+interface ChecklistRow { id: string; project_id: string; title: string; notes: string; status: string; assignee_id: string | null; blocked_reason: string | null; archived: boolean; run_id: string | null; created_by: string | null; updated_by: string | null; updated_at: string; version: number }
+const CHECKLIST_COLUMNS = "id,project_id,title,notes,status,assignee_id,blocked_reason,archived,run_id,created_by,updated_by,updated_at,version";
+const CHECKLIST_LIMIT = 600;
+const RUN_ID = /^[A-Za-z0-9_-]{1,100}$/;
+const CHECKLIST_MISSING = "The Teams server does not have the shared checklist yet. The owner of the server applies its database update (supabase/migrations/20261127120000_project_checklist.sql).";
+const CHECKLIST_MESSAGES: Record<string, string> = {
+  checklist_item_not_found: "That checklist item is no longer there.",
+  invalid_assignee: "Only someone in this shared project can be assigned.",
+  invalid_checklist_item: "A checklist item needs a title of 1 to 200 characters; notes have up to 4,000.",
+  blocked_reason_required: "Say what you need to unblock it.",
+  too_many_checklist_items: "This checklist has 500 open items. Archive some first.",
+  not_project_member: "You are not a member of this shared project.",
+  invalid_status: "Unknown status.",
+  invalid_run: "Unknown run.",
+};
+function checklistView(r: ChecklistRow, run: ChecklistItemView["run"]): ChecklistItemView {
+  const status = (["todo", "in_progress", "blocked", "done"] as const).find((x) => x === r.status) ?? "todo";
+  return { id: r.id, projectId: r.project_id, title: r.title, notes: r.notes ?? "", status, assigneeId: r.assignee_id, blockedReason: r.blocked_reason, archived: r.archived === true, runId: r.run_id, run, createdBy: r.created_by, updatedBy: r.updated_by, updatedAt: r.updated_at, version: r.version };
+}
+export function isMissingChecklist(error: unknown): boolean {
+  return error instanceof SupabaseError && (error.code === "42P01" || error.code === "PGRST205" || error.code === "PGRST202" || error.code === "42883" || (error.status === 404 && /checklist/.test(error.message)));
+}
+
 export function isMissingTable(error: unknown): boolean {
   return error instanceof SupabaseError && (error.code === "42P01" || error.code === "PGRST205" || error.code === "PGRST202" || error.code === "42883" || (error.status === 404 && /team_messages|send_team_message/.test(error.message)));
 }
@@ -234,6 +283,7 @@ export class TeamsService {
   private profileLoaded = false;
   private friends: FriendView[] = [];
   private teamInvites: TeamInviteView[] = [];
+  private projectInvites: ProjectInviteView[] = [];
   private serverProblem: string | null = null;
   private resendAt = 0;
   private sessionEnded: string | null = null;
@@ -247,6 +297,7 @@ export class TeamsService {
   private presence: PresenceSnapshot = {};
   private briefsAt: Record<string, number> = {};
   private chat: Record<string, TeamChatView> = {};
+  private checklist: Record<string, ChecklistView> = {};
   private lastTargets = "";
   private lastInbox: string | null | undefined = undefined;
   private readonly now: () => number;
@@ -290,6 +341,7 @@ export class TeamsService {
       needsUsername: status === "signed_in" && this.profileLoaded && !this.username,
       friends: status === "signed_in" ? this.friends : [],
       teamInvites: status === "signed_in" ? this.teamInvites : [],
+      projectInvites: status === "signed_in" ? this.projectInvites : [],
       serverProblem: config ? this.serverProblem : null,
       pendingEmail: this.pendingEmail,
       pendingMode: this.pendingEmail ? this.pendingMode : null,
@@ -304,6 +356,7 @@ export class TeamsService {
         ? Object.fromEntries(this.teams.flatMap((t) => t.projects).map((p) => [p.id, this.deps.localBriefs!(p.id)]))
         : {},
       chat: status === "signed_in" ? this.chat : {},
+      checklist: status === "signed_in" ? this.checklist : {},
     };
   }
 
@@ -377,6 +430,139 @@ export class TeamsService {
       /* keep what is shown; briefsAt tells how old it is */
     }
     this.changed();
+  }
+
+  // ---- Shared checklist ---------------------------------------------------------------------
+
+  // Reads the checklist again (it changed, the connection came back, or the teams were read). The
+  // linked runs' status comes from their work briefs, which every project member can read. A failure
+  // keeps what is shown; a server without the checklist says so once.
+  async refreshChecklist(projectId?: string): Promise<void> {
+    if (!this.session || !this.configured()) return;
+    const ids = this.teams.flatMap((t) => t.projects.map((p) => p.id)).filter((id) => !projectId || id === projectId);
+    if (!ids.length) return;
+    try {
+      const rows = await this.call((api, token) =>
+        api.select<ChecklistRow>(token, "checklist_items", `select=${CHECKLIST_COLUMNS}&project_id=in.(${ids.join(",")})&order=created_at.asc&limit=${CHECKLIST_LIMIT * ids.length}`),
+      );
+      const runIds = [...new Set(rows.map((r) => r.run_id).filter((r): r is string => typeof r === "string" && RUN_ID.test(r)))];
+      const briefs = runIds.length
+        ? await this.call((api, token) => api.select<{ project_id: string; run_id: string; status: string; outcome: string | null; title: string }>(token, "work_briefs", `select=project_id,run_id,status,outcome,title&project_id=in.(${ids.join(",")})&run_id=in.(${runIds.join(",")})`)).catch(() => [])
+        : [];
+      const at = this.now();
+      for (const id of ids) {
+        const items = rows.filter((r) => r.project_id === id).map((r) => {
+          const brief = r.run_id ? briefs.find((b) => b.project_id === id && b.run_id === r.run_id) : undefined;
+          return checklistView(r, brief ? { status: brief.status, outcome: brief.outcome ?? null, title: brief.title } : null);
+        });
+        this.checklist = { ...this.checklist, [id]: { items, at, problem: null, needsUpdate: false } };
+      }
+    } catch (error) {
+      const missing = isMissingChecklist(error);
+      if (!missing) this.noteNetwork(error);
+      for (const id of ids) {
+        const old = this.checklist[id] ?? { items: [], at: null, problem: null, needsUpdate: false };
+        this.checklist = { ...this.checklist, [id]: { ...old, needsUpdate: missing, problem: missing ? CHECKLIST_MISSING : friendlyError(error) } };
+      }
+    }
+    this.changed();
+  }
+
+  private checklistProject(projectId: unknown): string {
+    if (typeof projectId !== "string" || !this.teams.some((t) => t.projects.some((p) => p.id === projectId))) throw new Error("Unknown shared project.");
+    return projectId;
+  }
+
+  private checklistItem(itemId: unknown): ChecklistItemView {
+    if (typeof itemId !== "string" || !UUID.test(itemId)) throw new Error(CHECKLIST_MESSAGES.checklist_item_not_found!);
+    const item = Object.values(this.checklist).flatMap((c) => c.items).find((i) => i.id === itemId);
+    if (!item) throw new Error(CHECKLIST_MESSAGES.checklist_item_not_found!);
+    return item;
+  }
+
+  private assigneeFor(projectId: string, raw: unknown): string | null {
+    if (raw === null || raw === undefined || raw === "") return null;
+    const team = this.teams.find((t) => t.projects.some((p) => p.id === projectId));
+    if (typeof raw !== "string" || !team?.members.some((m) => m.userId === raw)) throw new Error(CHECKLIST_MESSAGES.invalid_assignee!);
+    return raw;
+  }
+
+  private async checklistChange<T>(projectId: string, fn: (api: SupabaseApi, token: string) => Promise<T>): Promise<T> {
+    let result: T;
+    try {
+      result = await this.call(fn);
+    } catch (error) {
+      if (isMissingChecklist(error)) {
+        await this.refreshChecklist(projectId);
+        throw new Error(CHECKLIST_MISSING, { cause: error });
+      }
+      this.noteNetwork(error);
+      const own = error instanceof SupabaseError ? CHECKLIST_MESSAGES[error.message] : undefined;
+      // The item may have changed or gone meanwhile: show what the server has now.
+      if (own) await this.refreshChecklist(projectId);
+      throw new Error(own ?? friendlyError(error), { cause: error });
+    }
+    await this.refreshChecklist(projectId);
+    return result;
+  }
+
+  private checklistText(raw: unknown, max: number, what: string, required: boolean): string {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if ((required && !text) || text.length > max) throw new Error(`${what} has ${required ? "1" : "0"} to ${max} characters.`);
+    return text;
+  }
+
+  async addChecklistItem(projectId: unknown, raw: unknown): Promise<TeamsView> {
+    const id = this.checklistProject(projectId);
+    const v = (raw ?? {}) as Record<string, unknown>;
+    const title = this.checklistText(v.title, 200, "A title", true);
+    const notes = this.checklistText(v.notes, 4000, "Notes", false);
+    const assignee = this.assigneeFor(id, v.assigneeId);
+    await this.checklistChange(id, (api, token) => api.rpc<string>(token, "add_checklist_item", { p_project_id: id, p_title: title, p_notes: notes, p_assignee: assignee }));
+    return this.view();
+  }
+
+  async updateChecklistItem(itemId: unknown, raw: unknown): Promise<TeamsView> {
+    const item = this.checklistItem(itemId);
+    const v = (raw ?? {}) as Record<string, unknown>;
+    const title = this.checklistText(v.title, 200, "A title", true);
+    const notes = this.checklistText(v.notes, 4000, "Notes", false);
+    const assignee = this.assigneeFor(item.projectId, v.assigneeId);
+    await this.checklistChange(item.projectId, (api, token) => api.rpc<number>(token, "update_checklist_item", { p_item_id: item.id, p_title: title, p_notes: notes, p_assignee: assignee }));
+    return this.view();
+  }
+
+  // To do, In progress, Blocked (with what is needed) or Done. Reopening is To do. Only people set
+  // this: a finished run never marks an item done by itself.
+  async setChecklistStatus(itemId: unknown, status: unknown, reason: unknown = null): Promise<TeamsView> {
+    const item = this.checklistItem(itemId);
+    if (status !== "todo" && status !== "in_progress" && status !== "blocked" && status !== "done") throw new Error("Unknown status.");
+    const why = status === "blocked" ? this.checklistText(reason, 1000, "What you need", true) : null;
+    await this.checklistChange(item.projectId, (api, token) => api.rpc<number>(token, "set_checklist_status", { p_item_id: item.id, p_status: status, p_blocked_reason: why }));
+    return this.view();
+  }
+
+  // Claims an unassigned item. When someone else got it first, the result says who.
+  async claimChecklistItem(itemId: unknown): Promise<{ outcome: "claimed" | "yours" | "taken" | "archived"; assigneeId: string | null; view: TeamsView }> {
+    const item = this.checklistItem(itemId);
+    const rows = await this.checklistChange(item.projectId, (api, token) => api.rpc<{ outcome: string; assignee_id: string | null }[]>(token, "claim_checklist_item", { p_item_id: item.id }));
+    const row = Array.isArray(rows) ? rows[0] : undefined;
+    const outcome = row?.outcome === "claimed" || row?.outcome === "yours" || row?.outcome === "taken" || row?.outcome === "archived" ? row.outcome : "taken";
+    return { outcome, assigneeId: row?.assignee_id ?? null, view: this.view() };
+  }
+
+  async archiveChecklistItem(itemId: unknown, archived: unknown = true): Promise<TeamsView> {
+    const item = this.checklistItem(itemId);
+    await this.checklistChange(item.projectId, (api, token) => api.rpc<number>(token, "archive_checklist_item", { p_item_id: item.id, p_archived: archived !== false }));
+    return this.view();
+  }
+
+  // Links one of this person's team runs (by its run id) to the item, or unlinks it (null).
+  async linkChecklistRun(itemId: unknown, runId: unknown): Promise<TeamsView> {
+    const item = this.checklistItem(itemId);
+    if (runId !== null && (typeof runId !== "string" || !RUN_ID.test(runId))) throw new Error("Unknown run.");
+    await this.checklistChange(item.projectId, (api, token) => api.rpc<number>(token, "link_checklist_run", { p_item_id: item.id, p_run_id: runId }));
+    return this.view();
   }
 
   // ---- Team chat ----------------------------------------------------------------------------
@@ -645,6 +831,7 @@ export class TeamsService {
     this.presence = {};
     this.briefsAt = {};
     this.chat = {};
+    this.checklist = {};
     this.loadProblem = null;
     this.createdInvites.clear();
     this.setSession(session);
@@ -704,6 +891,7 @@ export class TeamsService {
     this.presence = {};
     this.briefsAt = {};
     this.chat = {};
+    this.checklist = {};
     this.createdInvites.clear();
     this.resetAccountData();
     this.deps.sessions.clear();
@@ -714,6 +902,7 @@ export class TeamsService {
     this.profileLoaded = false;
     this.friends = [];
     this.teamInvites = [];
+    this.projectInvites = [];
   }
 
   // Remembers that the server could not be reached (shown until a request succeeds again).
@@ -793,10 +982,14 @@ export class TeamsService {
   // often, so requests and invitations show up without a restart.
   private async loadSocial(): Promise<void> {
     const me = this.userId();
-    const [profile, friends, invites] = await Promise.all([
+    const [profile, friends, invites, projectInvites] = await Promise.all([
       this.call((api, token) => api.select<{ username: string }>(token, "profiles", `select=username&user_id=eq.${me}`)),
       this.call((api, token) => api.rpc<FriendRow[]>(token, "list_friends", {})),
       this.call((api, token) => api.rpc<TeamInviteRow[]>(token, "list_team_invites", {})),
+      this.call((api, token) => api.rpc<ProjectInviteRow[]>(token, "list_project_invites", {})).catch((error: unknown) => {
+        if (missingFunction(error)) return [] as ProjectInviteRow[];
+        throw error;
+      }),
     ]);
     if (this.session?.user.id !== me) return;
     this.username = profile[0]?.username ?? null;
@@ -807,19 +1000,29 @@ export class TeamsService {
     this.teamInvites = (Array.isArray(invites) ? invites : [])
       .filter((i) => i.direction === "incoming" || i.direction === "outgoing")
       .map((i) => ({ id: i.invite_id, teamId: i.team_id, teamName: i.team_name, userId: i.user_id, username: i.username, direction: i.direction as TeamInviteView["direction"] }));
+    this.projectInvites = (Array.isArray(projectInvites) ? projectInvites : [])
+      .filter((i) => i.direction === "incoming" || i.direction === "outgoing")
+      .map((i) => ({
+        id: i.invite_id, projectId: i.project_id, teamId: i.team_id, projectName: i.project_name,
+        repo: i.repo_owner && i.repo_name ? { owner: i.repo_owner, name: i.repo_name } : null,
+        userId: i.user_id, username: i.username, displayName: cleanDisplayName(i.display_name), direction: i.direction as ProjectInviteView["direction"],
+      }));
   }
 
   // Re-reads friends and invitations only, and tells the window only when something changed.
   async refreshSocial(): Promise<void> {
     if (!this.session || !this.configured()) return;
-    const before = JSON.stringify([this.username, this.friends, this.teamInvites]);
+    const before = JSON.stringify([this.username, this.friends, this.teamInvites, this.projectInvites]);
+    const invitesBefore = JSON.stringify(this.projectInvites.map((i) => i.id));
     try {
       await this.loadSocial();
       this.serverProblem = null;
     } catch (error) {
       this.noteNetwork(error);
     }
-    if (JSON.stringify([this.username, this.friends, this.teamInvites]) !== before) this.changed();
+    // An invitation that was answered may have added someone to a project: read the teams again.
+    if (JSON.stringify(this.projectInvites.map((i) => i.id)) !== invitesBefore) await this.load();
+    if (JSON.stringify([this.username, this.friends, this.teamInvites, this.projectInvites]) !== before) this.changed();
   }
 
   private async load(): Promise<void> {
@@ -859,6 +1062,7 @@ export class TeamsService {
       this.loadProblem = null;
       this.serverProblem = null;
       await this.refreshChat();
+      await this.refreshChecklist();
     } catch (error) {
       if (!this.session) return;
       this.noteNetwork(error);
@@ -1091,6 +1295,59 @@ export class TeamsService {
     if (!this.friends.some((f) => f.userId === id && f.state === "friend")) throw new Error(MESSAGES.not_friends);
     if (team.members.some((m) => m.userId === id)) throw new Error(MESSAGES.already_member);
     await this.social((api, token) => api.rpc<string>(token, "invite_friend_to_team", { p_team_id: team.id, p_user_id: id }));
+    return this.changed();
+  }
+
+  // ---- Starting a project together -----------------------------------------------------------
+
+  // Invites an accepted friend to one shared project. Either an existing shared project that is the
+  // only one in a team I own (sharedProjectId), or a new shared project of its own: a local project
+  // and its GitHub checkout (localProjectId, selectionId), which gets a team of its own so the friend
+  // sees nothing else. The checkout link stays on this computer.
+  async startProjectTogether(raw: unknown): Promise<TeamsView> {
+    const v = (raw ?? {}) as Record<string, unknown>;
+    const friendId = this.uuid(v.friendUserId, "friend");
+    if (!this.friends.some((f) => f.userId === friendId && f.state === "friend")) throw new Error(MESSAGES.not_friends);
+    if (typeof v.sharedProjectId === "string") {
+      const id = this.uuid(v.sharedProjectId, "shared project");
+      const team = this.teams.find((t) => t.projects.some((p) => p.id === id));
+      if (!team) throw new Error("Unknown shared project.");
+      if (!team.isOwner) throw new Error(PROJECT_INVITE_MESSAGES.not_team_owner);
+      if (team.projects.length > 1) throw new Error(PROJECT_INVITE_MESSAGES.project_team_has_other_projects);
+      if (team.members.some((m) => m.userId === friendId)) throw new Error(PROJECT_INVITE_MESSAGES.already_member);
+      await this.social((api, token) => api.rpc<string>(token, "invite_friend_to_project", { p_project_id: id, p_user_id: friendId }), PROJECT_INVITE_MESSAGES);
+      return this.changed();
+    }
+    const localProjectId = this.localId(v.localProjectId);
+    const name = typeof v.name === "string" ? v.name.trim() : "";
+    if (name.length < 1 || name.length > 80) throw new Error("Give the shared project a name of 1 to 80 characters.");
+    const remote = typeof v.remote === "string" && v.remote ? v.remote : null;
+    const facts = await this.freshSelection(v.selectionId);
+    const r = resolveIdentity(facts.remotes, remote);
+    if (r.status !== "ok") throw new Error(r.problem);
+    const rows = await this.social((api, token) =>
+      api.rpc<{ invite_id: string; project_id: string; team_id: string; repo_key: string }[]>(token, "start_project_together", { p_name: name, p_repo_owner: r.identity.owner, p_repo_name: r.identity.name, p_user_id: friendId }),
+      PROJECT_INVITE_MESSAGES,
+    );
+    const row = Array.isArray(rows) ? rows[0] : undefined;
+    if (!row) throw new Error("The Teams server did not create the shared project.");
+    this.saveLink(localProjectId, row.project_id, row.team_id, row.repo_key, facts.root);
+    await this.load();
+    return this.changed();
+  }
+
+  // The invited person accepts (joins that one project) or declines.
+  async respondProjectInvite(inviteId: unknown, accept: unknown): Promise<{ projectId: string | null; view: TeamsView }> {
+    const id = this.uuid(inviteId, "invitation");
+    const projectId = await this.social((api, token) => api.rpc<string | null>(token, "respond_project_invite", { p_invite_id: id, p_accept: accept === true }), PROJECT_INVITE_MESSAGES);
+    if (accept === true) await this.load();
+    return { projectId: typeof projectId === "string" ? projectId : null, view: this.changed() };
+  }
+
+  // The inviter (or the team owner) cancels a pending project invitation.
+  async revokeProjectInvite(inviteId: unknown): Promise<TeamsView> {
+    const id = this.uuid(inviteId, "invitation");
+    await this.social((api, token) => api.rpc<string>(token, "revoke_project_invite", { p_invite_id: id }), PROJECT_INVITE_MESSAGES);
     return this.changed();
   }
 

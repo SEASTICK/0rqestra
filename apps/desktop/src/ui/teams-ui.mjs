@@ -239,3 +239,106 @@ export function unreadCount(view, projectId, seen) {
 }
 
 export const SORT_REQUEST = 'Sort what the team asked for in the team chat: who wants what, where it overlaps with what I want, and who should do which part in what order. Do not start any work yet.';
+
+// ---- Starting a project together (Friends) ---------------------------------------------------
+
+// Pending project invitations with this friend, in one direction.
+export function projectInvitesWith(view, userId, direction) {
+  return view?.status === 'signed_in' ? (view.projectInvites || []).filter((i) => i.userId === userId && i.direction === direction) : [];
+}
+
+export function incomingProjectInvites(view) {
+  return view?.status === 'signed_in' ? (view.projectInvites || []).filter((i) => i.direction === 'incoming') : [];
+}
+
+// Shared projects I could invite this friend to. Team membership opens every project of a team, so
+// only a project that is alone in a team I own can be offered; the others say why not.
+export function togetherChoices(view, friendUserId) {
+  if (view?.status !== 'signed_in') return [];
+  const waiting = new Set(projectInvitesWith(view, friendUserId, 'outgoing').map((i) => i.projectId));
+  const out = [];
+  for (const t of view.teams || []) {
+    if (!t.isOwner) continue;
+    for (const p of t.projects || []) {
+      const member = t.members.some((m) => m.userId === friendUserId);
+      const reason = member ? 'Already in this project' : waiting.has(p.id) ? 'Invitation pending' : t.projects.length > 1 ? `Shares the team ${t.name} with other projects` : null;
+      if (member) continue;
+      out.push({ id: p.id, name: p.name, repo: p.repo, teamName: t.name, linked: Boolean(p.link), ok: !reason, reason });
+    }
+  }
+  return out.sort((a, b) => Number(b.ok) - Number(a.ok) || a.name.localeCompare(b.name));
+}
+
+// Shared projects both of us are in, with my own checkout's state on this computer.
+export function projectsTogether(view, friendUserId) {
+  if (view?.status !== 'signed_in') return [];
+  return (view.teams || []).flatMap((t) => (t.members.some((m) => m.userId === friendUserId) ? t.projects.map((p) => ({ project: p, team: t })) : []));
+}
+
+// Membership, presence and checkout readiness are separate facts about a teammate in a project.
+export function togetherStatus(view, project, userId) {
+  const online = (view?.presence?.[project.id]?.online || []).includes(userId);
+  const live = view?.presence?.[project.id]?.connection === 'live';
+  return {
+    presence: live ? (online ? 'online' : 'offline') : 'unknown',
+    myCheckout: project.link?.state === 'linked' ? 'ready' : project.link ? 'needs attention' : 'needs setup',
+  };
+}
+
+// The backend the Team Bridge runs through, for the bridge panel (host only, never a key).
+export function bridgeBackend(server) {
+  try {
+    const host = new URL(String(server || '')).host;
+    if (!host) return 'No 0rqestra server configured';
+    return /\.supabase\.(co|in)$/.test(host) ? `Supabase (${host.split('.')[0]})` : host;
+  } catch {
+    return 'No 0rqestra server configured';
+  }
+}
+
+// ---- Shared checklist ---------------------------------------------------------------------------
+
+export const CHECKLIST_STATUS_TEXT = { todo: 'To do', in_progress: 'In progress', blocked: 'Blocked', done: 'Done' };
+const CHECKLIST_ORDER = { blocked: 0, in_progress: 1, todo: 2, done: 3 };
+
+// Done out of all active (not archived) items.
+export function checklistProgress(view, projectId) {
+  const items = (view?.checklist?.[projectId]?.items || []).filter((i) => !i.archived);
+  return { done: items.filter((i) => i.status === 'done').length, total: items.length };
+}
+
+// The items to show: active or archived, optionally only mine; blocked first, then in progress, to
+// do and done, each newest change first.
+export function checklistItems(view, projectId, { mine = false, archived = false } = {}) {
+  const me = view?.userId;
+  const time = (i) => Date.parse(i.updatedAt) || 0;
+  return (view?.checklist?.[projectId]?.items || [])
+    .filter((i) => i.archived === archived && (!mine || i.assigneeId === me))
+    .sort((a, b) => CHECKLIST_ORDER[a.status] - CHECKLIST_ORDER[b.status] || time(b) - time(a));
+}
+
+const LOCAL_RUN_TEXT = { running: 'Running', done: 'Finished', failed: 'Did not finish', stopped: 'Stopped' };
+
+// What the linked run did: this computer's own run if it is here, else its work brief from the
+// server. finished: the run ended well, so "Mark done" is offered (the person decides).
+export function checklistRunState(item, localRuns = []) {
+  if (!item?.runId) return null;
+  const local = localRuns.find((r) => r.id === item.runId);
+  if (local) return { label: LOCAL_RUN_TEXT[local.status] || local.status, outcome: local.outcome || null, finished: local.status === 'done', title: local.goal || '' };
+  if (item.run) return { label: BRIEF_STATUS_TEXT[item.run.status] || item.run.status, outcome: item.run.outcome || null, finished: item.run.status === 'completed', title: item.run.title || '' };
+  return { label: 'Run not shared yet', outcome: null, finished: false, title: '' };
+}
+
+// The text "Plan with Manager" puts in the message box. The Manager plans; Start still asks first.
+export function planPrompt(item) {
+  const notes = String(item?.notes || '').trim();
+  return `Plan this task from our shared checklist: ${String(item?.title || '').trim()}${notes ? `\n\nNotes: ${notes}` : ''}`;
+}
+
+// The message after a claim, naming who has the item when someone else got it first.
+export function claimText(result, nameOf) {
+  if (result?.outcome === 'claimed') return 'It is yours now.';
+  if (result?.outcome === 'yours') return 'It was already yours.';
+  if (result?.outcome === 'archived') return 'That item is archived.';
+  return `${nameOf(result?.assigneeId) || 'Someone else'} claimed it first.`;
+}

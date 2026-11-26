@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ago, briefsNotice, unsyncedBriefs, bridgeLayout, bridgeSummary, displayName, errorText, inviteLine, linkedTeamProject, memberStatus, linkLine, localName, projectChoices, repoName, selectionMatches, signInTitle, friendGroups, incomingTeamInvites, invitableFriends, outgoingTeamInvites, waitingCount, friendLabel, candidateState, sendOutcomeText } from './teams-ui.mjs';
+import { ago, briefsNotice, unsyncedBriefs, bridgeLayout, bridgeSummary, displayName, errorText, inviteLine, linkedTeamProject, memberStatus, linkLine, localName, projectChoices, repoName, selectionMatches, signInTitle, friendGroups, incomingTeamInvites, invitableFriends, outgoingTeamInvites, waitingCount, friendLabel, candidateState, sendOutcomeText, togetherChoices, projectInvitesWith, incomingProjectInvites, projectsTogether, togetherStatus, bridgeBackend, checklistProgress, checklistItems, checklistRunState, planPrompt, claimText } from './teams-ui.mjs';
 
 describe('Teams page text', () => {
   it('says whether this computer has a linked checkout', () => {
@@ -181,5 +181,90 @@ describe('People on the Team Bridge', () => {
   it('shows nothing without a linked project', () => {
     expect(personBoxes(view, null)).toEqual([]);
     expect(personBoxes(null, linked)).toEqual([]);
+  });
+});
+
+describe('starting a project together', () => {
+  const me = 'me';
+  const view = {
+    status: 'signed_in', userId: me,
+    teams: [
+      { id: 't1', name: 'Solo', isOwner: true, members: [{ userId: me }], projects: [{ id: 'p1', name: 'Alpha', repo: { owner: 'o', name: 'alpha', key: 'k1' }, link: { state: 'linked' } }] },
+      { id: 't2', name: 'Big', isOwner: true, members: [{ userId: me }], projects: [{ id: 'p2', name: 'Beta', repo: { owner: 'o', name: 'b' } }, { id: 'p3', name: 'Gamma', repo: { owner: 'o', name: 'g' } }] },
+      { id: 't3', name: 'Theirs', isOwner: false, members: [{ userId: me }], projects: [{ id: 'p4', name: 'Delta', repo: { owner: 'o', name: 'd' } }] },
+      { id: 't4', name: 'Duo', isOwner: true, members: [{ userId: me }, { userId: 'f' }], projects: [{ id: 'p5', name: 'Epsilon', repo: { owner: 'o', name: 'e' }, link: null }] },
+      { id: 't5', name: 'Wait', isOwner: true, members: [{ userId: me }], projects: [{ id: 'p6', name: 'Zeta', repo: { owner: 'o', name: 'z' } }] },
+    ],
+    projectInvites: [
+      { id: 'i1', projectId: 'p6', userId: 'f', direction: 'outgoing', projectName: 'Zeta' },
+      { id: 'i2', projectId: 'p9', userId: 'g', direction: 'incoming', projectName: 'Other' },
+    ],
+    presence: { p5: { connection: 'live', online: ['f'] } },
+  };
+
+  it('offers only projects alone in a team I own, and says why the others cannot be offered', () => {
+    const choices = togetherChoices(view, 'f');
+    expect(choices.filter((c) => c.ok).map((c) => c.name)).toEqual(['Alpha']);
+    expect(choices.find((c) => c.name === 'Beta').reason).toMatch(/other projects/);
+    expect(choices.find((c) => c.name === 'Zeta').reason).toBe('Invitation pending');
+    expect(choices.map((c) => c.name)).not.toContain('Delta');
+    expect(choices.map((c) => c.name)).not.toContain('Epsilon');
+  });
+
+  it('lists pending invitations by friend and direction, and the projects we share', () => {
+    expect(projectInvitesWith(view, 'f', 'outgoing').map((i) => i.id)).toEqual(['i1']);
+    expect(incomingProjectInvites(view).map((i) => i.id)).toEqual(['i2']);
+    expect(projectsTogether(view, 'f').map((x) => x.project.name)).toEqual(['Epsilon']);
+    expect(incomingProjectInvites({ ...view, status: 'signed_out' })).toEqual([]);
+  });
+
+  it('keeps membership, presence and my checkout readiness apart', () => {
+    const [{ project }] = projectsTogether(view, 'f');
+    expect(togetherStatus(view, project, 'f')).toEqual({ presence: 'online', myCheckout: 'needs setup' });
+    expect(togetherStatus(view, view.teams[0].projects[0], 'f')).toEqual({ presence: 'unknown', myCheckout: 'ready' });
+  });
+});
+
+describe('bridge backend', () => {
+  it('names Supabase by project ref and never shows more than the host', () => {
+    expect(bridgeBackend('https://abcd.supabase.co')).toBe('Supabase (abcd)');
+    expect(bridgeBackend('http://localhost:54321')).toBe('localhost:54321');
+    expect(bridgeBackend(null)).toBe('No 0rqestra server configured');
+  });
+});
+
+describe('shared checklist', () => {
+  const item = (o) => ({ id: o.id, projectId: 'p', title: o.title || o.id, notes: o.notes || '', status: o.status || 'todo', assigneeId: o.assigneeId ?? null, archived: Boolean(o.archived), runId: o.runId ?? null, run: o.run ?? null, updatedAt: o.updatedAt || '2026-11-27T10:00:00Z' });
+  const view = { userId: 'me', checklist: { p: { items: [
+    item({ id: 'a', status: 'done' }),
+    item({ id: 'b', status: 'blocked', assigneeId: 'me' }),
+    item({ id: 'c', status: 'todo', updatedAt: '2026-11-27T09:00:00Z' }),
+    item({ id: 'd', status: 'todo', updatedAt: '2026-11-27T11:00:00Z', assigneeId: 'f' }),
+    item({ id: 'e', status: 'in_progress', assigneeId: 'me' }),
+    item({ id: 'z', status: 'done', archived: true }),
+  ] } } };
+
+  it('counts progress over active items and orders blocked, in progress, to do, done', () => {
+    expect(checklistProgress(view, 'p')).toEqual({ done: 1, total: 5 });
+    expect(checklistItems(view, 'p').map((i) => i.id)).toEqual(['b', 'e', 'd', 'c', 'a']);
+    expect(checklistItems(view, 'p', { mine: true }).map((i) => i.id)).toEqual(['b', 'e']);
+    expect(checklistItems(view, 'p', { archived: true }).map((i) => i.id)).toEqual(['z']);
+    expect(checklistProgress({}, 'p')).toEqual({ done: 0, total: 0 });
+  });
+
+  it('shows a linked run from this computer or from its brief, and offers Mark done only when it finished', () => {
+    expect(checklistRunState(item({ id: 'x' }))).toBeNull();
+    expect(checklistRunState(item({ id: 'x', runId: 'r1' }), [{ id: 'r1', status: 'done', goal: 'Build' }])).toMatchObject({ label: 'Finished', finished: true });
+    expect(checklistRunState(item({ id: 'x', runId: 'r2', run: { status: 'failed', outcome: 'Tests failed', title: 'T' } }))).toMatchObject({ label: 'Failed', outcome: 'Tests failed', finished: false });
+    expect(checklistRunState(item({ id: 'x', runId: 'r3', run: { status: 'completed', outcome: null, title: 'T' } })).finished).toBe(true);
+    expect(checklistRunState(item({ id: 'x', runId: 'r4' })).label).toBe('Run not shared yet');
+  });
+
+  it('carries the title and notes into the Manager, and names who claimed first', () => {
+    expect(planPrompt({ title: ' Login page ', notes: 'Use the design' })).toBe('Plan this task from our shared checklist: Login page\n\nNotes: Use the design');
+    expect(planPrompt({ title: 'Docs', notes: '' })).toBe('Plan this task from our shared checklist: Docs');
+    const nameOf = (id) => ({ f: 'friend' })[id];
+    expect(claimText({ outcome: 'taken', assigneeId: 'f' }, nameOf)).toBe('friend claimed it first.');
+    expect(claimText({ outcome: 'claimed' }, nameOf)).toBe('It is yours now.');
   });
 });

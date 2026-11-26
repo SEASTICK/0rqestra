@@ -73,6 +73,7 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
       onTeamChanged: () => void service.refresh(),
       onFriendsChanged: () => void service.refreshSocial(),
       onChat: (projectId) => void service.refreshChat(projectId),
+      onChecklist: (projectId) => void service.refreshChecklist(projectId),
     });
     hub.setActive(activity.isActive());
     return hub;
@@ -153,6 +154,36 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
     guard(event);
     return service.sendTeamMessage(projectId, body, kind);
   });
+  // The shared checklist: every change goes through the server's functions (members only).
+  ipcMain.handle("teams:checklist-add", (event, projectId: unknown, item: unknown) => {
+    guard(event);
+    return service.addChecklistItem(projectId, item);
+  });
+  ipcMain.handle("teams:checklist-update", (event, itemId: unknown, item: unknown) => {
+    guard(event);
+    return service.updateChecklistItem(itemId, item);
+  });
+  ipcMain.handle("teams:checklist-status", (event, itemId: unknown, status: unknown, reason: unknown) => {
+    guard(event);
+    return service.setChecklistStatus(itemId, status, reason);
+  });
+  ipcMain.handle("teams:checklist-claim", (event, itemId: unknown) => {
+    guard(event);
+    return service.claimChecklistItem(itemId);
+  });
+  ipcMain.handle("teams:checklist-archive", (event, itemId: unknown, archived: unknown) => {
+    guard(event);
+    return service.archiveChecklistItem(itemId, archived);
+  });
+  ipcMain.handle("teams:checklist-link-run", (event, itemId: unknown, runId: unknown) => {
+    guard(event);
+    return service.linkChecklistRun(itemId, runId);
+  });
+  ipcMain.handle("teams:checklist-refresh", async (event, projectId: unknown) => {
+    guard(event);
+    await service.refreshChecklist(typeof projectId === "string" ? projectId : undefined);
+    return service.view();
+  });
   ipcMain.handle("teams:refresh-chat", async (event, projectId: unknown) => {
     guard(event);
     await service.refreshChat(typeof projectId === "string" ? projectId : undefined);
@@ -211,6 +242,19 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
   ipcMain.handle("teams:revoke-team-invite", (event, inviteId: unknown) => {
     guard(event);
     return service.revokeTeamInvite(inviteId);
+  });
+  // Starting a project together with a friend: one shared project, invited by id.
+  ipcMain.handle("teams:start-project-together", (event, input: unknown) => {
+    guard(event);
+    return service.startProjectTogether(input);
+  });
+  ipcMain.handle("teams:respond-project-invite", (event, inviteId: unknown, accept: unknown) => {
+    guard(event);
+    return service.respondProjectInvite(inviteId, accept);
+  });
+  ipcMain.handle("teams:revoke-project-invite", (event, inviteId: unknown) => {
+    guard(event);
+    return service.revokeProjectInvite(inviteId);
   });
   // Opens the system folder dialog. Returns null when the user cancels.
   ipcMain.handle("teams:choose-checkout", async (event) => {

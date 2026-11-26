@@ -3,7 +3,7 @@
 // never saved into it: a teammate's Manager is read-only here and cannot be edited or run from
 // this computer. Solo projects do not show any of this.
 import React, { useEffect, useRef, useState } from 'react';
-import { BRIEF_STATUS_TEXT, NODE_H, NODE_W, STATUS_TEXT, ago, bridgeLayout, briefsNotice, unsyncedBriefs, bridgeSummary, displayName, memberStatus, personBoxes, repoName } from './teams-ui.mjs';
+import { BRIEF_STATUS_TEXT, NODE_H, NODE_W, STATUS_TEXT, ago, bridgeLayout, briefsNotice, unsyncedBriefs, bridgeSummary, displayName, memberStatus, personBoxes, repoName, bridgeBackend, checklistProgress } from './teams-ui.mjs';
 
 // The boxes the tree's "fit" should include, in tree coordinates.
 export function overlayBoxes(graph, linked, view) {
@@ -98,7 +98,7 @@ function TeamChat({ chat, view, onSend, onSort }) {
   </div>;
 }
 
-export function BridgePanel({ linked, view, onClose, Icon, onSend, onSort }) {
+export function BridgePanel({ linked, view, onClose, Icon, onSend, onSort, onChecklist }) {
   const { team, project } = linked;
   const presence = view.presence?.[project.id];
   const nameOf = (userId) => displayName(team.members.find((m) => m.userId === userId)?.name);
@@ -108,6 +108,14 @@ export function BridgePanel({ linked, view, onClose, Icon, onSend, onSort }) {
     <aside className="task-drawer team-bridge-panel" aria-label={`Team Bridge for ${team.name}`}>
       <div className="task-drawer-top"><div><span className="eyebrow">TEAM BRIDGE</span><h2>{team.name}</h2></div><button className="icon-button" title="Close Team Bridge" aria-label="Close Team Bridge" onClick={onClose}><Icon name="close"/></button></div>
       <div className="task-drawer-scroll team-bridge-body">
+        {onChecklist && (() => {
+          const pr = checklistProgress(view, project.id);
+          return <section className="bridge-checklist">
+            <h3>Checklist</h3>
+            <p><strong>{pr.done} of {pr.total} done</strong>{view.checklist?.[project.id]?.needsUpdate ? <span className="team-muted"> · not on this server yet</span> : null}</p>
+            <button type="button" className="button" onClick={onChecklist}>Open checklist</button>
+          </section>;
+        })()}
         {onSend && <section>
           <h3>Team chat</h3>
           <TeamChat chat={view.chat?.[project.id]} view={view} onSend={onSend} onSort={onSort}/>
@@ -116,6 +124,10 @@ export function BridgePanel({ linked, view, onClose, Icon, onSend, onSort }) {
           <h3>Shared repository</h3>
           <p><strong>{project.name}</strong><br/><span className="team-muted">github.com/{repoName(project.repo)}</span></p>
           {project.link?.branch && <p className="team-muted">Your checkout is on branch {project.link.branch}.</p>}
+        </section>
+        <section>
+          <h3>Connected through</h3>
+          <p className="team-muted">{bridgeBackend(view.server)}. Each person runs their own Manager and agents; only presence, run briefs and the team chat are shared here.</p>
         </section>
         <section>
           <h3>People</h3>

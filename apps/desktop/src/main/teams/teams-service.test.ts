@@ -54,6 +54,12 @@ class FakeSupabase {
   // A server without the …_friends_lookup_live migration: no lookup or cancel, and a request back
   // accepts the first one.
   legacyFriends = false;
+  // Project invitations (migration …_project_invites.sql); projectInvitesMissing: an older server.
+  projectInvites: { id: string; project_id: string; team_id: string; invitee: string; invited_by: string; status: "pending" | "accepted" | "declined" | "revoked" }[] = [];
+  projectInvitesMissing = false;
+  // The shared checklist (migration …_project_checklist.sql); checklistMissing: an older server.
+  checklist: { id: string; project_id: string; title: string; notes: string; status: string; assignee_id: string | null; blocked_reason: string | null; archived: boolean; run_id: string | null; created_by: string | null; created_at: number; updated_by: string | null; updated_at: string; version: number }[] = [];
+  checklistMissing = false;
   // Team chat (migration …_team_chat.sql). chatMissing: a server without that migration.
   messages: { id: string; project_id: string; author_id: string; author_name: string; kind: string; body: string; created_at: string }[] = [];
   chatMissing = false;
@@ -180,6 +186,52 @@ class FakeSupabase {
       const memberOf = (projectId: string) => this.projects.some((p) => p.id === projectId && isMember(p.team_id));
       return reply(200, this.reservations.filter((r) => memberOf(r.project_id)));
     }
+    // ---- shared checklist (same rules as the migration)
+    const memberOfProject = (projectId: string) => this.projects.some((p) => p.id === projectId && isMember(p.team_id));
+    if (/checklist/.test(u.pathname) && this.checklistMissing) return pgError(404, "PGRST205", "Could not find the table 'public.checklist_items' in the schema cache");
+    if (init.method === "GET" && u.pathname === "/rest/v1/checklist_items") {
+      return reply(200, this.checklist.filter((c) => memberOfProject(c.project_id)).sort((x, y) => x.created_at - y.created_at));
+    }
+    if (u.pathname.startsWith("/rest/v1/rpc/") && /checklist/.test(u.pathname)) {
+      const assigneeOk = (projectId: string, user: unknown) => user === null || user === undefined || this.projects.some((p) => p.id === projectId && this.members.some((m) => m.team_id === p.team_id && m.user_id === user));
+      const touch = (c: (typeof this.checklist)[number]) => { c.updated_by = me; this.now += 1000; c.updated_at = new Date(this.now).toISOString(); c.version += 1; };
+      if (u.pathname === "/rest/v1/rpc/add_checklist_item") {
+        const projectId = String(body.p_project_id);
+        if (!memberOfProject(projectId)) return pgError(403, "42501", "not_project_member");
+        const title = String(body.p_title ?? "").trim();
+        if (!title || title.length > 200) return pgError(400, "22023", "invalid_checklist_item");
+        if (!assigneeOk(projectId, body.p_assignee)) return pgError(400, "22023", "invalid_assignee");
+        this.now += 1000;
+        const row = { id: crypto.randomUUID(), project_id: projectId, title, notes: String(body.p_notes ?? ""), status: "todo", assignee_id: (body.p_assignee as string | null) ?? null, blocked_reason: null, archived: false, run_id: null, created_by: me, created_at: this.now, updated_by: me, updated_at: new Date(this.now).toISOString(), version: 1 };
+        this.checklist.push(row);
+        return reply(200, row.id);
+      }
+      const item = this.checklist.find((c) => c.id === body.p_item_id);
+      if (!item || !memberOfProject(item.project_id)) return pgError(404, "P0002", "checklist_item_not_found");
+      if (u.pathname === "/rest/v1/rpc/claim_checklist_item") {
+        if (item.assignee_id === null && !item.archived) { item.assignee_id = me; touch(item); return reply(200, [{ outcome: "claimed", assignee_id: me }]); }
+        return reply(200, [{ outcome: item.assignee_id === me ? "yours" : item.assignee_id === null ? "archived" : "taken", assignee_id: item.assignee_id }]);
+      }
+      if (u.pathname === "/rest/v1/rpc/set_checklist_status") {
+        const st = String(body.p_status);
+        if (!["todo", "in_progress", "blocked", "done"].includes(st)) return pgError(400, "22023", "invalid_status");
+        const why = typeof body.p_blocked_reason === "string" ? body.p_blocked_reason.trim() : "";
+        if (st === "blocked" && !why) return pgError(400, "22023", "blocked_reason_required");
+        item.status = st; item.blocked_reason = st === "blocked" ? why : null; touch(item);
+        return reply(200, item.version);
+      }
+      if (u.pathname === "/rest/v1/rpc/update_checklist_item") {
+        if (!assigneeOk(item.project_id, body.p_assignee)) return pgError(400, "22023", "invalid_assignee");
+        item.title = String(body.p_title).trim(); item.notes = String(body.p_notes ?? ""); item.assignee_id = (body.p_assignee as string | null) ?? null; touch(item);
+        return reply(200, item.version);
+      }
+      if (u.pathname === "/rest/v1/rpc/archive_checklist_item") { item.archived = body.p_archived !== false; touch(item); return reply(200, item.version); }
+      if (u.pathname === "/rest/v1/rpc/link_checklist_run") { item.run_id = (body.p_run_id as string | null) ?? null; touch(item); return reply(200, item.version); }
+    }
+    if (init.method === "GET" && u.pathname === "/rest/v1/work_briefs" && u.searchParams.get("run_id")) {
+      const runs = u.searchParams.get("run_id")!.replace(/^in\.\(|\)$/g, "").split(",");
+      return reply(200, this.briefs.filter((b) => memberOfProject(b.project_id) && runs.includes(b.run_id)).map((b) => ({ project_id: b.project_id, run_id: b.run_id, status: b.status, outcome: b.outcome, title: b.title })));
+    }
     if (init.method === "GET" && u.pathname === "/rest/v1/work_briefs" && u.searchParams.get("author_id")) {
       const author = u.searchParams.get("author_id")!.replace(/^eq\./, "");
       const projectId = u.searchParams.get("project_id")!.replace(/^eq\./, "");
@@ -304,7 +356,67 @@ class FakeSupabase {
     if (u.pathname === "/rest/v1/rpc/remove_friend") {
       const other = String(body.p_user_id);
       this.friendships = this.friendships.filter((f) => !(pair(me, other) === f && (f.status === "accepted" || f.requester === me)));
+      for (const i of this.projectInvites) if (i.status === "pending" && ((i.invited_by === me && i.invitee === other) || (i.invited_by === other && i.invitee === me))) i.status = "revoked";
       return reply(204, undefined);
+    }
+    // ---- project invitations (same rules as the migration)
+    if (u.pathname.startsWith("/rest/v1/rpc/") && /project_invite|invite_friend_to_project|start_project_together/.test(u.pathname) && this.projectInvitesMissing) return missing();
+    const alone = (projectId: string) => {
+      const p = this.projects.find((x) => x.id === projectId);
+      return Boolean(p) && this.projects.filter((x) => x.team_id === p!.team_id).length === 1;
+    };
+    const createProjectInvite = (projectId: string, invitee: string) => {
+      const project = this.projects.find((p) => p.id === projectId);
+      if (!project || !isOwner(project.team_id)) return pgError(403, "42501", "not_team_owner");
+      if (pair(me, invitee)?.status !== "accepted") return pgError(403, "42501", "not_friends");
+      if (this.members.some((m) => m.team_id === project.team_id && m.user_id === invitee)) return pgError(409, "23505", "already_member");
+      if (!alone(projectId)) return pgError(403, "42501", "project_team_has_other_projects");
+      let inv = this.projectInvites.find((i) => i.project_id === projectId && i.invitee === invitee && i.status === "pending");
+      if (!inv) this.projectInvites.push((inv = { id: crypto.randomUUID(), project_id: projectId, team_id: project.team_id, invitee, invited_by: me, status: "pending" }));
+      return inv.id;
+    };
+    if (u.pathname === "/rest/v1/rpc/invite_friend_to_project") {
+      const r = createProjectInvite(String(body.p_project_id), String(body.p_user_id));
+      return typeof r === "string" ? reply(200, r) : r;
+    }
+    if (u.pathname === "/rest/v1/rpc/start_project_together") {
+      const invitee = String(body.p_user_id);
+      if (pair(me, invitee)?.status !== "accepted") return pgError(403, "42501", "not_friends");
+      const teamId = crypto.randomUUID();
+      this.teams.push({ id: teamId, name: String(body.p_name).trim(), owner_id: me, created_at: this.now });
+      this.members.push({ team_id: teamId, user_id: me, email: myEmail, role: "owner" });
+      const repo_key = `github.com/${body.p_repo_owner}/${body.p_repo_name}`.toLowerCase();
+      const project = { id: crypto.randomUUID(), team_id: teamId, name: String(body.p_name).trim(), repo_owner: String(body.p_repo_owner), repo_name: String(body.p_repo_name), repo_key };
+      this.projects.push(project);
+      const r = createProjectInvite(project.id, invitee);
+      if (typeof r !== "string") return r;
+      return reply(200, [{ invite_id: r, project_id: project.id, team_id: teamId, repo_key }]);
+    }
+    if (u.pathname === "/rest/v1/rpc/respond_project_invite") {
+      const inv = this.projectInvites.find((i) => i.id === body.p_invite_id && i.invitee === me);
+      if (!inv || inv.status === "declined") return pgError(404, "P0002", "invite_not_found");
+      if (inv.status === "accepted") return reply(200, inv.project_id);
+      if (inv.status === "revoked") return pgError(400, "P0001", "invite_revoked");
+      if (body.p_accept !== true) { inv.status = "declined"; return reply(200, null); }
+      if (!alone(inv.project_id)) return pgError(403, "42501", "project_team_has_other_projects");
+      if (!isMember(inv.team_id)) this.members.push({ team_id: inv.team_id, user_id: me, email: myEmail, role: "member" });
+      inv.status = "accepted";
+      return reply(200, inv.project_id);
+    }
+    if (u.pathname === "/rest/v1/rpc/revoke_project_invite") {
+      const inv = this.projectInvites.find((i) => i.id === body.p_invite_id);
+      if (!inv || !(inv.invited_by === me || isOwner(inv.team_id))) return pgError(404, "P0002", "invite_not_found");
+      if (inv.status !== "pending") return reply(200, inv.status);
+      inv.status = "revoked";
+      return reply(200, "revoked");
+    }
+    if (u.pathname === "/rest/v1/rpc/list_project_invites") {
+      return reply(200, this.projectInvites.filter((i) => i.status === "pending" && (i.invitee === me || i.invited_by === me)).map((i) => {
+        const incoming = i.invitee === me;
+        const other = incoming ? i.invited_by : i.invitee;
+        const p = this.projects.find((x) => x.id === i.project_id)!;
+        return { invite_id: i.id, project_id: i.project_id, team_id: i.team_id, project_name: p.name, repo_owner: p.repo_owner, repo_name: p.repo_name, user_id: other, username: this.profiles.get(other) ?? "unknown", display_name: displayOf(other), direction: incoming ? "incoming" : "outgoing" };
+      }));
     }
     if (u.pathname === "/rest/v1/rpc/invite_friend_to_team") {
       const teamId = String(body.p_team_id), invitee = String(body.p_user_id);
@@ -990,6 +1102,227 @@ describe("usernames, friends and team invitations", () => {
     await a.service.sendFriendRequest("bob_user");
     expect((await b.service.sendFriendRequest("ann_user")).outcome).toBe("accepted");
     expect(server.friendships).toEqual([expect.objectContaining({ status: "accepted" })]);
+  });
+
+  it("starts a project together from Friends: invite, accept once, both see each other; decline, cancel and strangers", async () => {
+    const server = new FakeSupabase();
+    const repoA = checkout("together-a", { origin: "https://github.com/seastick/together.git" });
+    const repoB = checkout("together-b", { origin: "git@github.com:SEASTICK/together.git" });
+    const a = computer("ta", server);
+    const b = computer("tb", server);
+    const c = computer("tc", server);
+    await signIn(a.service, "ann@example.test");
+    await signIn(b.service, "bob@example.test");
+    await signIn(c.service, "cat@example.test");
+    const bobId = server.users.get("bob@example.test")!;
+    const catId = server.users.get("cat@example.test")!;
+    await a.service.sendFriendRequest("bob_user");
+    await b.service.refreshSocial();
+    await b.service.respondFriend(b.service.view().friends[0]!.requestId, true);
+    await a.service.refreshSocial();
+
+    // Only accepted friends; a new shared project gets its own team, and A's checkout is linked here.
+    await expect(a.service.startProjectTogether({ friendUserId: catId, sharedProjectId: crypto.randomUUID() })).rejects.toThrow(/accepted your friend request/);
+    const pick = await a.service.inspectFolder(repoA);
+    let va = await a.service.startProjectTogether({ friendUserId: bobId, localProjectId: "local-a", selectionId: pick.id, name: "Together", remote: "origin" });
+    const team = va.teams.find((t) => t.name === "Together")!;
+    expect(team.projects).toHaveLength(1);
+    expect(team.projects[0]!.link).toMatchObject({ localProjectId: "local-a", state: "linked" });
+    expect(va.projectInvites).toEqual([expect.objectContaining({ direction: "outgoing", projectName: "Together", repo: { owner: "seastick", name: "together" }, username: "bob_user" })]);
+    const projectId = team.projects[0]!.id;
+    // Inviting again returns the same pending invitation.
+    await a.service.startProjectTogether({ friendUserId: bobId, sharedProjectId: projectId });
+    expect(server.projectInvites.filter((i) => i.status === "pending")).toHaveLength(1);
+
+    // Pending: Bob sees who, which project and repository, but is not a member and sees no project.
+    await b.service.refreshSocial();
+    let vb = b.service.view();
+    expect(vb.projectInvites).toEqual([expect.objectContaining({ direction: "incoming", projectName: "Together", username: "ann_user", repo: { owner: "seastick", name: "together" } })]);
+    expect(vb.teams).toEqual([]);
+    expect(JSON.stringify(vb.projectInvites)).not.toContain("@example.test");
+    // Cat, a stranger, can neither see, accept nor cancel it.
+    await c.service.refreshSocial();
+    expect(c.service.view().projectInvites).toEqual([]);
+    const inviteId = vb.projectInvites[0]!.id;
+    await expect(c.service.respondProjectInvite(inviteId, true)).rejects.toThrow(/no longer there/);
+    await expect(c.service.revokeProjectInvite(inviteId)).rejects.toThrow(/no longer there/);
+
+    // Bob accepts twice: one membership. Both now see each other in the project.
+    const r = await b.service.respondProjectInvite(inviteId, true);
+    expect(r.projectId).toBe(projectId);
+    await b.service.respondProjectInvite(inviteId, true);
+    expect(server.members.filter((m) => m.team_id === team.id && m.user_id === bobId)).toHaveLength(1);
+    vb = b.service.view();
+    expect(vb.teams.map((t) => t.name)).toEqual(["Together"]);
+    expect(vb.teams[0]!.members.map((m) => m.name)).toEqual(["ann_user", "bob_user"]);
+    expect(vb.teams[0]!.projects[0]!.link).toBeNull();
+    expect(vb.projectInvites).toEqual([]);
+    // Ann was offline during the acceptance: her next refresh sees Bob as a member.
+    await a.service.refreshSocial();
+    va = a.service.view();
+    expect(va.projectInvites).toEqual([]);
+    expect(va.teams.find((t) => t.id === team.id)!.members.map((m) => m.name)).toEqual(["ann_user", "bob_user"]);
+    expect(a.targets.at(-1)).toEqual(expect.arrayContaining([expect.objectContaining({ projectId, memberIds: expect.arrayContaining([bobId]) })]));
+    // Bob links his own checkout: his folder and branch stay on his computer.
+    const pickB = await b.service.inspectFolder(repoB);
+    vb = await b.service.linkCheckout({ sharedProjectId: projectId, selectionId: pickB.id, localProjectId: "local-b" });
+    expect(vb.teams[0]!.projects[0]!.link).toMatchObject({ localProjectId: "local-b", state: "linked" });
+    expect(a.service.view().teams.find((t) => t.id === team.id)!.projects[0]!.link!.path).not.toBe(vb.teams[0]!.projects[0]!.link!.path);
+    await expect(a.service.startProjectTogether({ friendUserId: bobId, sharedProjectId: projectId })).rejects.toThrow(/already in this project/);
+
+    // A project that shares its team with others is not offered.
+    va = await a.service.createTeam("Big");
+    const big = va.teams.find((t) => t.name === "Big")!;
+    server.projects.push({ id: crypto.randomUUID(), team_id: big.id, name: "One", repo_owner: "o", repo_name: "one", repo_key: "github.com/o/one" }, { id: crypto.randomUUID(), team_id: big.id, name: "Two", repo_owner: "o", repo_name: "two", repo_key: "github.com/o/two" });
+    va = await a.service.refresh();
+    const one = va.teams.find((t) => t.name === "Big")!.projects[0]!;
+    await expect(a.service.startProjectTogether({ friendUserId: bobId, sharedProjectId: one.id })).rejects.toThrow(/other projects/);
+
+    // Decline, then cancel.
+    va = await a.service.createTeam("Solo");
+    const solo = va.teams.find((t) => t.name === "Solo")!;
+    server.projects.push({ id: crypto.randomUUID(), team_id: solo.id, name: "Solo project", repo_owner: "o", repo_name: "solo", repo_key: "github.com/o/solo" });
+    va = await a.service.refresh();
+    const soloProject = va.teams.find((t) => t.name === "Solo")!.projects[0]!;
+    await a.service.startProjectTogether({ friendUserId: bobId, sharedProjectId: soloProject.id });
+    await b.service.refreshSocial();
+    const decline = b.service.view().projectInvites[0]!;
+    vb = (await b.service.respondProjectInvite(decline.id, false)).view;
+    expect(vb.teams.map((t) => t.name)).toEqual(["Together"]);
+    await expect(b.service.respondProjectInvite(decline.id, true)).rejects.toThrow(/no longer there/);
+    va = await a.service.startProjectTogether({ friendUserId: bobId, sharedProjectId: soloProject.id });
+    const again = va.projectInvites.find((i) => i.projectId === soloProject.id)!;
+    va = await a.service.revokeProjectInvite(again.id);
+    expect(va.projectInvites).toEqual([]);
+    await b.service.refreshSocial();
+    expect(b.service.view().projectInvites).toEqual([]);
+    await expect(b.service.respondProjectInvite(again.id, true)).rejects.toThrow(/cancelled/);
+    expect(b.service.view().teams.map((t) => t.name)).toEqual(["Together"]);
+
+    // Signing out clears project invitations from the view.
+    await a.service.startProjectTogether({ friendUserId: bobId, sharedProjectId: soloProject.id });
+    expect((await a.service.signOut()).projectInvites).toEqual([]);
+  });
+
+  it("works with a server that has no project invitations yet", async () => {
+    const server = new FakeSupabase();
+    server.projectInvitesMissing = true;
+    const a = computer("pm", server);
+    await signIn(a.service, "ann@example.test");
+    await a.service.refreshSocial();
+    expect(a.service.view().projectInvites).toEqual([]);
+  });
+
+  it("shares one checklist between two members: add, claim (one wins), block, done, reopen, runs, reconnect and no access for others", async () => {
+    const server = new FakeSupabase();
+    const a = computer("ca", server);
+    const b = computer("cb", server);
+    const c = computer("cc", server);
+    const d = computer("cd", server);
+    await signIn(a.service, "ann@example.test");
+    await signIn(b.service, "bob@example.test");
+    await signIn(c.service, "cat@example.test");
+    await signIn(d.service, "dan@example.test");
+    const annId = server.users.get("ann@example.test")!;
+    const bobId = server.users.get("bob@example.test")!;
+    const catId = server.users.get("cat@example.test")!;
+    const danId = server.users.get("dan@example.test")!;
+    // Ann and Bob share a project started from Friends; Dan only has a pending invitation.
+    for (const [x, name] of [[b, "bob_user"], [d, "dan_user"]] as const) {
+      await a.service.sendFriendRequest(name);
+      await x.service.refreshSocial();
+      await x.service.respondFriend(x.service.view().friends[0]!.requestId, true);
+    }
+    await a.service.refreshSocial();
+    let va = await a.service.createTeam("Pair");
+    const team = va.teams.find((t) => t.name === "Pair")!;
+    server.projects.push({ id: crypto.randomUUID(), team_id: team.id, name: "Shop", repo_owner: "o", repo_name: "shop", repo_key: "github.com/o/shop" });
+    va = await a.service.refresh();
+    const projectId = va.teams.find((t) => t.name === "Pair")!.projects[0]!.id;
+    await a.service.startProjectTogether({ friendUserId: bobId, sharedProjectId: projectId });
+    await a.service.startProjectTogether({ friendUserId: danId, sharedProjectId: projectId });
+    await b.service.refreshSocial();
+    await b.service.respondProjectInvite(b.service.view().projectInvites[0]!.id, true);
+    await d.service.refreshSocial();
+    expect(d.service.view().projectInvites).toHaveLength(1);
+    await a.service.refresh();
+
+    // Add: the assignee must be in the project; the server records who and when.
+    await expect(a.service.addChecklistItem(projectId, { title: "x", assigneeId: catId })).rejects.toThrow(/Only someone in this shared project/);
+    await expect(a.service.addChecklistItem(projectId, { title: "   " })).rejects.toThrow(/title has 1 to 200/);
+    await a.service.addChecklistItem(projectId, { title: "Login page", notes: "Use the design" });
+    va = await a.service.addChecklistItem(projectId, { title: "Docs", assigneeId: bobId });
+    expect(va.checklist[projectId]!.items.map((i) => [i.title, i.status, i.assigneeId, i.createdBy])).toEqual([["Login page", "todo", null, annId], ["Docs", "todo", bobId, annId]]);
+    // Bob sees the same items once his app reads them (a "checklist_changed" broadcast does this).
+    await b.service.refreshChecklist(projectId);
+    let vb = b.service.view();
+    expect(vb.checklist[projectId]!.items.map((i) => i.title)).toEqual(["Login page", "Docs"]);
+    const login = vb.checklist[projectId]!.items[0]!;
+
+    // Simultaneous claims: one wins; the other is told who.
+    const [first, second] = await Promise.all([b.service.claimChecklistItem(login.id), a.service.claimChecklistItem(login.id)]);
+    const winner = first.outcome === "claimed" ? bobId : annId;
+    expect([first.outcome, second.outcome].sort()).toEqual(["claimed", "taken"]);
+    expect((first.outcome === "taken" ? first : second).assigneeId).toBe(winner);
+    expect(server.checklist.find((i) => i.id === login.id)!.assignee_id).toBe(winner);
+
+    // Block (needs a reason), done, reopen; every change shows on the other account with who did it.
+    await expect(b.service.setChecklistStatus(login.id, "blocked", " ")).rejects.toThrow(/What you need/);
+    await b.service.setChecklistStatus(login.id, "blocked", "Need the API key");
+    await a.service.refreshChecklist(projectId);
+    let seen = a.service.view().checklist[projectId]!.items.find((i) => i.id === login.id)!;
+    expect(seen).toMatchObject({ status: "blocked", blockedReason: "Need the API key", updatedBy: bobId });
+    await b.service.setChecklistStatus(login.id, "done");
+    await a.service.refreshChecklist(projectId);
+    expect(a.service.view().checklist[projectId]!.items.find((i) => i.id === login.id)!).toMatchObject({ status: "done", blockedReason: null });
+    await a.service.setChecklistStatus(login.id, "todo");
+    await b.service.refreshChecklist(projectId);
+    expect(b.service.view().checklist[projectId]!.items.find((i) => i.id === login.id)!).toMatchObject({ status: "todo", updatedBy: annId });
+
+    // A linked run shows its brief's status and outcome; the item stays as people set it.
+    server.briefs.push({ id: crypto.randomUUID(), project_id: projectId, run_id: "run_1", title: "Build login", status: "completed", author_id: annId, author_name: "ann_user", branch: "main", paths: [], updated_at: new Date(server.now).toISOString(), seq: 1, outcome: "All checks passed", finished_at: null });
+    va = await a.service.linkChecklistRun(login.id, "run_1");
+    seen = va.checklist[projectId]!.items.find((i) => i.id === login.id)!;
+    expect(seen).toMatchObject({ runId: "run_1", status: "todo", run: { status: "completed", outcome: "All checks passed", title: "Build login" } });
+    await expect(a.service.linkChecklistRun(login.id, "bad run!")).rejects.toThrow(/Unknown run/);
+
+    // Reconnect: Bob is offline while Ann edits and archives; his next read has every change.
+    server.offline = true;
+    await b.service.refreshChecklist(projectId);
+    expect(b.service.view().checklist[projectId]!.problem).toBeTruthy();
+    server.offline = false;
+    const docs = va.checklist[projectId]!.items.find((i) => i.title === "Docs")!;
+    await a.service.updateChecklistItem(docs.id, { title: "Docs v2", notes: "API", assigneeId: null });
+    await a.service.archiveChecklistItem(login.id);
+    await b.service.refreshChecklist(projectId);
+    vb = b.service.view();
+    expect(vb.checklist[projectId]!.problem).toBeNull();
+    expect(vb.checklist[projectId]!.items.map((i) => [i.title, i.archived, i.assigneeId])).toEqual([["Login page", true, winner], ["Docs v2", false, null]]);
+
+    // A pending invitation and an unrelated account read nothing and change nothing.
+    await d.service.refresh();
+    expect(d.service.view().checklist).toEqual({});
+    await expect(d.service.addChecklistItem(projectId, { title: "sneaky" })).rejects.toThrow(/Unknown shared project/);
+    await c.service.refresh();
+    expect(c.service.view().checklist).toEqual({});
+    await expect(c.service.claimChecklistItem(docs.id)).rejects.toThrow(/no longer there/);
+    expect(server.checklist).toHaveLength(2);
+
+    // Signing out clears the checklist from the view.
+    expect((await b.service.signOut()).checklist).toEqual({});
+  });
+
+  it("says when the server has no checklist yet", async () => {
+    const server = new FakeSupabase();
+    server.checklistMissing = true;
+    const a = computer("cm", server);
+    await signIn(a.service, "ann@example.test");
+    const va = await a.service.createTeam("T");
+    server.projects.push({ id: crypto.randomUUID(), team_id: va.teams[0]!.id, name: "P", repo_owner: "o", repo_name: "p", repo_key: "github.com/o/p" });
+    const v = await a.service.refresh();
+    const projectId = v.teams[0]!.projects[0]!.id;
+    expect(v.checklist[projectId]).toMatchObject({ needsUpdate: true, items: [] });
+    await expect(a.service.addChecklistItem(projectId, { title: "x" })).rejects.toThrow(/does not have the shared checklist yet/);
   });
 
   it("says when the server cannot be reached, and clears it when it answers again", async () => {
