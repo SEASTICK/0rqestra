@@ -92,7 +92,7 @@ export function autoModel(provider: ProviderId, payload: { text: string; history
 const WRITING_WORDS = /\b(write|rewrite|draft|essay|email|mail|letter|summari[sz]e|translate|plan|design|story|poem|improve|edit|skriv|skriva|skriv om|mejl|brev|uppsats|sammanfatta|översätt|planera|designa|berättelse|dikt|förbättra)\b/i;
 export const LONG_TEXT_CHARS = 12_000;
 const CODE_WORDS = /```|\b(code|coding|bug|bugs|debug|error|exception|stack ?trace|function|script|regex|sql|api|compile|refactor|unit tests?|typescript|javascript|python|java|rust|golang|c\+\+|html|css|kod|koda|kodar|bugg|buggar|felmeddelande|funktion|skript|programmera|programmering)\b/i;
-export function pickTool(text: string, attachments: { kind: string }[], ready: ProviderId[], inProject = false, history: ChatTurn[] = []): { provider: ProviderId; reason: string } {
+function pickByTask(text: string, attachments: { kind: string }[], ready: ProviderId[], inProject: boolean, history: ChatTurn[]): { provider: ProviderId; reason: string } {
   const has = (p: ProviderId) => ready.includes(p);
   if (!ready.length) return { provider: "claude", reason: "no tool reported as ready" };
   if (ready.length === 1) return { provider: ready[0]!, reason: "the only connected tool" };
@@ -105,6 +105,50 @@ export function pickTool(text: string, attachments: { kind: string }[], ready: P
   if (gemini && textOnly && !WRITING_WORDS.test(text) && !CODE_WORDS.test(text) && isQuick(text, history, attachments.length > 0)) return { provider: "gemini", reason: "a quick question" };
   if (has("claude")) return { provider: "claude", reason: "writing, explaining and planning" };
   return { provider: ready.find((p) => p !== "gemini" || !inProject) ?? ready[0]!, reason: "the best connected tool" };
+}
+
+// How much of the tightest usage window each tool has left, in percent. Windows that have already
+// started over are ignored; a tool that reports nothing is simply missing (unknown, not empty).
+export const EXHAUSTED_PERCENT = 5;
+export const TIGHT_PERCENT = 25;
+export function usageLeft(statuses: ProviderStatus[], nowMs: number): Partial<Record<ProviderId, number>> {
+  const left: Partial<Record<ProviderId, number>> = {};
+  for (const st of statuses) {
+    const open = st.limits.filter((l) => !(l.resetsAt && l.resetsAt * 1000 <= nowMs));
+    if (open.length) left[st.provider] = Math.max(0, Math.min(...open.map((l) => 100 - l.usedPercent)));
+  }
+  return left;
+}
+
+// Auto: the task picks the tool (pickByTask), and the subscriptions' remaining usage can overrule it so
+// all of them get used: a tool that is out is skipped, and one that is running low hands plain text
+// work to a tool with clearly more left. Nothing with pictures or PDFs is moved. With no usage
+// information the task decides alone.
+export function pickTool(text: string, attachments: { kind: string }[], ready: ProviderId[], inProject = false, history: ChatTurn[] = [], left: Partial<Record<ProviderId, number>> = {}): { provider: ProviderId; reason: string } {
+  const base = pickByTask(text, attachments, ready, inProject, history);
+  const pinned = attachments.some((a) => a.kind !== "text") || ready.length < 2;
+  if (pinned) return base;
+  const name = (p: ProviderId) => (p === "claude" ? "Claude" : p === "codex" ? "Codex" : "Gemini");
+  const eligible = ready.filter((p) => p !== "gemini" || !inProject);
+  const usable = eligible.filter((p) => (left[p] ?? 100) > EXHAUSTED_PERCENT);
+  const have = (p: ProviderId) => left[p] ?? null;
+  if (!usable.length) return base;
+  let pick = base.provider;
+  let why = base.reason;
+  if (!usable.includes(pick)) {
+    // The usual tool is out: the task's choice among the tools that still have usage.
+    pick = pickByTask(text, attachments, usable, inProject, history).provider;
+    why = `${name(base.provider)} has used up its limit; ${base.reason}`;
+  }
+  const mine = have(pick);
+  if (mine !== null && mine < TIGHT_PERCENT) {
+    const better = usable.filter((p) => p !== pick).map((p) => ({ p, v: have(p) })).filter((x) => x.v !== null && x.v >= mine + 30).sort((a, b) => b.v! - a.v!)[0];
+    if (better) {
+      pick = better.p;
+      why = `${name(base.provider)} is running low (${Math.round(mine)}% left); ${name(better.p)} has ${Math.round(better.v!)}% left`;
+    }
+  }
+  return { provider: pick, reason: why };
 }
 
 export type Emit = (requestId: string, event: ChatEvent) => void;
@@ -152,7 +196,7 @@ export class ChatService {
     });
     // "Auto" as the tool: the message decides which connected tool answers (pickTool), and then its model.
     const ready = (this.statusCache?.value ?? []).filter((s) => s.installed && s.subscription).map((s) => s.provider);
-    const routed = payload.provider === AUTO ? pickTool(payload.text, attachments, ready, Boolean(payload.team), payload.history) : null;
+    const routed = payload.provider === AUTO ? pickTool(payload.text, attachments, ready, Boolean(payload.team), payload.history, usageLeft(this.statusCache?.value ?? [], this.now())) : null;
     const provider: ProviderId = routed ? routed.provider : (payload.provider as ProviderId);
     // "Auto" as the model: a quick question gets a light, fast model; work, files and longer questions a stronger one.
     const model = payload.model === AUTO || routed ? autoModel(provider, payload, attachments.length > 0, this.statusCache?.value ?? []) : payload.model;

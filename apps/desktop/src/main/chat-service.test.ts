@@ -246,6 +246,27 @@ describe("Auto picks the tool", () => {
     expect(pickTool("Skriv en dikt", [], ["codex", "gemini"]).provider).toBe("codex");
   });
 
+  it("spreads Auto over the subscriptions by what is left, and leaves pictures and PDFs alone", async () => {
+    const { pickTool, usageLeft } = await import("./chat-service.js");
+    const all = ["claude", "codex", "gemini"] as const;
+    // Nothing known: the task decides.
+    expect(pickTool("Skriv ett mejl", [], [...all]).provider).toBe("claude");
+    // Claude is out: writing goes to a tool that has usage left.
+    expect(pickTool("Skriv ett mejl", [], [...all], false, [], { claude: 2, codex: 70, gemini: 90 }).provider).toBe("codex");
+    // Claude is low and Codex has much more: plain work moves over, with the reason.
+    expect(pickTool("Skriv ett mejl", [], [...all], false, [], { claude: 15, codex: 80 })).toMatchObject({ provider: "codex", reason: expect.stringMatching(/Claude is running low \(15% left\); Codex has 80% left/) });
+    // Not much better elsewhere: stay with the task's choice.
+    expect(pickTool("Skriv ett mejl", [], [...all], false, [], { claude: 15, codex: 30 }).provider).toBe("claude");
+    // Gemini is never used by Auto inside a project, whatever is left.
+    expect(pickTool("Skriv ett mejl", [], [...all], true, [], { claude: 15, codex: 20, gemini: 100 }).provider).toBe("claude");
+    // PDFs and pictures stay with Claude; when everything is out, the task decides.
+    expect(pickTool("Sammanfatta", [{ kind: "pdf" }], [...all], false, [], { claude: 10, codex: 90 }).provider).toBe("claude");
+    expect(pickTool("Skriv ett mejl", [], [...all], false, [], { claude: 1, codex: 1, gemini: 1 }).provider).toBe("claude");
+    // Windows that have started over do not count; the tightest open window does.
+    const st = (provider: string, limits: object[]) => ({ provider, limits }) as never;
+    expect(usageLeft([st("claude", [{ label: "5h", usedPercent: 98, windowMinutes: 300, resetsAt: 100 }, { label: "week", usedPercent: 40, windowMinutes: 10080, resetsAt: 9999999999 }]), st("codex", [])], 200_000)).toEqual({ claude: 60 });
+  });
+
   it("picks Gemini's Flash model for quick questions and leaves the rest to agy's default", async () => {
     const { autoModel } = await import("./chat-service.js");
     const statuses = [{ provider: "gemini", models: [{ id: "default", label: "Default" }, { id: "gemini-4-neon-high", label: "Gemini 4 Neon (High)" }, { id: "gemini-3-8-flash", label: "Gemini 3.8 Flash" }] }] as never;
