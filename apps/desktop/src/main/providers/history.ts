@@ -104,9 +104,10 @@ export const TOOL_STRENGTHS = [
   "What the tools are good at (a guide; you decide per task):",
   "- Claude Code (Claude): planning and structure, user interfaces and design, clear text, careful reviews, larger refactors.",
   "- Codex (ChatGPT): implementing features, algorithms and data handling, debugging, tests, precise changes to existing code.",
+  "- Gemini: very long documents and large amounts of text, summarising and comparing sources, quick factual answers, reading PDFs and images.",
 ].join("\n");
 
-const TOOL_NAME: Record<string, string> = { claude: "Claude Code", codex: "Codex" };
+const TOOL_NAME: Record<string, string> = { claude: "Claude Code", codex: "Codex", gemini: "Gemini" };
 
 export function teamSection(team: TeamMember[]): string {
   const working = team.filter((m) => m.ready);
@@ -114,7 +115,7 @@ export function teamSection(team: TeamMember[]): string {
   const lines = ["Your team:"];
   lines.push(working.length
     ? working.map((m) => `- ${m.role}: ${m.name}${m.tool ? ` — ${TOOL_NAME[m.tool] ?? m.tool}${m.model ? ` (${m.model})` : ""}` : ""} (can work)`).join("\n")
-    : "- No agent can work yet; no agent in the tree runs on Claude Code or Codex.");
+    : "- No agent can work yet; no agent in the tree runs on Claude Code, Codex or Gemini.");
   if (notSetUp.length) lines.push(`Agents without a tool, which cannot work yet: ${notSetUp.map((m) => `${m.name} (${m.role})`).join(", ")}.`);
   const tools = new Set(working.map((m) => m.tool).filter(Boolean));
   const offered = new Map<string, string[]>();

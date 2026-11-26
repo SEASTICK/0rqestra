@@ -5,7 +5,7 @@
 export const TARGET_KEY = 'orqestra-chat-target';
 // No tool chosen or connected: nothing answers, and the window shows how to set one up.
 export const NO_TOOL = { provider: 'none', model: null, effort: null, name: '', modelLabel: '' };
-const PROVIDERS = ['claude', 'codex'];
+const PROVIDERS = ['claude', 'codex', 'gemini'];
 
 export function readyProviders(statuses) {
   return (Array.isArray(statuses) ? statuses : []).filter((s) => s && s.installed && s.subscription);
@@ -14,7 +14,7 @@ export function readyProviders(statuses) {
 export function readTarget(storage) {
   try {
     const v = JSON.parse(storage.getItem(TARGET_KEY));
-    if (v && PROVIDERS.includes(v.provider)) {
+    if (v && (PROVIDERS.includes(v.provider) || v.provider === 'auto')) {
       return { provider: v.provider, model: typeof v.model === 'string' ? v.model : null, effort: typeof v.effort === 'string' ? v.effort : null };
     }
   } catch {
@@ -33,11 +33,16 @@ export function saveTarget(storage, target) {
 
 // What will actually answer: the chosen tool if it is ready, with the chosen model if it still
 // exists (otherwise the tool's default), and the chosen effort only if that model supports it.
+const TOOL_NAMES = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini' };
+
 export function effectiveTarget(target, statuses) {
-  // Nothing chosen yet but a tool is connected: use it (Claude Code first), with Auto.
+  const ready = readyProviders(statuses);
+  // "Auto" as the tool: the app picks the chatbot and its level per message (main/chat-service.ts pickTool).
+  if (target?.provider === 'auto') return ready.length ? { provider: 'auto', model: 'auto', effort: null, name: 'Auto', modelLabel: 'Auto' } : NO_TOOL;
+  // Nothing chosen yet: Auto when both tools are connected, else the one that is, with Auto for its level.
   if (!target || !PROVIDERS.includes(target.provider)) {
-    const ready = readyProviders(statuses);
-    const first = ready.find((s) => s.provider === 'claude') || ready[0];
+    if (ready.length > 1) return effectiveTarget({ provider: 'auto' }, statuses);
+    const first = ready[0];
     return first ? effectiveTarget({ provider: first.provider, model: 'auto', effort: null }, statuses) : NO_TOOL;
   }
   const status = readyProviders(statuses).find((s) => s.provider === target.provider);
@@ -94,6 +99,8 @@ export function newAssistant(id, target) {
 export function applyChatEvent(message, event) {
   switch (event && event.type) {
     case 'started': return { ...message, model: event.model || message.model };
+    // Auto chose the chatbot and level for this message.
+    case 'routed': return { ...message, routed: true, provider: event.provider, providerName: TOOL_NAMES[event.provider] || event.provider, model: event.model || message.model, routedReason: event.reason || null };
     case 'delta': return { ...message, text: message.text + event.text };
     case 'completed': return { ...message, text: event.text || message.text, status: 'done', usage: event.usage || null, limits: event.limits || [] };
     case 'cancelled': return { ...message, text: event.text || message.text, status: 'stopped' };
@@ -132,16 +139,22 @@ export const FAILURE_HELP = {
 // yet: it keeps its role and place in the tree, and cannot work until one is chosen. `provider` and
 // `model` on a node are display text for the chosen tool.
 
+// The Manager (and only the Manager) can be set to Auto: 0rqestra then picks the chatbot and level for each
+// message from the task, the same as the Auto choice in the chat.
+export const isAutoManager = (node) => Boolean(node && node.role === 'Manager' && node.agent && node.agent.tool === 'auto');
+
 export function isRealAgent(node) {
-  return Boolean(node && node.agent && (node.agent.tool === 'claude' || node.agent.tool === 'codex'));
+  return Boolean(node && node.agent && PROVIDERS.includes(node.agent.tool)) || isAutoManager(node);
 }
 
 export function agentTarget(node) {
+  if (isAutoManager(node)) return { provider: 'auto', model: 'auto', effort: null };
   return isRealAgent(node) ? { provider: node.agent.tool, model: node.agent.model ?? null, effort: node.agent.effort ?? null } : null;
 }
 
 // The fields a node gets for a chosen target. `status` is the tool's entry from AI accounts.
-export function nodeFieldsFor(target, status) {
+export function nodeFieldsFor(target, status, role) {
+  if (target && target.provider === 'auto' && role === 'Manager') return { agent: { tool: 'auto', model: 'auto', effort: null }, provider: 'Auto', model: 'Picks the best for each task' };
   if (!target || !PROVIDERS.includes(target.provider) || !status) return { agent: null, provider: undefined, model: undefined };
   const model = (status.models || []).find((m) => m.id === target.model);
   return {
@@ -405,8 +418,17 @@ function toolFor(role, ready, nth) {
   return nth % 2 === 0 || !others.length ? preferred : others[(Math.floor(nth / 2)) % others.length];
 }
 
+// Gemini is not given to agents automatically while Claude Code or Codex is connected: the team's markup (plans,
+// files, reviews) is proven on those two. Gemini is then one the user chooses for an agent (for example a
+// reader of long documents). When Gemini is the only tool, every agent runs on it.
+export function teamTools(statuses) {
+  const ready = readyProviders(statuses);
+  const core = ready.filter((s) => s.provider !== 'gemini');
+  return core.length ? core : ready;
+}
+
 export function autoTeam(graph, statuses) {
-  const ready = readyProviders(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
+  const ready = teamTools(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
   if (!ready.length) return { graph, changed: [] };
   const changed = [];
   const seen = {};
@@ -424,13 +446,13 @@ export function autoTeam(graph, statuses) {
 // When both tools are connected but every agent runs on the same one: move the roles that suit the other
 // tool there (Builder and Tester to Codex, Planner, Designer and reviews to Claude), so they work together.
 export function usesOneTool(graph, statuses) {
-  const ready = readyProviders(statuses);
+  const ready = teamTools(statuses);
   const tools = new Set((graph?.nodes || []).filter((n) => n.role !== 'Manager' && isRealAgent(n)).map((n) => n.agent.tool));
   return ready.length > 1 && tools.size === 1;
 }
 
 export function mixTeam(graph, statuses) {
-  const ready = readyProviders(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
+  const ready = teamTools(statuses).sort((a, b) => TOOL_ORDER.indexOf(a.provider) - TOOL_ORDER.indexOf(b.provider));
   if (ready.length < 2) return { graph, changed: [] };
   const changed = [];
   const seen = {};
@@ -734,7 +756,7 @@ export function elapsed(ms) {
 
 // ---- How much of each subscription is left (the sidebar) ----------------------------------------
 const WINDOW_NAME = (l) => (l.windowMinutes === 300 ? '5 hours' : l.windowMinutes >= 7 * 1440 - 60 && l.windowMinutes <= 7 * 1440 + 60 ? 'Week' : l.label);
-const TOOL_NAME = { claude: 'Claude', codex: 'ChatGPT' };
+const TOOL_NAME = { claude: 'Claude', codex: 'ChatGPT', gemini: 'Gemini' };
 export function usageRows(statuses, now = Date.now()) {
   return (statuses || []).filter((s) => s.installed && s.signedIn && s.subscription).map((s) => ({
     provider: s.provider,
@@ -890,3 +912,11 @@ export function starterTeam(graph, statuses) {
   const nodes = next.nodes.map((n) => (n.role === 'Manager' ? graph.nodes.find((m) => m.id === n.id) || n : n));
   return { graph: { ...next, nodes }, changed: added.map((a) => a.id) };
 }
+
+// The greeting on an empty chat, like Claude's "Good evening, …". The default workspace name is not a name.
+export function greeting(name, hour = new Date().getHours()) {
+  const part = hour < 5 ? 'Up late' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const n = typeof name === 'string' ? name.trim() : '';
+  return n && n !== 'My workspace' ? `${part}, ${n.split(/\s+/)[0]}` : part;
+}
+

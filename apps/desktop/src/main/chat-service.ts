@@ -2,7 +2,7 @@ import { MAX_MEMORY, MAX_MESSAGE_CHARS, PLAN_NEEDED, wantsTeamWork } from "./pro
 import { MAX_PER_MESSAGE, type Attachment } from "./attachments";
 import { EFFORT_NAME, MODEL_NAME } from "./providers/process";
 import { parseTeamMembers } from "./team/team-service";
-import { PROVIDER_IDS, type ChatEvent, type ChatHandle, type ChatTurn, type ProviderAdapter, type ProviderId, type ProviderStatus, type TeamMember, type Usage } from "./providers/types";
+import { adapterOf, PROVIDER_IDS, type AdapterSet, type ChatEvent, type ChatHandle, type ChatTurn, type ProviderId, type ProviderStatus, type TeamMember, type Usage } from "./providers/types";
 
 // The chat between the window and the provider tools, free of Electron so it is unit-tested.
 // Everything that arrives from the window is validated here before any tool is started.
@@ -15,7 +15,8 @@ const PROJECT_ID = /^[A-Za-z0-9_-]{1,100}$/;
 export interface SendPayload {
   requestId: string;
   projectId: string;
-  provider: ProviderId;
+  // "auto": the app picks the tool per message (pickTool).
+  provider: ProviderId | "auto";
   model: string | null;
   effort: string | null;
   history: ChatTurn[];
@@ -31,7 +32,7 @@ export function parseSend(value: unknown): SendPayload {
   const v = value as Record<string, unknown>;
   if (typeof v.requestId !== "string" || !REQUEST_ID.test(v.requestId)) throw new Error("Invalid request id.");
   if (typeof v.projectId !== "string" || !PROJECT_ID.test(v.projectId)) throw new Error("Invalid project id.");
-  if (!PROVIDER_IDS.includes(v.provider as ProviderId)) throw new Error("Unknown provider.");
+  if (!PROVIDER_IDS.includes(v.provider as ProviderId) && v.provider !== AUTO) throw new Error("Unknown provider.");
   const model = v.model === null || v.model === undefined || v.model === "" ? null : v.model;
   if (model !== null && (typeof model !== "string" || !MODEL_NAME.test(model))) throw new Error("Invalid model.");
   const effort = v.effort === null || v.effort === undefined || v.effort === "" ? null : v.effort;
@@ -52,7 +53,7 @@ export function parseSend(value: unknown): SendPayload {
   if (!Array.isArray(attachments) || attachments.length > MAX_PER_MESSAGE || !attachments.every((a) => typeof a === "string")) throw new Error("Invalid attachments.");
   const memory = v.memory ?? [];
   if (!Array.isArray(memory) || memory.length > MAX_MEMORY || !memory.every((m) => typeof m === "string" && m.trim() && m.length <= 300)) throw new Error("Invalid project memory.");
-  return { requestId: v.requestId, projectId: v.projectId, provider: v.provider as ProviderId, model, effort, history: turns, text: v.text, ...(team ? { team } : {}), ...(attachments.length ? { attachments: attachments as string[] } : {}), ...(memory.length ? { memory: (memory as string[]).map((m) => m.trim()) } : {}) };
+  return { requestId: v.requestId, projectId: v.projectId, provider: v.provider as ProviderId | "auto", model, effort, history: turns, text: v.text, ...(team ? { team } : {}), ...(attachments.length ? { attachments: attachments as string[] } : {}), ...(memory.length ? { memory: (memory as string[]).map((m) => m.trim()) } : {}) };
 }
 
 export const AUTO = "auto";
@@ -72,9 +73,38 @@ export function autoModel(provider: ProviderId, payload: { text: string; history
     const want = quick ? "haiku" : "sonnet";
     return has(want) ? want : null;
   }
+  // Gemini: Flash for quick questions (fast, and it keeps the other plans' usage), Pro otherwise.
+  if (provider === "gemini") {
+    const want = quick ? "flash" : "pro";
+    return has(want) ? want : null;
+  }
   const light = offered.find((m) => /mini|nano|fast|lite/i.test(m.id));
   if (quick && light) return light.id;
   return offered.find((m) => m.isDefault)?.id ?? null;
+}
+
+// Which tool answers when the user chose "Auto": code and errors go to Codex, a very long text or a PDF to
+// Gemini (or Claude), a quick everyday question in Ask anything to Gemini (fast, and it spares the Claude and
+// ChatGPT plans), and writing, studying, planning and design to Claude. In a project the Manager hands work
+// to a team with its own markup, so there Gemini is not chosen unless it is the only tool. Only connected
+// tools are chosen.
+const WRITING_WORDS = /\b(write|rewrite|draft|essay|email|mail|letter|summari[sz]e|translate|plan|design|story|poem|improve|edit|skriv|skriva|skriv om|mejl|brev|uppsats|sammanfatta|översätt|planera|designa|berättelse|dikt|förbättra)\b/i;
+export const LONG_TEXT_CHARS = 12_000;
+const CODE_WORDS = /```|\b(code|coding|bug|bugs|debug|error|exception|stack ?trace|function|script|regex|sql|api|compile|refactor|unit tests?|typescript|javascript|python|java|rust|golang|c\+\+|html|css|kod|koda|kodar|bugg|buggar|felmeddelande|funktion|skript|programmera|programmering)\b/i;
+export function pickTool(text: string, attachments: { kind: string }[], ready: ProviderId[], inProject = false, history: ChatTurn[] = []): { provider: ProviderId; reason: string } {
+  const has = (p: ProviderId) => ready.includes(p);
+  if (!ready.length) return { provider: "claude", reason: "no tool reported as ready" };
+  if (ready.length === 1) return { provider: ready[0]!, reason: "the only connected tool" };
+  const gemini = has("gemini") && !inProject;
+  if (attachments.some((a) => a.kind === "pdf")) {
+    if (gemini) return { provider: "gemini", reason: "reads the attached PDF" };
+    if (has("claude")) return { provider: "claude", reason: "reads the attached PDF" };
+  }
+  if (gemini && text.length > LONG_TEXT_CHARS) return { provider: "gemini", reason: "a very long text" };
+  if (CODE_WORDS.test(text) && has("codex")) return { provider: "codex", reason: "code" };
+  if (gemini && !WRITING_WORDS.test(text) && !CODE_WORDS.test(text) && isQuick(text, history, attachments.length > 0)) return { provider: "gemini", reason: "a quick question" };
+  if (has("claude")) return { provider: "claude", reason: "writing, explaining and planning" };
+  return { provider: ready.find((p) => p !== "gemini" || !inProject) ?? ready[0]!, reason: "the best connected tool" };
 }
 
 export type Emit = (requestId: string, event: ChatEvent) => void;
@@ -84,7 +114,7 @@ export class ChatService {
   private statusCache: { at: number; value: ProviderStatus[] } | null = null;
 
   constructor(
-    private readonly adapters: Record<ProviderId, ProviderAdapter>,
+    private readonly adapters: AdapterSet,
     private readonly cwd: () => string,
     private readonly now: () => number = Date.now,
     // Teams: what teammates are doing in this project right now (null for a solo project).
@@ -95,7 +125,7 @@ export class ChatService {
 
   async providers(refresh: boolean): Promise<ProviderStatus[]> {
     if (!refresh && this.statusCache && this.now() - this.statusCache.at < 30_000) return this.statusCache.value;
-    const value = await Promise.all(PROVIDER_IDS.map((id) => this.adapters[id].status().catch((error: unknown) => ({
+    const value = await Promise.all(PROVIDER_IDS.map((id) => adapterOf(this.adapters, id).status().catch((error: unknown) => ({
       provider: id, name: id, installed: false, version: null, signedIn: false, plan: null, subscription: false, models: [], limits: [],
       problem: error instanceof Error ? error.message : String(error),
     }))));
@@ -120,15 +150,20 @@ export class ChatService {
       if (!found) throw new Error("An attached file is no longer available. Attach it again.");
       return found;
     });
-    // "Auto": a quick question gets a light, fast model; work, files and longer questions a stronger one.
-    const model = payload.model === AUTO ? autoModel(payload.provider, payload, attachments.length > 0, this.statusCache?.value ?? []) : payload.model;
+    // "Auto" as the tool: the message decides which connected tool answers (pickTool), and then its model.
+    const ready = (this.statusCache?.value ?? []).filter((s) => s.installed && s.subscription).map((s) => s.provider);
+    const routed = payload.provider === AUTO ? pickTool(payload.text, attachments, ready, Boolean(payload.team), payload.history) : null;
+    const provider: ProviderId = routed ? routed.provider : (payload.provider as ProviderId);
+    // "Auto" as the model: a quick question gets a light, fast model; work, files and longer questions a stronger one.
+    const model = payload.model === AUTO || routed ? autoModel(provider, payload, attachments.length > 0, this.statusCache?.value ?? []) : payload.model;
+    if (routed) emit(payload.requestId, { type: "routed", provider, model, reason: routed.reason });
     const request = {
-      provider: payload.provider, model, effort: payload.effort, history: payload.history, text: payload.text, cwd: this.cwd(), ...(payload.team ? { team: payload.team } : {}),
+      provider, model, effort: routed ? null : payload.effort, history: payload.history, text: payload.text, cwd: this.cwd(), ...(payload.team ? { team: payload.team } : {}),
       teamNow: this.teamNowFor(payload.projectId),
       ...(attachments.length ? { attachments } : {}),
       ...(payload.memory?.length ? { memory: payload.memory } : {}),
     };
-    const first = this.adapters[payload.provider].chat(request);
+    const first = adapterOf(this.adapters, provider).chat(request);
     // stop() reaches whichever request is current (the second one, when the Manager asks to plan).
     const current = { handle: first };
     const handle: ChatHandle = { events: first.events, stop: () => current.handle.stop() };
@@ -140,8 +175,8 @@ export class ChatService {
           // The light prompt was not enough: ask again with the planning instructions. The window
           // never sees the marker; it gets the second reply, with both calls' usage added up.
           // Planning needs the stronger model when "Auto" chose a light one for what looked like a quick question.
-          const planModel = payload.model === AUTO ? autoModel(payload.provider, { text: payload.text, history: payload.history }, true, this.statusCache?.value ?? []) : request.model;
-          const second = this.adapters[payload.provider].chat({ ...request, model: planModel, planMode: true });
+          const planModel = payload.model === AUTO || routed ? autoModel(provider, { text: payload.text, history: payload.history }, true, this.statusCache?.value ?? []) : request.model;
+          const second = adapterOf(this.adapters, provider).chat({ ...request, model: planModel, planMode: true });
           current.handle = second;
           for await (const event of second.events) emit(payload.requestId, event.type === "completed" ? { ...event, usage: addUsage(answer.usage, event.usage) } : event);
         }

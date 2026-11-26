@@ -72,6 +72,7 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
       onBriefs: (projectId) => void service.refreshBriefs(projectId),
       onTeamChanged: () => void service.refresh(),
       onFriendsChanged: () => void service.refreshSocial(),
+      onChat: (projectId) => void service.refreshChat(projectId),
     });
     hub.setActive(activity.isActive());
     return hub;
@@ -146,6 +147,16 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
   ipcMain.handle("teams:create-team", (event, name: unknown) => {
     guard(event);
     return service.createTeam(name);
+  });
+  // Team chat: send a message (or a Manager summary the user chose to share), and read it again.
+  ipcMain.handle("teams:send-message", (event, projectId: unknown, body: unknown, kind: unknown) => {
+    guard(event);
+    return service.sendTeamMessage(projectId, body, kind);
+  });
+  ipcMain.handle("teams:refresh-chat", async (event, projectId: unknown) => {
+    guard(event);
+    await service.refreshChat(typeof projectId === "string" ? projectId : undefined);
+    return service.view();
   });
   ipcMain.handle("teams:create-invite", (event, teamId: unknown, email: unknown) => {
     guard(event);

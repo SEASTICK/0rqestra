@@ -3,7 +3,7 @@ import { parseSkillRefs, skillsFor } from "../capabilities/registry";
 import type { ChatEvent, ChatHandle, TeamMember, Usage } from "../providers/types";
 import { extractPlan, plannerPrompt } from "./planner";
 import { listFiles } from "./workspace";
-import { PROVIDER_IDS, type ProviderAdapter, type ProviderId } from "../providers/types";
+import { adapterOf, PROVIDER_IDS, type AdapterSet, type ProviderId } from "../providers/types";
 import { directPlan, missingProjectFiles, parsePlan, type Plan } from "./plan";
 import { TeamRun, type TeamAgent, type TeamEvent } from "./runner";
 import { pruneHistory, RunSnapshot, undoRun } from "./history";
@@ -42,7 +42,7 @@ export function parseTeamMembers(value: unknown): TeamMember[] {
   return raw.map((member: unknown) => {
     const m = member as Record<string, unknown> | null;
     if (!m || typeof m.name !== "string" || !m.name.trim() || m.name.length > 48 || typeof m.role !== "string" || !ROLE.test(m.role)) throw new Error("Invalid team.");
-    const tool = m.tool === "claude" || m.tool === "codex" ? m.tool : null;
+    const tool = m.tool === "claude" || m.tool === "codex" || m.tool === "gemini" ? m.tool : null;
     const model = typeof m.model === "string" && MODEL_NAME.test(m.model) ? m.model : null;
     const models = Array.isArray(m.models) ? m.models.filter((x): x is string => typeof x === "string" && MODEL_NAME.test(x)).slice(0, 16) : [];
     const refs = parseSkillRefs(m);
@@ -84,7 +84,7 @@ export class TeamService {
   private planning = new Map<string, ChatHandle>();
 
   constructor(
-    private readonly adapters: Record<ProviderId, ProviderAdapter>,
+    private readonly adapters: AdapterSet,
     private readonly workspaceFor: (projectId: string) => string,
     private readonly cwd: () => string,
     // Sees every run's events, with the run's local project and plan (Teams briefs, phase 3).
@@ -120,7 +120,7 @@ export class TeamService {
     if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
     const agents = parseAgents(v.agents);
     const agent = agents.find((a) => a.id === v.agentId);
-    if (!agent) throw new Error("This agent does not run on Claude Code or Codex yet. Set its tool first.");
+    if (!agent) throw new Error("This agent does not run on Claude Code, Codex or Gemini yet. Set its tool first.");
     const plan = directPlan(v.request, agent);
     if (this.runs.has(v.runId)) throw new Error("This run already exists.");
     if ([...this.runs.values()].some((r) => r.projectId === v.projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
@@ -185,7 +185,7 @@ export class TeamService {
     if (this.planning.has(v.requestId)) throw new Error("This request is already running.");
     const requestId = v.requestId;
     const prompt = plannerPrompt(v.brief.trim(), planner!, team, listFiles(this.workspaceFor(v.projectId)), this.safeTeamNow(v.projectId));
-    const handle = this.adapters[planner!.tool].chat({ provider: planner!.tool, model: planner!.model, effort: planner!.effort, history: [], text: prompt, cwd: this.cwd(), raw: true });
+    const handle = adapterOf(this.adapters, planner!.tool).chat({ provider: planner!.tool, model: planner!.model, effort: planner!.effort, history: [], text: prompt, cwd: this.cwd(), raw: true });
     this.planning.set(requestId, handle);
     let last: ChatEvent | null = null;
     try {

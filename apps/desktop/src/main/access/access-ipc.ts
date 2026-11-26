@@ -1,8 +1,14 @@
+import os from "node:os";
+import fs from "node:fs";
 import path from "node:path";
 import { app, dialog, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { projectWorkspace } from "../team/workspace";
 import { AccessService } from "./access-service";
 import { AccessStore } from "./access-store";
+import { gitRunner } from "./git";
+import { suggestedChecks } from "./folder-info";
+import { ghEnv, GithubClient, isSyncedFolder, REPO_NAME } from "../github/github";
+import { openTerminalWindow } from "../accounts/terminal";
 import { useAccess } from "./registry";
 
 // Electron wiring for Project → Computer access. Requests come only from the app's window, and the
@@ -23,7 +29,7 @@ export function registerAccessIpc(
     const w = getWindow();
     if (w && !w.isDestroyed()) w.webContents.send(channel, payload);
   };
-  const service = new AccessService(new AccessStore(base()), (projectId) => projectWorkspace(base(), projectId), (event) => send("access:event", event), (projectId, paths) => teams.reservedByOthers(projectId, paths));
+  const service = new AccessService(new AccessStore(base()), (projectId) => projectWorkspace(base(), projectId), (event) => send("access:event", event), (projectId, paths) => teams.reservedByOthers(projectId, paths), gitRunner(path.join(base(), "git-no-hooks")), path.join(base(), "access-pending.json"));
   useAccess(service);
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
@@ -40,6 +46,17 @@ export function registerAccessIpc(
     recent: service.recent(projectId).slice(0, 30),
   });
 
+  // A folder the user chose (or just cloned): granted with changes allowed (each one is still reviewed before it is
+  // applied), with the checks its own setup offers and its git state.
+  const setupAt = async (id: string, chosen: string) => {
+    const view = service.store.addFolder(id, chosen);
+    const real = fs.realpathSync.native(chosen);
+    const folder = view.folders.find((f) => f.path.toLowerCase() === real.toLowerCase());
+    if (!folder) throw new Error("The folder could not be added.");
+    service.store.setFolderWrite(id, folder.id, true);
+    return { folderId: folder.id, folder: folder.path, checks: suggestedChecks(folder.path), git: await service.gitState(id, folder.id), view: state(id) };
+  };
+
   ipcMain.handle("access:view", (event, projectId: unknown) => {
     guard(event);
     return state(project(projectId));
@@ -55,6 +72,78 @@ export function registerAccessIpc(
     if (result.canceled || !chosen) return state(id);
     service.store.addFolder(id, chosen);
     return state(id);
+  });
+  // "Work in a folder": the folder picker, then the folder is granted with changes allowed (each change is
+  // still reviewed before it is applied). Returns the checks the folder's own setup offers, for the user
+  // to approve or not; nothing runs until they do.
+  ipcMain.handle("access:setup-folder", async (event, projectId: unknown) => {
+    guard(event);
+    const id = project(projectId);
+    const window = getWindow();
+    const options = { title: "Choose the folder of the app to work on", properties: ["openDirectory" as const] };
+    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    const chosen = result.filePaths[0];
+    if (result.canceled || !chosen) return null;
+    return setupAt(id, chosen);
+  });
+  // GitHub: the user's repositories through the official `gh` (github/github.ts), and one cloned into a
+  // folder chosen in the system's picker, then set up like any folder. Nothing here sees a password or token.
+  const github = new GithubClient();
+  ipcMain.handle("github:status", async (event) => {
+    guard(event);
+    return github.status();
+  });
+  ipcMain.handle("github:repos", async (event, refresh: unknown) => {
+    guard(event);
+    return github.repos(refresh === true);
+  });
+  // Opens a terminal with a fixed official command: installing gh, or signing in to it. The window only names which.
+  ipcMain.handle("github:open-terminal", (event, kind: unknown) => {
+    guard(event);
+    if (kind !== "install" && kind !== "signIn") throw new Error("Unknown command.");
+    github.forget();
+    if (process.platform !== "win32" && process.platform !== "darwin") return false;
+    const command = kind === "install" ? (process.platform === "win32" ? "winget install --id GitHub.cli" : "brew install gh") : "gh auth login --web --git-protocol https";
+    return openTerminalWindow(kind === "install"
+      ? { title: "0rqestra: install GitHub CLI", intro: ["This window installs GitHub's official command line tool, gh:"], command, confirm: true }
+      : { title: "0rqestra: sign in to GitHub", intro: ["This window runs gh's own sign-in. 0rqestra never sees your password or token.", "Choose GitHub.com, HTTPS, and Login with a web browser. Say yes to authenticating git."], command, confirm: false }, ghEnv());
+  });
+  // Where cloned repositories go: ~/repos unless the user chose another folder (kept in the app's own data).
+  const folderFile = () => path.join(app.getPath("userData"), "github-folder.json");
+  const githubFolder = (): string => {
+    try {
+      const saved = (JSON.parse(fs.readFileSync(folderFile(), "utf8")) as { parent?: unknown }).parent;
+      if (typeof saved === "string" && path.isAbsolute(saved)) return saved;
+    } catch {
+      /* none chosen yet */
+    }
+    return path.join(os.homedir(), "repos");
+  };
+  const folderInfo = () => ({ path: githubFolder(), synced: isSyncedFolder(githubFolder()) });
+  ipcMain.handle("github:folder", (event) => {
+    guard(event);
+    return folderInfo();
+  });
+  ipcMain.handle("github:choose-folder", async (event) => {
+    guard(event);
+    const window = getWindow();
+    const start = githubFolder();
+    const options = { title: "Choose where cloned repositories are put", defaultPath: fs.existsSync(start) ? start : os.homedir(), properties: ["openDirectory" as const, "createDirectory" as const] };
+    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    const chosen = result.filePaths[0];
+    if (result.canceled || !chosen) return folderInfo();
+    fs.writeFileSync(folderFile(), JSON.stringify({ parent: chosen }));
+    return folderInfo();
+  });
+  ipcMain.handle("github:clone", async (event, projectId: unknown, fullName: unknown) => {
+    guard(event);
+    const id = project(projectId);
+    if (typeof fullName !== "string" || !REPO_NAME.test(fullName)) throw new Error("Choose a repository from the list.");
+    // No dialog: the repository goes into the folder for repositories (see githubFolder), made if it is missing.
+    const parent = githubFolder();
+    fs.mkdirSync(parent, { recursive: true });
+    const cloned = await github.clone(fullName, parent);
+    return { ...(await setupAt(id, cloned.path)), repo: fullName, reused: cloned.reused };
   });
   // Grants this computer's linked checkout of a shared project (a path main already has).
   ipcMain.handle("access:add-checkout", (event, projectId: unknown) => {
@@ -115,6 +204,23 @@ export function registerAccessIpc(
     guard(event);
     const id = project(projectId);
     return { result: service.apply(id, previewId, paths), view: state(id) };
+  });
+  // Commit and push what the user applied: only from these buttons, in a folder that accepts changes.
+  ipcMain.handle("access:git-state", (event, projectId: unknown, folderId: unknown) => {
+    guard(event);
+    return service.gitState(project(projectId), folderId);
+  });
+  ipcMain.handle("access:commit", async (event, projectId: unknown, folderId: unknown, paths: unknown, message: unknown) => {
+    guard(event);
+    const id = project(projectId);
+    const result = await service.commit(id, folderId, paths, message);
+    return { result, git: await service.gitState(id, folderId), view: state(id) };
+  });
+  ipcMain.handle("access:push", async (event, projectId: unknown, folderId: unknown) => {
+    guard(event);
+    const id = project(projectId);
+    const result = await service.push(id, folderId);
+    return { result, git: await service.gitState(id, folderId), view: state(id) };
   });
   ipcMain.handle("access:forget-project", (event, projectId: unknown) => {
     guard(event);

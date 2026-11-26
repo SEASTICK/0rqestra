@@ -36,7 +36,7 @@ function AskAgent({ node, canAsk, busy, onAsk }) {
   const [text, setText] = useState('');
   const send = () => { if (text.trim() && canAsk && !busy && onAsk(text)) setText(''); };
   return <form className="agent-ask" onSubmit={(e) => { e.preventDefault(); send(); }}>
-    <textarea rows={2} maxLength={4000} aria-label={`Ask ${node.name} directly`} disabled={!canAsk} placeholder={canAsk ? `Ask ${node.name} directly… for example: make the heading bigger` : 'Set this agent to Claude Code or Codex to ask it directly.'} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
+    <textarea rows={2} maxLength={4000} aria-label={`Ask ${node.name} directly`} disabled={!canAsk} placeholder={canAsk ? `Ask ${node.name} directly… for example: make the heading bigger` : 'Set this agent to Claude Code, Codex or Gemini to ask it directly.'} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
     <div className="agent-ask-foot"><small>{busy ? 'The team is working; ask when it is done.' : 'Goes straight to this agent. Changed files are reviewed.'}</small><button type="submit" className="shell-button primary" disabled={!canAsk || busy || !text.trim()}>Send</button></div>
   </form>;
 }
@@ -49,7 +49,7 @@ export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure, 
   // Follow the text while the agent writes, like a terminal.
   useEffect(() => { if (liveText && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; }, [liveText]);
   const active = ['working', 'reviewing', 'planning'].includes(state);
-  const runtime = node.agent ? [node.agent.tool === 'claude' ? 'Claude Code' : node.agent.tool === 'codex' ? 'Codex' : node.agent.tool, node.agent.model, node.agent.effort].filter(Boolean).join(' · ') : 'No tool yet';
+  const runtime = node.agent ? [node.agent.tool === 'claude' ? 'Claude Code' : node.agent.tool === 'codex' ? 'Codex' : node.agent.tool === 'gemini' ? 'Gemini' : node.agent.tool, node.agent.model, node.agent.effort].filter(Boolean).join(' · ') : 'No tool yet';
   return <aside className="agent-panel" aria-label={`What ${node.name} is doing`} onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
     <div className="agent-panel-head">
       <div className="agent-panel-who">

@@ -6,6 +6,8 @@ import { unifiedDiff } from "../team/diff";
 import { readFiles } from "../team/workspace";
 import { AccessStore, type AgentAccess } from "./access-store";
 import { AccessDenied, liveRoot, resolveForRead, writeInside } from "./paths";
+import { folderOutline } from "./folder-info";
+import { gitCommit, gitPush, gitState, insideGitFolder, type GitRunner, type GitState } from "./git";
 
 // The boundary where agents touch this computer. Agents never get the folders themselves: they ask
 // (a need in their answer), and this service checks the agent's permission in the project and the
@@ -22,7 +24,7 @@ export interface ComputerGate {
   delivered(taskId: string, agentKey: string | undefined, agentName: string, paths: string[]): void;
 }
 
-export interface AccessEvent { projectId: string; at: string; agent: string; action: "read" | "list" | "check" | "apply"; target: string; allowed: boolean; detail: string }
+export interface AccessEvent { projectId: string; at: string; agent: string; action: "read" | "list" | "check" | "apply" | "commit" | "push"; target: string; allowed: boolean; detail: string }
 
 interface PendingFile { path: string; agentKey: string | undefined; agentName: string; taskId: string; runId: string }
 interface Preview { id: string; projectId: string; folderId: string; at: number; items: Map<string, { hash: string | null; content: string; pending: PendingFile }> }
@@ -47,7 +49,59 @@ export class AccessService {
     private readonly onEvent: (event: AccessEvent) => void = () => {},
     // Teams: a teammate's active reservation covering one of these paths, as a message; else null.
     private readonly reservedByOthers: (projectId: string, paths: string[]) => string | null = () => null,
-  ) {}
+    private readonly git: GitRunner | null = null,
+    // Where files waiting to be applied are kept, so they survive a restart (null: memory only).
+    private readonly pendingFile: string | null = null,
+  ) {
+    this.loadPending();
+  }
+
+  private loadPending(): void {
+    if (!this.pendingFile) return;
+    try {
+      const saved = JSON.parse(fs.readFileSync(this.pendingFile, "utf8")) as Record<string, PendingFile[]>;
+      for (const [projectId, files] of Object.entries(saved)) {
+        if (!Array.isArray(files)) continue;
+        const map = new Map<string, PendingFile>();
+        for (const f of files) if (f && typeof f.path === "string" && typeof f.taskId === "string") map.set(f.path.toLowerCase(), { path: f.path, agentKey: typeof f.agentKey === "string" ? f.agentKey : undefined, agentName: String(f.agentName ?? "Agent"), taskId: f.taskId, runId: String(f.runId ?? "") });
+        if (map.size) this.pending.set(projectId, map);
+      }
+    } catch {
+      /* nothing saved yet */
+    }
+  }
+
+  private savePending(): void {
+    if (!this.pendingFile) return;
+    try {
+      fs.mkdirSync(path.dirname(this.pendingFile), { recursive: true });
+      fs.writeFileSync(this.pendingFile, JSON.stringify(Object.fromEntries([...this.pending].filter(([, m]) => m.size).map(([id, m]) => [id, [...m.values()]]))));
+    } catch {
+      /* kept in memory for this run */
+    }
+  }
+
+  // For the Manager and the Planner: the folders this project works on, with their files' names, so a
+  // plan names real paths. Agents read the contents themselves, through their own access.
+  overview(projectId: string): string | null {
+    const folders = this.store.project(projectId).folders;
+    const lines: string[] = [];
+    for (const f of folders) {
+      let root: string;
+      try {
+        root = liveRoot(f.path);
+      } catch {
+        continue;
+      }
+      lines.push(`Folder ${f.id}: ${f.path}${f.write ? " (changes are applied there after the user reviews them)" : " (read only)"}`, ...folderOutline(root).map((l) => `  ${l}`));
+    }
+    if (!lines.length) return null;
+    return [
+      "## The code this project works on (folders the user granted on this computer)",
+      "This project improves existing code. Plan tasks against these real files and folders, by their paths inside the folder. The agents read the files themselves through their computer access; deliver changed or new files with the same paths, and the user reviews each change before it reaches the folder. Keep each task small and focused on a few files.",
+      ...lines,
+    ].join("\n");
+  }
 
   private record(e: Omit<AccessEvent, "at">): void {
     const event = { ...e, at: new Date().toISOString() };
@@ -178,6 +232,7 @@ export class AccessService {
     const map = this.pending.get(projectId) ?? new Map<string, PendingFile>();
     for (const p of paths) map.set(p.toLowerCase(), { path: p, agentKey, agentName, taskId, runId });
     this.pending.set(projectId, map);
+    this.savePending();
   }
 
   pendingFiles(projectId: string): PendingFile[] {
@@ -186,6 +241,8 @@ export class AccessService {
 
   private authorIssue(projectId: string, file: PendingFile, access: AgentAccess): string | null {
     void projectId;
+    // Files in a .git folder could change the repository's settings or hooks; they are never applied.
+    if (insideGitFolder(file.path)) return "Files inside a .git folder are never applied.";
     if (!access.write) return `${file.agentName} has no write access in this project, so this file stays in the workspace.`;
     return null;
   }
@@ -224,7 +281,7 @@ export class AccessService {
     });
     this.previews.set(preview.id, preview);
     for (const [id, p] of this.previews) if (Date.now() - p.at > 30 * 60_000) this.previews.delete(id);
-    return { previewId: preview.id, folder: folder.path, items };
+    return { previewId: preview.id, folderId: folder.id, folder: folder.path, items };
   }
 
   // Applies the chosen files of a preview. Everything is checked again: the author's permission and
@@ -269,12 +326,54 @@ export class AccessService {
       }
     }
     this.previews.delete(preview.id);
+    if (applied.length) this.savePending();
     return { applied, conflicts, blocked };
+  }
+
+  // ---- Commit and push what was applied (the user's buttons, never an agent) --------------------
+
+  private writableFolder(projectId: string, folderId: unknown) {
+    const folder = this.store.project(projectId).folders.find((f) => f.id === folderId);
+    if (!folder) throw new Error("Choose a granted folder.");
+    if (!folder.write) throw new Error(`${folder.path} does not accept changes. Allow changes there first.`);
+    if (!this.git) throw new Error("git is not available here.");
+    return { folder, git: this.git };
+  }
+
+  async gitState(projectId: string, folderId: unknown): Promise<GitState> {
+    const folder = this.store.project(projectId).folders.find((f) => f.id === folderId);
+    if (!folder || !this.git) return { repo: false, branch: null, upstream: null, ahead: 0, remote: false, problem: folder ? "git is not available here." : "Choose a granted folder." };
+    return gitState(this.git, folder.path);
+  }
+
+  async commit(projectId: string, folderId: unknown, paths: unknown, message: unknown) {
+    const { folder, git } = this.writableFolder(projectId, folderId);
+    try {
+      const r = await gitCommit(git, folder.path, paths, message);
+      this.record({ projectId, agent: "You", action: "commit", target: folder.path, allowed: true, detail: `${r.commit} on ${r.branch ?? "a detached HEAD"}` });
+      return r;
+    } catch (error) {
+      this.record({ projectId, agent: "You", action: "commit", target: folder.path, allowed: false, detail: (error as Error).message.split("\n")[0]! });
+      throw error;
+    }
+  }
+
+  async push(projectId: string, folderId: unknown) {
+    const { folder, git } = this.writableFolder(projectId, folderId);
+    try {
+      const r = await gitPush(git, folder.path);
+      this.record({ projectId, agent: "You", action: "push", target: folder.path, allowed: true, detail: `pushed ${r.branch}` });
+      return r;
+    } catch (error) {
+      this.record({ projectId, agent: "You", action: "push", target: folder.path, allowed: false, detail: (error as Error).message.split("\n")[0]! });
+      throw error;
+    }
   }
 
   forgetProject(projectId: string): void {
     this.store.forgetProject(projectId);
     this.pending.delete(projectId);
+    this.savePending();
     this.log.delete(projectId);
     for (const [id, p] of this.previews) if (p.projectId === projectId) this.previews.delete(id);
   }

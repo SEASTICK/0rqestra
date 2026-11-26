@@ -55,6 +55,8 @@ export interface PresenceDeps {
   // The signed-in user's friends or team invitations changed (a "friends_changed" broadcast on
   // their own topic), or that topic was (re)joined after a connection loss: read them again.
   onFriendsChanged?: () => void;
+  // A message was added to the project's team chat, or the channel was (re)joined: read the chat again.
+  onChat?: (projectId: string) => void;
   // A random id per app session; several sessions of one person each publish their own entry.
   sessionKey: string;
   setTimer?: (fn: () => void, ms: number) => Timer;
@@ -401,6 +403,7 @@ export class PresenceHub {
             ch.synced = true;
             this.markLiveIfReady();
             this.deps.onBriefs?.(ch.projectId);
+            this.deps.onChat?.(ch.projectId);
           }
           if (ch.kind === "inbox") {
             ch.synced = true;
@@ -427,6 +430,7 @@ export class PresenceHub {
         if (ch.kind === "briefs" && (payload.event === "brief_changed" || payload.event === "reservation_changed")) this.deps.onBriefs?.(ch.projectId);
         if (ch.kind === "briefs" && payload.event === "team_changed") this.deps.onTeamChanged?.(ch.projectId);
         if (ch.kind === "inbox" && payload.event === "friends_changed") this.deps.onFriendsChanged?.();
+        if (ch.kind === "briefs" && payload.event === "message_added") this.deps.onChat?.(ch.projectId);
         return;
       case "presence_diff": {
         if (ch.kind !== "presence") return;

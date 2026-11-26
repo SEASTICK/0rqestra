@@ -17,7 +17,10 @@ describe('chat target', () => {
   });
 
   it('uses a connected tool, with Auto, when none was chosen (or the old Demo was)', () => {
-    expect(effectiveTarget({ provider: 'none' }, [codex, claude])).toMatchObject({ provider: 'claude', model: 'auto' });
+    // Both connected: Auto picks the chatbot per message. One connected: that one, with Auto for its level.
+    expect(effectiveTarget({ provider: 'none' }, [codex, claude])).toMatchObject({ provider: 'auto', model: 'auto', name: 'Auto' });
+    expect(effectiveTarget({ provider: 'none' }, [claude])).toMatchObject({ provider: 'claude', model: 'auto' });
+    expect(effectiveTarget({ provider: 'auto' }, [])).toBe(NO_TOOL);
     expect(effectiveTarget({ provider: 'demo' }, [codex])).toMatchObject({ provider: 'codex', model: 'auto' });
   });
 
@@ -749,5 +752,68 @@ describe('a starting team for a project with only its Manager', () => {
     expect(starterTeam(lone, []).changed).toEqual([]);
     const { graph } = starterTeam(lone, [claude]);
     expect(starterTeam(graph, [claude]).changed).toEqual([]);
+  });
+});
+
+describe('Auto picks the chatbot', () => {
+  it('shows which chatbot and level answered', () => {
+    let m = newAssistant('a1', { provider: 'auto', model: 'auto', name: 'Auto' });
+    m = applyChatEvent(m, { type: 'routed', provider: 'codex', model: 'gpt-6.2-mini', reason: 'code' });
+    expect(m).toMatchObject({ routed: true, provider: 'codex', providerName: 'Codex', model: 'gpt-6.2-mini', routedReason: 'code' });
+    expect(readTarget({ getItem: () => JSON.stringify({ provider: 'auto', model: 'auto' }) })).toMatchObject({ provider: 'auto' });
+  });
+});
+
+describe('The Manager can be set to Auto', () => {
+  const manager = { role: 'Manager', ...nodeFieldsFor({ provider: 'auto' }, null, 'Manager') };
+  it('is Auto only for the Manager', () => {
+    expect(manager.agent).toEqual({ tool: 'auto', model: 'auto', effort: null });
+    expect(agentTarget(manager)).toEqual({ provider: 'auto', model: 'auto', effort: null });
+    expect(isRealAgent(manager)).toBe(true);
+    expect(nodeFieldsFor({ provider: 'auto' }, null, 'Builder').agent).toBeNull();
+    expect(isRealAgent({ role: 'Builder', agent: { tool: 'auto' } })).toBe(false);
+  });
+});
+
+import { greeting } from './live-chat.mjs';
+describe('The greeting on an empty chat', () => {
+  it('follows the time of day and uses a real first name only', () => {
+    expect(greeting('Philip Sjöqvist', 20)).toBe('Good evening, Philip');
+    expect(greeting('My workspace', 9)).toBe('Good morning');
+    expect(greeting('', 14)).toBe('Good afternoon');
+    expect(greeting(null, 2)).toBe('Up late');
+  });
+});
+
+import { teamTools } from './live-chat.mjs';
+describe('Gemini as the third tool', () => {
+  const status = (provider, name) => ({ provider, name, installed: true, signedIn: true, subscription: true, models: [{ id: 'default', label: 'Default', isDefault: true, efforts: [] }, { id: 'flash', label: 'Flash', isDefault: false, efforts: [] }], limits: [] });
+  const all = [status('claude', 'Claude Code'), status('codex', 'Codex'), status('gemini', 'Gemini CLI')];
+  const graph = { nodes: [{ id: 'm', role: 'Manager', name: 'Manager', priority: 1 }, { id: 'b1', role: 'Builder', name: 'B1', priority: 1 }, { id: 'b2', role: 'Builder', name: 'B2', priority: 2 }, { id: 'b3', role: 'Builder', name: 'B3', priority: 3 }, { id: 'b4', role: 'Builder', name: 'B4', priority: 4 }, { id: 'r', role: 'Code Reviewer', name: 'R', priority: 1 }], edges: [] };
+
+  it('is a real tool for an agent and for Auto, with a readable name', () => {
+    expect(isRealAgent({ role: 'Builder', agent: { tool: 'gemini', model: 'pro' } })).toBe(true);
+    expect(agentBadge({ role: 'Builder', provider: 'Gemini CLI', model: 'Pro', agent: { tool: 'gemini', model: 'pro' } })).toBe('Gemini CLI · Pro');
+    expect(effectiveTarget({ provider: 'gemini', model: 'flash', effort: null }, all)).toMatchObject({ provider: 'gemini', model: 'flash', name: 'Gemini CLI' });
+    let m = newAssistant('a1', { provider: 'auto', model: 'auto', name: 'Auto' });
+    m = applyChatEvent(m, { type: 'routed', provider: 'gemini', model: 'flash', reason: 'a quick question' });
+    expect(m).toMatchObject({ provider: 'gemini', providerName: 'Gemini', model: 'flash' });
+  });
+
+  it('is not given to agents automatically while Claude Code or Codex is connected, but is when it is the only tool', () => {
+    expect(teamTools(all).map((s) => s.provider)).toEqual(['claude', 'codex']);
+    const { graph: team } = autoTeam(graph, all);
+    expect(team.nodes.every((n) => n.agent?.tool !== 'gemini')).toBe(true);
+    expect(new Set(team.nodes.map((n) => n.agent?.tool))).toEqual(new Set(['claude', 'codex']));
+    expect(usesOneTool({ nodes: team.nodes.map((n) => ({ ...n, agent: { tool: 'claude', model: null } })) }, all)).toBe(true);
+    expect(mixTeam(team, all).graph.nodes.every((n) => n.agent?.tool !== 'gemini')).toBe(true);
+    const alone = autoTeam(graph, [status('gemini', 'Gemini CLI')]).graph;
+    expect(alone.nodes.every((n) => n.agent?.tool === 'gemini')).toBe(true);
+  });
+
+  it('shows Gemini in the usage list without made-up numbers', () => {
+    const rows = usageRows(all);
+    expect(rows.map((r) => r.name)).toEqual(['Claude', 'ChatGPT', 'Gemini']);
+    expect(rows.find((r) => r.provider === 'gemini').windows).toEqual([]);
   });
 });

@@ -60,6 +60,11 @@ export interface LocalBriefView { runId: string; title: string; status: string; 
 // An active path reservation (phase 5).
 export interface ReservationView { id: string; runId: string; userId: string; name: string; task: string; branch: string | null; paths: string[]; expiresAt: string }
 export interface SharedProjectView { id: string; name: string; repo: { owner: string; name: string; key: string }; link: LinkView | null; briefs: BriefView[]; reservations: ReservationView[] }
+// One message in a shared project's team chat. "summary": a Manager summary a member chose to share.
+export interface TeamMessageView { id: string; authorId: string; authorName: string; kind: "message" | "summary"; body: string; createdAt: string }
+// A shared project's team chat: the latest messages, when they were read, and why they could not be.
+// "needs_update": the Teams server does not have the team chat yet (its database migration is missing).
+export interface TeamChatView { messages: TeamMessageView[]; at: number | null; problem: string | null; needsUpdate: boolean }
 export interface TeamView { id: string; name: string; isOwner: boolean; members: MemberView[]; invites: InviteView[]; projects: SharedProjectView[] }
 
 export interface TeamsView {
@@ -94,6 +99,8 @@ export interface TeamsView {
   briefsAt: Record<string, number>;
   // This computer's own briefs per shared project, with their sync state (phase 3).
   localBriefs: Record<string, LocalBriefView[]>;
+  // The team chat per shared project.
+  chat: Record<string, TeamChatView>;
 }
 
 export interface CheckoutSelection {
@@ -157,6 +164,8 @@ const MESSAGES: Record<string, string> = {
   not_friends: "You can only invite people who accepted your friend request.",
   too_many_requests: "You have 100 friend requests waiting for an answer. Withdraw some first.",
   too_many_invites: "This team has 50 invitations waiting. Withdraw some first.",
+  invalid_message: "Write a message of 1 to 4,000 characters.",
+  too_many_messages: "That is many messages in a minute. Wait a moment and send it again.",
   try_again: "Something changed at the same moment. Try again.",
 };
 
@@ -176,6 +185,15 @@ export function friendlyError(error: unknown): string {
     return `The Teams server refused: ${error.message}`;
   }
   return error instanceof Error ? error.message : String(error);
+}
+
+interface MessageRow { id: string; project_id: string; author_id: string; author_name: string | null; kind: string; body: string; created_at: string }
+export const CHAT_LIMIT = 100;
+const messageView = (r: MessageRow): TeamMessageView => ({ id: r.id, authorId: r.author_id, authorName: r.author_name ?? "", kind: r.kind === "summary" ? "summary" : "message", body: r.body, createdAt: r.created_at });
+
+// PostgREST says a table or function is not there (the server has not got that migration yet).
+export function isMissingTable(error: unknown): boolean {
+  return error instanceof SupabaseError && (error.code === "42P01" || error.code === "PGRST205" || error.code === "PGRST202" || error.code === "42883" || (error.status === 404 && /team_messages|send_team_message/.test(error.message)));
 }
 
 function inviteState(row: InviteRow, now: number): InviteView["state"] {
@@ -228,6 +246,7 @@ export class TeamsService {
   private restored = false;
   private presence: PresenceSnapshot = {};
   private briefsAt: Record<string, number> = {};
+  private chat: Record<string, TeamChatView> = {};
   private lastTargets = "";
   private lastInbox: string | null | undefined = undefined;
   private readonly now: () => number;
@@ -284,6 +303,7 @@ export class TeamsService {
       localBriefs: status === "signed_in" && this.deps.localBriefs
         ? Object.fromEntries(this.teams.flatMap((t) => t.projects).map((p) => [p.id, this.deps.localBriefs!(p.id)]))
         : {},
+      chat: status === "signed_in" ? this.chat : {},
     };
   }
 
@@ -359,6 +379,53 @@ export class TeamsService {
     this.changed();
   }
 
+  // ---- Team chat ----------------------------------------------------------------------------
+
+  // Reads the latest messages again (a message was added, or the connection came back). A failure keeps
+  // what is shown; a server without the team chat says so once, instead of an error on every read.
+  async refreshChat(projectId?: string): Promise<void> {
+    if (!this.session || !this.configured()) return;
+    const ids = this.teams.flatMap((t) => t.projects.map((p) => p.id)).filter((id) => !projectId || id === projectId);
+    if (!ids.length) return;
+    try {
+      const rows = await this.call((api, token) =>
+        api.select<MessageRow>(token, "team_messages", `select=id,project_id,author_id,author_name,kind,body,created_at&project_id=in.(${ids.join(",")})&order=created_at.desc&limit=${CHAT_LIMIT * ids.length}`),
+      );
+      const at = this.now();
+      for (const id of ids) {
+        const messages = rows.filter((r) => r.project_id === id).slice(0, CHAT_LIMIT).reverse().map(messageView);
+        this.chat = { ...this.chat, [id]: { messages, at, problem: null, needsUpdate: false } };
+      }
+    } catch (error) {
+      const missing = isMissingTable(error);
+      for (const id of ids) {
+        const old = this.chat[id] ?? { messages: [], at: null, problem: null, needsUpdate: false };
+        this.chat = { ...this.chat, [id]: { ...old, needsUpdate: missing, problem: missing ? "The Teams server does not have the team chat yet. The owner of the server applies its database update (supabase/migrations/20261126210000_team_chat.sql)." : friendlyError(error) } };
+      }
+    }
+    this.changed();
+  }
+
+  // Sends one message (or a Manager summary) to a shared project's team chat. The server takes the
+  // author from the session and the name from the username; the text is kept as written.
+  async sendTeamMessage(projectId: unknown, body: unknown, kind: unknown = "message"): Promise<TeamsView> {
+    if (typeof projectId !== "string" || !this.teams.some((t) => t.projects.some((p) => p.id === projectId))) throw new Error("Unknown shared project.");
+    const text = typeof body === "string" ? body.trim() : "";
+    if (!text || text.length > 4000) throw new Error(MESSAGES.invalid_message!);
+    const k = kind === "summary" ? "summary" : "message";
+    try {
+      await this.call((api, token) => api.rpc(token, "send_team_message", { p_project_id: projectId, p_body: text, p_kind: k }));
+    } catch (error) {
+      if (isMissingTable(error)) {
+        await this.refreshChat(projectId);
+        throw new Error("The Teams server does not have the team chat yet. The owner of the server applies its database update first.", { cause: error });
+      }
+      throw new Error(friendlyError(error), { cause: error });
+    }
+    await this.refreshChat(projectId);
+    return this.view();
+  }
+
   // Shared project and folder for a local project linked on this computer (for briefs).
   linkFor(localProjectId: string): { sharedProjectId: string; userId: string; path: string } | null {
     const link = this.myLinks().find((l) => l.localProjectId === localProjectId);
@@ -399,6 +466,8 @@ export class TeamsService {
       reservations: project.reservations,
       online: presence?.connection === "live" ? presence.online : null,
       ageMs: at ? this.now() - at : null,
+      messages: (this.chat[project.id]?.messages ?? []).map((m) => ({ authorId: m.authorId, kind: m.kind, body: m.body, createdAt: m.createdAt })),
+      nowMs: this.now(),
     });
   }
 
@@ -575,6 +644,7 @@ export class TeamsService {
     this.teams = [];
     this.presence = {};
     this.briefsAt = {};
+    this.chat = {};
     this.loadProblem = null;
     this.createdInvites.clear();
     this.setSession(session);
@@ -633,6 +703,7 @@ export class TeamsService {
     this.loadProblem = null;
     this.presence = {};
     this.briefsAt = {};
+    this.chat = {};
     this.createdInvites.clear();
     this.resetAccountData();
     this.deps.sessions.clear();
@@ -787,6 +858,7 @@ export class TeamsService {
       );
       this.loadProblem = null;
       this.serverProblem = null;
+      await this.refreshChat();
     } catch (error) {
       if (!this.session) return;
       this.noteNetwork(error);

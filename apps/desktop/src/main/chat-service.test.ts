@@ -211,3 +211,61 @@ describe("the Manager builds with its team, not in the chat", () => {
     expect(general).not.toContain("no agents yet");
   });
 });
+
+describe("Auto picks the tool", () => {
+  it("sends code to Codex, writing and PDFs to Claude, and only to connected tools", async () => {
+    const { pickTool } = await import("./chat-service.js");
+    const both = ["claude", "codex"] as const;
+    expect(pickTool("Varför får jag TypeError i min funktion?", [], [...both]).provider).toBe("codex");
+    expect(pickTool("Fixa buggen:\n```js\nx()\n```", [], [...both]).provider).toBe("codex");
+    expect(pickTool("Skriv ett mejl till min lärare", [], [...both]).provider).toBe("claude");
+    expect(pickTool("Sammanfatta kapitlet", [{ kind: "pdf" }], [...both]).provider).toBe("claude");
+    expect(pickTool("Debug this code", [], ["claude"]).provider).toBe("claude");
+    expect(pickTool("Skriv en dikt", [], ["codex"]).provider).toBe("codex");
+  });
+
+  it("gives Gemini quick everyday questions, very long texts and PDFs in Ask anything, but not work in a project", async () => {
+    const { pickTool, LONG_TEXT_CHARS } = await import("./chat-service.js");
+    const all = ["claude", "codex", "gemini"] as const;
+    expect(pickTool("Vad heter Frankrikes huvudstad?", [], [...all])).toEqual({ provider: "gemini", reason: "a quick question" });
+    expect(pickTool("Hur långt är det till månen?", [], [...all]).provider).toBe("gemini");
+    // Writing, code and planning keep their tools.
+    expect(pickTool("Skriv ett mejl till min lärare", [], [...all]).provider).toBe("claude");
+    expect(pickTool("Varför får jag TypeError i min funktion?", [], [...all]).provider).toBe("codex");
+    expect(pickTool("Planera min studievecka", [], [...all]).provider).toBe("claude");
+    // Long input and PDFs: Gemini (very long context); without Gemini, Claude reads the PDF as before.
+    expect(pickTool("Sammanfatta detta: " + "x".repeat(LONG_TEXT_CHARS + 1), [], [...all])).toEqual({ provider: "gemini", reason: "a very long text" });
+    expect(pickTool("Sammanfatta kapitlet", [{ kind: "pdf" }], [...all]).provider).toBe("gemini");
+    expect(pickTool("Sammanfatta kapitlet", [{ kind: "pdf" }], ["claude", "codex"]).provider).toBe("claude");
+    // In a project the Manager hands work to a team with its own markup: Gemini is not chosen by Auto there.
+    expect(pickTool("Vad heter Frankrikes huvudstad?", [], [...all], true).provider).toBe("claude");
+    expect(pickTool("Sammanfatta kapitlet", [{ kind: "pdf" }], [...all], true).provider).toBe("claude");
+    // Gemini alone answers everything; two tools without Claude pick the other one for writing.
+    expect(pickTool("Skriv en dikt", [], ["gemini"]).provider).toBe("gemini");
+    expect(pickTool("Skriv en dikt", [], ["codex", "gemini"]).provider).toBe("codex");
+  });
+
+  it("picks Gemini's level: Flash for quick questions, Pro for the rest", async () => {
+    const { autoModel } = await import("./chat-service.js");
+    const statuses = [{ provider: "gemini", models: [{ id: "default" }, { id: "pro" }, { id: "flash" }, { id: "flash-lite" }] }] as never;
+    expect(autoModel("gemini", { text: "Hur många är 12 gånger 12?", history: [] }, false, statuses)).toBe("flash");
+    expect(autoModel("gemini", { text: "Bygg en app åt mig med inloggning och en databas", history: [] }, false, statuses)).toBe("pro");
+    expect(autoModel("gemini", { text: "Vad visar bilden?", history: [] }, true, statuses)).toBe("pro");
+  });
+
+  it("tells the window which tool and model it chose, then answers with that tool", async () => {
+    const used: string[] = [];
+    const make = (id: "claude" | "codex") => ({ id, status: async () => ({ provider: id, name: id, installed: true, version: "1", signedIn: true, plan: null, subscription: true, models: id === "claude" ? [{ id: "sonnet" }, { id: "haiku" }] : [{ id: "gpt-6.2-sol", isDefault: true }, { id: "gpt-6.2-mini" }], limits: [], problem: null }), chat: (r: { model: string | null }) => {
+      used.push(`${id}:${r.model}`);
+      return { events: (async function* () { yield { type: "completed", text: "ok", usage: null, limits: [] }; })(), stop() {} };
+    } });
+    const { ChatService } = await import("./chat-service.js");
+    const service = new ChatService({ claude: make("claude"), codex: make("codex") } as never, () => "/tmp");
+    await service.providers(true);
+    const events: unknown[] = [];
+    await new Promise<void>((resolve) => service.start({ ...valid, provider: "auto", model: "auto", text: "Varför kraschar min python-funktion?" }, (_id, e) => { events.push(e); if (e.type === "completed") resolve(); }));
+    // A short code question: Codex, with its light model.
+    expect(events[0]).toEqual({ type: "routed", provider: "codex", model: "gpt-6.2-mini", reason: "code" });
+    expect(used).toEqual(["codex:gpt-6.2-mini"]);
+  });
+});

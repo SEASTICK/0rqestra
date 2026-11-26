@@ -111,6 +111,7 @@ function AccountCard({ account, api, now, notify, refresh, use }) {
         )}
       </div>
       {showSignInHelp && account.provider === 'claude' && <p className="provider-line">In the browser, choose your Claude account (Pro, Max, Team or Enterprise), not Anthropic Console: Console is billed per use.</p>}
+      {showSignInHelp && account.provider === 'gemini' && <p className="provider-line">In the screen that opens, choose Login with Google (not an API key) and your Google account, for example the one with Google AI Pro. When it says you are signed in, type /quit.</p>}
       {showSignInHelp && account.provider === 'codex' && <p className="provider-line">Choose Sign in with ChatGPT, not an API key: an API key is billed per use.</p>}
       {showInstallHelp && <CommandFallback account={account} kind="install" api={api} notify={notify}/>}
       {showSignInHelp && account.installed && <CommandFallback account={account} kind="signIn" api={api} notify={notify}/>}
@@ -154,7 +155,7 @@ export function AccountsPage({ onBack, notify, onProvidersChanged, managerProvid
         <div>
           <div className="eyebrow">AI ACCOUNTS</div>
           <h1>AI accounts<span className="account-heading-dot">.</span></h1>
-          <p>Connect your Claude and ChatGPT subscriptions through the official Claude Code and Codex tools. Sign-in happens in the providers' own tools: 0rqestra never sees your password or tokens, and never uses an API key.</p>
+          <p>Connect your Claude, ChatGPT and Google (Gemini) subscriptions through the official Claude Code, Codex and Gemini CLI tools. Sign-in happens in the providers' own tools: 0rqestra never sees your password or tokens, and never uses an API key.</p>
         </div>
         <div className="accounts-actions">
           {api && <button className="button" disabled={loading} onClick={refresh}>{loading ? 'Checking…' : 'Check again'}</button>}
@@ -164,7 +165,7 @@ export function AccountsPage({ onBack, notify, onProvidersChanged, managerProvid
       {!api ? (
         <div className="simulated-notice" role="note"><strong>Preview</strong><h2>Connections work in the installed app.</h2></div>
       ) : accounts.length === 0 ? (
-        <p className="provider-line">{loading ? 'Looking for Claude Code and Codex…' : 'No information yet. Choose Check again.'}</p>
+        <p className="provider-line">{loading ? 'Looking for Claude Code, Codex and Gemini CLI…' : 'No information yet. Choose Check again.'}</p>
       ) : (
         <div className="provider-grid">{accounts.map((a) => <AccountCard key={a.provider} account={a} api={api} now={now} notify={notify} refresh={refresh} use={use}/>)}</div>
       )}

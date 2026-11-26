@@ -1,5 +1,5 @@
 import type { ChildProcess } from "node:child_process";
-import { PROVIDER_IDS, type ChatEvent, type FailureReason, type ProviderAdapter, type ProviderId, type ProviderStatus } from "../providers/types";
+import { adapterOf, PROVIDER_IDS, type AdapterSet, type ChatEvent, type FailureReason, type ProviderId, type ProviderStatus } from "../providers/types";
 import { officialCommands, type CommandKind, type OfficialCommands } from "./commands";
 
 // AI accounts: takes each provider tool from "not installed" to a working chat, using only the
@@ -45,7 +45,7 @@ export interface AccountView extends ProviderStatus {
   canOpenTerminal: boolean;
 }
 
-export const LABELS: Record<ProviderId, string> = { claude: "Claude via Claude Code", codex: "ChatGPT via Codex" };
+export const LABELS: Record<ProviderId, string> = { claude: "Claude via Claude Code", codex: "ChatGPT via Codex", gemini: "Gemini via Gemini CLI" };
 
 export const TEST_PROMPT = "Reply with one short sentence that confirms this connection test from 0rqestra works.";
 export const MAX_LOG_LINES = 14;
@@ -74,7 +74,10 @@ export function installAdvice(output: string, code: number | null, timedOut = fa
     return "PowerShell blocked the installer script. Choose Open in terminal and run the command there, or copy it into PowerShell yourself.";
   }
   if (/being used by another process|access (to the path .* )?is denied|access denied|eperm|ebusy|permission denied/i.test(output)) {
-    return "Windows refused to write the files. Close any open Claude Code or Codex windows, then try again.";
+    return "Windows refused to write the files. Close any open Claude Code, Codex or Gemini windows, then try again.";
+  }
+  if (/npm.*(not recognized|not found|is not an internal)|(command not found|no such file).*npm|'npm'|\bnpm: /i.test(output)) {
+    return "Gemini CLI is installed with npm, which comes with Node.js. Install Node.js 20 or newer from nodejs.org, then try again.";
   }
   if (/unsupported|not supported|requires windows|architecture/i.test(output)) {
     return "The installer says this computer is not supported. See the provider's system requirements.";
@@ -83,6 +86,7 @@ export function installAdvice(output: string, code: number | null, timedOut = fa
 }
 
 export function signInHint(provider: ProviderId): string {
+  if (provider === "gemini") return "In the screen that opens, choose Login with Google (not an API key) and your Google account with Google AI Pro. When it says you are signed in, type /quit and come back here.";
   return provider === "claude"
     ? "In the terminal, choose your Claude account (Pro, Max, Team or Enterprise) in the browser, not Anthropic Console. When the terminal says Login successful, come back here."
     : "In the browser that opens, choose Sign in with ChatGPT, not an API key. When the terminal says you are logged in, come back here.";
@@ -107,7 +111,7 @@ export interface TerminalRequest {
 }
 
 export interface AccountsDeps {
-  adapters: Record<ProviderId, ProviderAdapter>;
+  adapters: AdapterSet;
   // Reads the PATH again (tool-env.ts). Called before every check.
   refreshPath: () => Promise<unknown>;
   // Drops the chat's cached statuses so the chat sees a change at once.
@@ -133,7 +137,7 @@ interface Entry {
 }
 
 const blank = (provider: ProviderId): ProviderStatus => ({
-  provider, name: provider === "claude" ? "Claude Code" : "Codex", installed: false, version: null, signedIn: false, plan: null,
+  provider, name: provider === "claude" ? "Claude Code" : provider === "gemini" ? "Gemini CLI" : "Codex", installed: false, version: null, signedIn: false, plan: null,
   subscription: false, models: [], limits: [], problem: null,
 });
 
@@ -184,7 +188,7 @@ export class AccountsService {
   }
 
   private async check(provider: ProviderId): Promise<ProviderStatus> {
-    const status = await this.deps.adapters[provider].status().catch((error: unknown) => ({
+    const status = await adapterOf(this.deps.adapters, provider).status().catch((error: unknown) => ({
       ...blank(provider), problem: error instanceof Error ? error.message : String(error),
     }));
     const entry = this.entries[provider];
@@ -320,7 +324,7 @@ export class AccountsService {
     const open = this.deps.openTerminal;
     const name = entry.status.name;
     const opened = open !== null && open(kind === "install"
-      ? { title: `0rqestra: install ${name}`, intro: [`This window runs the official ${name} installer from ${provider === "claude" ? "Anthropic" : "OpenAI"}:`], command: commands.terminalInstall, confirm: true }
+      ? { title: `0rqestra: install ${name}`, intro: [`This window runs the official ${name} installer from ${provider === "claude" ? "Anthropic" : provider === "gemini" ? "Google" : "OpenAI"}:`], command: commands.terminalInstall, confirm: true }
       : { title: `0rqestra: sign in to ${name}`, intro: [`This window runs ${name}'s own sign-in. 0rqestra never sees your password or tokens.`, signInHint(provider)], command: commands.terminalSignIn, confirm: false });
     if (kind === "install") {
       this.watch(provider, "waiting_install", INSTALL_WAIT_MS, (s) => s.installed, {
@@ -363,7 +367,7 @@ export class AccountsService {
     if (this.busy(provider)) throw new Error("Something is already running for this tool.");
     const entry = this.entries[provider];
     if (!entry.status.installed) throw new Error("Install the tool first.");
-    const handle = this.deps.adapters[provider].chat({ provider, model: null, effort: null, history: [], text: TEST_PROMPT, cwd: this.deps.cwd(), raw: true });
+    const handle = adapterOf(this.deps.adapters, provider).chat({ provider, model: null, effort: null, history: [], text: TEST_PROMPT, cwd: this.deps.cwd(), raw: true });
     const activity = this.begin(provider, "testing", () => handle.stop());
     const timer = this.setTimer(() => handle.stop(), TEST_TIMEOUT_MS);
     let last: ChatEvent | null = null;

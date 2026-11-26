@@ -9,6 +9,10 @@ import type { ProviderId } from "../providers/types";
 //   `powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"`;
 //   macOS/Linux `curl -fsSL https://chatgpt.com/codex/install.sh | sh`. Sign-in: `codex login`
 //   (learn.chatgpt.com/docs/auth: "Run codex login, then complete the browser flow").
+// - Gemini CLI, github.com/google-gemini/gemini-cli (checked 2026-11-25): `npm install -g @google/gemini-cli`
+//   (needs Node.js 20 or newer; also `brew install gemini-cli`). There is no separate sign-in command:
+//   `gemini` opens its own screen where "Login with Google" is chosen, and the CLI stays open afterwards
+//   (quit it with /quit). The login is saved in ~/.gemini/oauth_creds.json, which 0rqestra only checks for.
 // These strings are constants. Nothing from the window ever becomes part of a command.
 
 export type CommandKind = "install" | "signIn";
@@ -37,10 +41,15 @@ const INSTALL_SCRIPT: Record<ProviderId, { ps: string; sh: string; docs: string 
     docs: 'powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"',
     sh: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
   },
+  gemini: {
+    ps: "npm install -g @google/gemini-cli",
+    docs: "npm install -g @google/gemini-cli",
+    sh: "npm install -g @google/gemini-cli",
+  },
 };
 
-const SIGN_IN_ARGS: Record<ProviderId, string> = { claude: "auth login", codex: "login" };
-const TOOL: Record<ProviderId, string> = { claude: "claude", codex: "codex" };
+const SIGN_IN_ARGS: Record<ProviderId, string> = { claude: "auth login", codex: "login", gemini: "" };
+const TOOL: Record<ProviderId, string> = { claude: "claude", codex: "codex", gemini: "gemini" };
 
 const psQuote = (s: string) => `'${s.replace(/'/g, "''")}'`;
 const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -58,10 +67,10 @@ export function officialCommands(provider: ProviderId, platform: NodeJS.Platform
   const full = binaryPath ? (win ? `& ${psQuote(binaryPath)}` : shQuote(binaryPath)) : tool;
   return {
     install: win ? INSTALL_SCRIPT[provider].docs : INSTALL_SCRIPT[provider].sh,
-    signIn: `${call} ${args}`,
+    signIn: `${call} ${args}`.trim(),
     version: `${call} --version`,
     terminalInstall: installScript(provider, platform),
-    terminalSignIn: `${full} ${args}`,
+    terminalSignIn: `${full} ${args}`.trim(),
     shell: win ? "powershell" : "sh",
   };
 }

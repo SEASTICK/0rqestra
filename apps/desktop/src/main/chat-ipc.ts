@@ -1,10 +1,15 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { app, clipboard, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import { app, clipboard, dialog, ipcMain, nativeImage, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { ChatService } from "./chat-service";
-import { AttachmentStore } from "./attachments";
+import { AttachmentStore, LIMITS } from "./attachments";
+import { ChatLibrary } from "./chat-library";
+import { fileUrls, windowsFileNames } from "./clipboard-files";
+import { inside, listFiles, projectWorkspace } from "./team/workspace";
 import { ClaudeCodeAdapter } from "./providers/claude-code";
 import { CodexAdapter } from "./providers/codex";
+import { GeminiAdapter } from "./providers/gemini";
 import { toolEnvironment } from "./providers/tool-env";
 import { LimitsStore, recordLimits } from "./providers/limits-store";
 
@@ -16,10 +21,12 @@ export const limitsStore = new LimitsStore();
 
 let service: ChatService | null = null;
 
-export function createAdapters(): { claude: ClaudeCodeAdapter; codex: CodexAdapter } {
+export function createAdapters(): { claude: ClaudeCodeAdapter; codex: CodexAdapter; gemini: GeminiAdapter } {
+  limitsStore.persistTo(path.join(app.getPath("userData"), "usage-limits.json"));
   return {
     claude: recordLimits(new ClaudeCodeAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), limitsStore),
     codex: recordLimits(new CodexAdapter(), limitsStore),
+    gemini: recordLimits(new GeminiAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), limitsStore),
   };
 }
 
@@ -59,6 +66,133 @@ export function registerChatIpc(isTrusted: (event: IpcMainInvokeEvent) => boolea
   ipcMain.handle("chat:attach", (event, payload: unknown) => {
     guard(event);
     return store.add(payload);
+  });
+  // Paste: what the browser part could not see on the clipboard. Files copied in Explorer, Finder or a file
+  // manager first; otherwise a picture (a screenshot, or "Copy image" in another app). Each one goes through
+  // store.add like a picked file, so its content decides what it is and the size limits apply.
+  ipcMain.handle("chat:paste", async (event) => {
+    guard(event);
+    const items = await clipboard.read().catch(() => []);
+    const raw = (format: string) => `electron application/osclipboard;format="${format}"`;
+    // The first entry of a type that one of the items carries, as bytes (null when none has it).
+    const bytes = async (type: string): Promise<Uint8Array | null> => {
+      for (const item of items) {
+        try {
+          const blob = (await item.getType(type)) as Blob;
+          if (blob && typeof blob.arrayBuffer === "function") return new Uint8Array(await blob.arrayBuffer());
+        } catch {
+          /* this item does not have it */
+        }
+      }
+      return null;
+    };
+    const asText = (b: Uint8Array | null) => (b ? Buffer.from(b).toString("utf8") : "");
+    const files = process.platform === "win32"
+      ? windowsFileNames(await bytes(raw("FileNameW")))
+      : fileUrls(asText(await bytes("text/uri-list")) || asText(await bytes(raw(process.platform === "darwin" ? "public.file-url" : "text/uri-list"))));
+    const kept: unknown[] = [];
+    const errors: string[] = [];
+    for (const file of files) {
+      const name = path.basename(file);
+      try {
+        const stat = fs.statSync(file);
+        if (!stat.isFile()) throw new Error("Folders cannot be attached.");
+        if (stat.size > LIMITS.pdf) throw new Error("The file is too large.");
+        kept.push(store.add({ name, data: new Uint8Array(fs.readFileSync(file)) }));
+      } catch (error) {
+        errors.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    if (!files.length) {
+      const type = items.flatMap((i) => i.types).find((t) => /^image\/(png|jpeg|gif|webp)$/.test(t));
+      const data = type ? await bytes(type) : null;
+      if (data && data.length) {
+        try {
+          const meta = store.add({ name: "Pasted image.png", data });
+          const image = nativeImage.createFromBuffer(Buffer.from(data));
+          const size = image.getSize();
+          const scale = Math.min(1, 160 / Math.max(size.width, size.height, 1));
+          kept.push({ ...meta, thumb: image.isEmpty() ? null : image.resize({ width: Math.max(1, Math.round(size.width * scale)) }).toDataURL() });
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+    return { kept, errors };
+  });
+  // A picture the user added, shown big (the window keeps only a small copy).
+  ipcMain.handle("chat:attachment-image", (event, id: unknown) => {
+    guard(event);
+    const a = store.get(id);
+    if (!a || a.kind !== "image") return null;
+    return `data:${a.mediaType};base64,${fs.readFileSync(a.path).toString("base64")}`;
+  });
+  // The + menu: the project's files, and one of them attached like a file the user picked. Only files inside
+  // the project's folder, never through a link (workspace.ts inside()).
+  ipcMain.handle("chat:project-files", (event, projectId: unknown) => {
+    guard(event);
+    if (typeof projectId !== "string") throw new Error("Invalid project id.");
+    return listFiles(projectWorkspace(app.getPath("userData"), projectId), 200);
+  });
+  ipcMain.handle("chat:attach-project-file", (event, payload: unknown) => {
+    guard(event);
+    const v = (payload ?? {}) as Record<string, unknown>;
+    if (typeof v.projectId !== "string" || typeof v.path !== "string") throw new Error("Invalid file.");
+    const file = inside(projectWorkspace(app.getPath("userData"), v.projectId), v.path);
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.size > LIMITS.pdf) throw new Error("This file cannot be attached.");
+    return store.add({ name: v.path.split("/").pop(), data: new Uint8Array(fs.readFileSync(file)) });
+  });
+  // Import chat: the user picks a data export from Claude or ChatGPT (the zip as emailed, or conversations.json) in the
+  // system's file picker; it is read here and kept only while the dialog is open. The window gets the list, the
+  // search results and the chosen chats, never a path.
+  const libraries = new Map<string, ChatLibrary>();
+  const library = (token: unknown): ChatLibrary => {
+    const found = typeof token === "string" ? libraries.get(token) : undefined;
+    if (!found) throw new Error("Choose the file again.");
+    return found;
+  };
+  ipcMain.handle("chat:library-open", async (event) => {
+    guard(event);
+    const window = getWindow();
+    const options = { title: "Choose your data export from Claude or ChatGPT", properties: ["openFile" as const], filters: [{ name: "Data export", extensions: ["zip", "json"] }, { name: "All files", extensions: ["*"] }] };
+    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    const file = result.filePaths[0];
+    if (result.canceled || !file) return null;
+    const size = fs.statSync(file).size;
+    if (size > 1_000_000_000) throw new Error("The file is too large for 0rqestra (over 1 GB).");
+    const lib = ChatLibrary.fromFile(fs.readFileSync(file), path.basename(file));
+    libraries.clear();
+    const token = crypto.randomUUID();
+    libraries.set(token, lib);
+    return { token, source: lib.source, items: lib.list() };
+  });
+  ipcMain.handle("chat:library-search", (event, token: unknown, query: unknown) => {
+    guard(event);
+    return library(token).search(query);
+  });
+  ipcMain.handle("chat:library-pick", (event, token: unknown, ids: unknown) => {
+    guard(event);
+    return library(token).pick(ids);
+  });
+  ipcMain.handle("chat:library-close", (event, token: unknown) => {
+    guard(event);
+    if (typeof token === "string") libraries.delete(token);
+    return true;
+  });
+  // Export a chat: the system's save dialog, then the Markdown the window made. The window never names a
+  // path; only a file name is suggested.
+  ipcMain.handle("chat:export", async (event, payload: unknown) => {
+    guard(event);
+    const v = (payload ?? {}) as Record<string, unknown>;
+    if (typeof v.text !== "string" || v.text.length > 20_000_000) throw new Error("Nothing to export.");
+    const name = typeof v.name === "string" ? [...v.name].map((c) => (c < " " || '\\/:*?"<>|'.includes(c) ? " " : c)).join("").slice(0, 80) || "Chat.md" : "Chat.md";
+    const window = getWindow();
+    const options = { title: "Export chat", defaultPath: path.join(app.getPath("documents"), name), filters: [{ name: "Markdown", extensions: ["md"] }] };
+    const result = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return null;
+    fs.writeFileSync(result.filePath, v.text, "utf8");
+    return result.filePath;
   });
   // Copy a code block from the chat.
   ipcMain.handle("chat:copy", (event, text: unknown) => {
