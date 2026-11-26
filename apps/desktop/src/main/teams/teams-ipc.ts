@@ -71,6 +71,7 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
       },
       onBriefs: (projectId) => void service.refreshBriefs(projectId),
       onTeamChanged: () => void service.refresh(),
+      onFriendsChanged: () => void service.refreshSocial(),
     });
     hub.setActive(activity.isActive());
     return hub;
@@ -95,6 +96,12 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
     onPresenceTargets: (targets: PresenceTarget[]) => {
       if (targets.length === 0) hub?.setTargets([]);
       else ensureHub()?.setTargets(targets);
+    },
+    // Friend requests and team invitations arrive live on the user's own topic (the 20-second
+    // poll below stays as the fallback).
+    onInbox: (userId: string | null) => {
+      if (userId) ensureHub()?.setInbox(userId);
+      else hub?.setInbox(null);
     },
     config,
     fetch: fetchImpl,
@@ -165,6 +172,14 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
   ipcMain.handle("teams:add-friend", (event, username: unknown) => {
     guard(event);
     return service.sendFriendRequest(username);
+  });
+  ipcMain.handle("teams:find-friend", (event, username: unknown) => {
+    guard(event);
+    return service.findFriend(username);
+  });
+  ipcMain.handle("teams:cancel-friend", (event, userId: unknown) => {
+    guard(event);
+    return service.cancelFriendRequest(userId);
   });
   ipcMain.handle("teams:respond-friend", (event, requestId: unknown, accept: unknown) => {
     guard(event);

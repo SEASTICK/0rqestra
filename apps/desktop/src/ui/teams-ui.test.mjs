@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ago, briefsNotice, unsyncedBriefs, bridgeLayout, bridgeSummary, displayName, errorText, inviteLine, linkedTeamProject, memberStatus, linkLine, localName, projectChoices, repoName, selectionMatches, signInTitle, friendGroups, incomingTeamInvites, invitableFriends, outgoingTeamInvites, waitingCount } from './teams-ui.mjs';
+import { ago, briefsNotice, unsyncedBriefs, bridgeLayout, bridgeSummary, displayName, errorText, inviteLine, linkedTeamProject, memberStatus, linkLine, localName, projectChoices, repoName, selectionMatches, signInTitle, friendGroups, incomingTeamInvites, invitableFriends, outgoingTeamInvites, waitingCount, friendLabel, candidateState, sendOutcomeText } from './teams-ui.mjs';
 
 describe('Teams page text', () => {
   it('says whether this computer has a linked checkout', () => {
@@ -117,5 +117,26 @@ describe('friends and team invitations', () => {
     expect(incomingTeamInvites(view).map((i) => i.teamName)).toEqual(['Other']);
     expect(waitingCount(view)).toBe(2);
     expect(waitingCount({ status: 'signed_out', friends: view.friends })).toBe(0);
+  });
+});
+
+describe('adding friends', () => {
+  it('shows display names with usernames, never emails, and only when they add something', () => {
+    expect(friendLabel({ username: 'bob_user', displayName: 'Bob Builder' })).toEqual({ name: 'Bob Builder', handle: '@bob_user' });
+    expect(friendLabel({ username: 'bob_user', displayName: 'BOB_USER' })).toEqual({ name: '@bob_user', handle: '' });
+    expect(friendLabel({ username: 'bob_user', displayName: null })).toEqual({ name: '@bob_user', handle: '' });
+  });
+
+  it('offers the right action for a found person and words every send outcome', () => {
+    expect(candidateState({ relation: 'none' }).action).toBe('send');
+    expect(candidateState({ relation: 'incoming' })).toEqual({ text: 'They already sent you a friend request.', action: 'accept' });
+    expect(candidateState({ relation: 'friend' })).toEqual({ text: 'You are already friends.', action: null });
+    expect(candidateState({ relation: 'outgoing' }).action).toBe(null);
+    expect(candidateState({ relation: 'self' }).action).toBe(null);
+    expect(sendOutcomeText('sent', 'bob').text).toBe('Friend request sent to @bob.');
+    expect(sendOutcomeText('already_pending', 'bob').text).toMatch(/already sent @bob a request/);
+    expect(sendOutcomeText('already_friends', 'bob').text).toMatch(/already friends/);
+    expect(sendOutcomeText('incoming_pending', 'bob').text).toMatch(/Accept it/);
+    expect(sendOutcomeText('accepted', 'bob').tone).toBe('ok');
   });
 });

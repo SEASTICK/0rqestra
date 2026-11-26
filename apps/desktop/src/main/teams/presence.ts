@@ -52,6 +52,9 @@ export interface PresenceDeps {
   onBriefs?: (projectId: string) => void;
   // Someone joined or left the team: read the team again (new members' status and Managers).
   onTeamChanged?: (projectId: string) => void;
+  // The signed-in user's friends or team invitations changed (a "friends_changed" broadcast on
+  // their own topic), or that topic was (re)joined after a connection loss: read them again.
+  onFriendsChanged?: () => void;
   // A random id per app session; several sessions of one person each publish their own entry.
   sessionKey: string;
   setTimer?: (fn: () => void, ms: number) => Timer;
@@ -67,7 +70,8 @@ const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000];
 interface Channel {
   topic: string;
   // "presence": one person's topic. "briefs": the project's brief-change broadcasts (listen only).
-  kind: "presence" | "briefs";
+  // "inbox": the signed-in user's own friend-change broadcasts (listen only, not tied to a project).
+  kind: "presence" | "briefs" | "inbox";
   projectId: string;
   memberId: string;
   isSelf: boolean;
@@ -81,12 +85,14 @@ interface Channel {
 
 export const presenceTopic = (projectId: string, userId: string) => `teams:${projectId}:user:${userId}`;
 export const briefsTopic = (projectId: string) => `teams:${projectId}:briefs`;
+export const inboxTopic = (userId: string) => `friends:${userId}`;
 
 export class PresenceHub {
   private socket: SocketLike | null = null;
   private open = false;
   private channels = new Map<string, Channel>();
   private targets: PresenceTarget[] = [];
+  private inboxUser: string | null = null;
   private active = true;
   private ref = 0;
   private pendingHeartbeat: string | null = null;
@@ -111,11 +117,29 @@ export class PresenceHub {
   // The projects to watch. An empty list (signed out, no shared projects) closes the connection.
   setTargets(targets: PresenceTarget[]): void {
     this.targets = targets.map((t) => ({ ...t, memberIds: [...new Set([...t.memberIds, t.selfId])] }));
+    this.sync();
+  }
+
+  // Whose friend changes to listen for: the signed-in user, or null (signed out). Kept apart from
+  // the projects, so it works for people who share no project yet.
+  setInbox(userId: string | null): void {
+    if (userId === this.inboxUser) return;
+    this.inboxUser = userId;
+    this.sync();
+  }
+
+  private clearAll(): void {
+    this.inboxUser = null;
+    this.setTargets([]);
+  }
+
+  private sync(): void {
     const wanted = new Map<string, Omit<Channel, "joinRef" | "state" | "synced" | "presence" | "tracked" | "problem">>();
     for (const t of this.targets) {
       for (const m of t.memberIds) wanted.set(presenceTopic(t.projectId, m), { topic: presenceTopic(t.projectId, m), kind: "presence", projectId: t.projectId, memberId: m, isSelf: m === t.selfId });
       wanted.set(briefsTopic(t.projectId), { topic: briefsTopic(t.projectId), kind: "briefs", projectId: t.projectId, memberId: "", isSelf: false });
     }
+    if (this.inboxUser) wanted.set(inboxTopic(this.inboxUser), { topic: inboxTopic(this.inboxUser), kind: "inbox", projectId: "", memberId: this.inboxUser, isSelf: true });
     // Leave channels that are no longer wanted (project removed, account changed).
     for (const [topic, ch] of this.channels) {
       if (!wanted.has(topic)) {
@@ -147,7 +171,7 @@ export class PresenceHub {
   // Sends a renewed access token to every joined channel, so they stay authorized.
   async refreshToken(): Promise<void> {
     const token = await this.deps.getToken();
-    if (!token) return this.setTargets([]);
+    if (!token) return this.clearAll();
     if (token === this.token) return;
     this.token = token;
     for (const ch of this.channels.values()) if (ch.state === "joined") this.push(ch.topic, "access_token", { access_token: token }, ch.joinRef);
@@ -307,7 +331,7 @@ export class PresenceHub {
       ch.state = "idle";
       return;
     }
-    if (!token) return this.setTargets([]);
+    if (!token) return this.clearAll();
     this.token = token;
     const ref = String(++this.ref);
     ch.joinRef = ref;
@@ -330,7 +354,8 @@ export class PresenceHub {
   }
 
   private markLiveIfReady(): void {
-    if (this.open && [...this.channels.values()].every((c) => c.state === "joined" && c.synced)) {
+    // A refused friends topic (an older server) must not keep the projects' status from going live.
+    if (this.open && [...this.channels.values()].every((c) => (c.state === "joined" && c.synced) || (c.kind === "inbox" && c.state === "denied"))) {
       this.everLive = true;
       this.downSince = null;
     }
@@ -377,6 +402,11 @@ export class PresenceHub {
             this.markLiveIfReady();
             this.deps.onBriefs?.(ch.projectId);
           }
+          if (ch.kind === "inbox") {
+            ch.synced = true;
+            this.markLiveIfReady();
+            this.deps.onFriendsChanged?.();
+          }
           this.syncTrack(ch);
         } else {
           const response = (payload.response ?? {}) as Record<string, unknown>;
@@ -396,6 +426,7 @@ export class PresenceHub {
       case "broadcast":
         if (ch.kind === "briefs" && (payload.event === "brief_changed" || payload.event === "reservation_changed")) this.deps.onBriefs?.(ch.projectId);
         if (ch.kind === "briefs" && payload.event === "team_changed") this.deps.onTeamChanged?.(ch.projectId);
+        if (ch.kind === "inbox" && payload.event === "friends_changed") this.deps.onFriendsChanged?.();
         return;
       case "presence_diff": {
         if (ch.kind !== "presence") return;

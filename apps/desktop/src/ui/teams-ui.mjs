@@ -148,6 +148,38 @@ export function friendGroups(view) {
   };
 }
 
+// A person's name in friends lists: the display name with the username, or the username alone
+// when the display name adds nothing. Never an email address.
+export function friendLabel(person) {
+  const username = String(person?.username || 'unknown');
+  const shown = String(person?.displayName || '').trim();
+  return shown && shown.toLowerCase() !== username.toLowerCase() ? { name: shown, handle: `@${username}` } : { name: `@${username}`, handle: '' };
+}
+
+// What a found person's card says, and which action it offers: "send", "accept" (they asked you
+// first) or none.
+export function candidateState(candidate) {
+  switch (candidate?.relation) {
+    case 'self': return { text: 'That is your own username.', action: null };
+    case 'friend': return { text: 'You are already friends.', action: null };
+    case 'outgoing': return { text: 'Your request is waiting for their answer.', action: null };
+    case 'incoming': return { text: 'They already sent you a friend request.', action: 'accept' };
+    default: return { text: '', action: 'send' };
+  }
+}
+
+// The message after "Send request", by what the server did.
+export function sendOutcomeText(outcome, username) {
+  const at = `@${username}`;
+  switch (outcome) {
+    case 'already_pending': return { tone: 'info', text: `You already sent ${at} a request. It is waiting for their answer.` };
+    case 'already_friends': return { tone: 'info', text: `You and ${at} are already friends.` };
+    case 'incoming_pending': return { tone: 'info', text: `${at} already sent you a request. Accept it to become friends.` };
+    case 'accepted': return { tone: 'ok', text: `You and ${at} are now friends.` };
+    default: return { tone: 'ok', text: `Friend request sent to ${at}.` };
+  }
+}
+
 export function incomingTeamInvites(view) {
   return view?.status === 'signed_in' ? (view.teamInvites || []).filter((i) => i.direction === 'incoming') : [];
 }

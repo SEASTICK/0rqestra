@@ -30,7 +30,12 @@ export const RESEND_COOLDOWN_MS = 60_000;
 // Teammates are shown by username; their email addresses are never sent to other people.
 export interface MemberView { userId: string; name: string; role: "owner" | "member"; isYou: boolean }
 // A friend, or a friend request waiting for an answer (usernames only).
-export interface FriendView { requestId: string; userId: string; username: string; state: "friend" | "incoming" | "outgoing" }
+export interface FriendView { requestId: string; userId: string; username: string; displayName: string | null; state: "friend" | "incoming" | "outgoing" }
+// A person found by their exact username, and how you two are related.
+export type FriendRelation = "self" | "none" | "friend" | "incoming" | "outgoing";
+export interface FriendCandidate { userId: string; username: string; displayName: string | null; relation: FriendRelation; requestId: string | null }
+// What sending a request did: "sent", or why nothing new was needed.
+export type FriendSendOutcome = "sent" | "already_pending" | "already_friends" | "incoming_pending" | "accepted";
 // A pending invitation to a team: to me (incoming), or from a team I own (outgoing).
 export interface TeamInviteView { id: string; teamId: string; teamName: string; userId: string; username: string; direction: "incoming" | "outgoing" }
 export interface InviteView { id: string; email: string; expiresAt: string; state: "pending" | "used" | "revoked" | "expired" }
@@ -116,7 +121,11 @@ const reservationView = (r: ReservationRow): ReservationView => ({ id: r.id, run
 const BRIEF_COLUMNS = "id,project_id,run_id,title,status,author_id,author_name,branch,paths,updated_at";
 const briefView = (b: BriefRow): BriefView => ({ id: b.id, runId: b.run_id, title: b.title, status: b.status, authorId: b.author_id, authorName: b.author_name ?? "", branch: b.branch, paths: b.paths ?? [], updatedAt: b.updated_at });
 interface InviteRow { id: string; team_id: string; email: string; expires_at: string; redeemed_at: string | null; revoked_at: string | null }
-interface FriendRow { request_id: string; user_id: string; username: string; state: string }
+interface FriendRow { request_id: string; user_id: string; username: string; display_name?: string | null; state: string }
+interface CandidateRow { user_id: string; username: string; display_name: string | null; relation: string; request_id: string | null }
+const cleanDisplayName = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim().slice(0, 60) : null);
+// A database function this server does not have yet (its migration is not applied).
+const missingFunction = (error: unknown) => error instanceof SupabaseError && (error.code === "PGRST202" || error.code === "42883");
 interface TeamInviteRow { invite_id: string; team_id: string; team_name: string; user_id: string; username: string; direction: string }
 
 const MESSAGES: Record<string, string> = {
@@ -190,6 +199,8 @@ export interface TeamsDeps {
   emit: (view: TeamsView) => void;
   // Told which projects and people to watch for presence, whenever that changes.
   onPresenceTargets?: (targets: PresenceTarget[]) => void;
+  // Told whose friend changes to listen for (the signed-in user), or null when signed out.
+  onInbox?: (userId: string | null) => void;
   // This computer's own briefs for a shared project (from the brief publisher).
   localBriefs?: (projectId: string) => LocalBriefView[];
   now?: () => number;
@@ -218,6 +229,7 @@ export class TeamsService {
   private presence: PresenceSnapshot = {};
   private briefsAt: Record<string, number> = {};
   private lastTargets = "";
+  private lastInbox: string | null | undefined = undefined;
   private readonly now: () => number;
 
   constructor(private readonly deps: TeamsDeps) {
@@ -282,6 +294,11 @@ export class TeamsService {
     if (key !== this.lastTargets) {
       this.lastTargets = key;
       this.deps.onPresenceTargets?.(targets);
+    }
+    const inbox = v.status === "signed_in" ? v.userId : null;
+    if (inbox !== this.lastInbox) {
+      this.lastInbox = inbox;
+      this.deps.onInbox?.(inbox);
     }
     this.deps.emit(v);
     return v;
@@ -715,7 +732,7 @@ export class TeamsService {
     this.profileLoaded = true;
     this.friends = (Array.isArray(friends) ? friends : [])
       .filter((f) => ["friend", "incoming", "outgoing"].includes(f.state))
-      .map((f) => ({ requestId: f.request_id, userId: f.user_id, username: f.username, state: f.state as FriendView["state"] }));
+      .map((f) => ({ requestId: f.request_id, userId: f.user_id, username: f.username, displayName: cleanDisplayName(f.display_name), state: f.state as FriendView["state"] }));
     this.teamInvites = (Array.isArray(invites) ? invites : [])
       .filter((i) => i.direction === "incoming" || i.direction === "outgoing")
       .map((i) => ({ id: i.invite_id, teamId: i.team_id, teamName: i.team_name, userId: i.user_id, username: i.username, direction: i.direction as TeamInviteView["direction"] }));
@@ -919,15 +936,49 @@ export class TeamsService {
     return raw;
   }
 
-  // Finds the account with exactly this username and sends it a friend request. If that person had
-  // already asked you, you become friends right away.
-  async sendFriendRequest(raw: unknown): Promise<{ status: "pending" | "accepted"; view: TeamsView }> {
+  private friendName(raw: unknown): string {
     const name = typeof raw === "string" ? raw.trim().replace(/^@/, "").toLowerCase() : "";
     if (!USERNAME.test(name)) throw new Error("Enter the exact username: 3 to 24 lower-case letters, digits or _.");
+    return name;
+  }
+
+  // Looks up the account with exactly this username (case does not matter). Shows its username and
+  // display name, never an email address, and whether you are already friends or have a request
+  // waiting. Nothing is sent.
+  async findFriend(raw: unknown): Promise<FriendCandidate> {
+    const name = this.friendName(raw);
     if (this.username && name === this.username) throw new Error(MESSAGES.cannot_friend_self);
-    const rows = await this.social((api, token) => api.rpc<{ request_id: string; status: string }[]>(token, "send_friend_request", { p_username: name }));
-    const status = Array.isArray(rows) && rows[0]?.status === "accepted" ? "accepted" : "pending";
-    return { status, view: this.changed() };
+    let rows: CandidateRow[];
+    try {
+      rows = await this.call((api, token) => api.rpc<CandidateRow[]>(token, "find_friend_candidate", { p_username: name }));
+    } catch (error) {
+      if (missingFunction(error)) {
+        // An older server: what the app already knows, otherwise sending will tell.
+        const known = this.friends.find((f) => f.username === name);
+        return { userId: known?.userId ?? "", username: name, displayName: known?.displayName ?? null, relation: known ? (known.state === "friend" ? "friend" : known.state) : "none", requestId: known?.requestId ?? null };
+      }
+      this.noteNetwork(error);
+      throw new Error(friendlyError(error), { cause: error });
+    }
+    const row = Array.isArray(rows) ? rows[0] : undefined;
+    if (!row) throw new Error(MESSAGES.user_not_found);
+    const relation: FriendRelation = (["self", "none", "friend", "incoming", "outgoing"] as const).find((r) => r === row.relation) ?? "none";
+    return { userId: row.user_id, username: row.username, displayName: cleanDisplayName(row.display_name), relation, requestId: row.request_id ?? null };
+  }
+
+  // Sends a friend request to the account with exactly this username. When a request between you
+  // two already exists nothing new is made, and the outcome says why: you asked before, you are
+  // friends, or they asked you first (then the app offers to accept their request).
+  async sendFriendRequest(raw: unknown): Promise<{ status: "pending" | "accepted"; outcome: FriendSendOutcome; requestId: string | null; view: TeamsView }> {
+    const name = this.friendName(raw);
+    if (this.username && name === this.username) throw new Error(MESSAGES.cannot_friend_self);
+    const rows = await this.social((api, token) => api.rpc<{ request_id: string; status: string; outcome?: string }[]>(token, "send_friend_request", { p_username: name }));
+    const row = Array.isArray(rows) ? rows[0] : undefined;
+    const status = row?.status === "accepted" ? "accepted" : "pending";
+    const known: FriendSendOutcome[] = ["sent", "already_pending", "already_friends", "incoming_pending"];
+    // An older server has no outcome and accepts a request back right away.
+    const outcome = known.find((o) => o === row?.outcome) ?? (status === "accepted" ? "accepted" : "sent");
+    return { status, outcome, requestId: row?.request_id ?? null, view: this.changed() };
   }
 
   async respondFriend(requestId: unknown, accept: unknown): Promise<TeamsView> {
@@ -936,7 +987,24 @@ export class TeamsService {
     return this.changed();
   }
 
-  // Withdraws a request you sent, or ends a friendship.
+  // Withdraws a request you sent that is still waiting. If it was accepted a moment earlier, the
+  // friendship stays and the result says so.
+  async cancelFriendRequest(userId: unknown): Promise<{ result: "cancelled" | "accepted" | "gone"; view: TeamsView }> {
+    const id = this.uuid(userId, "person");
+    let result: "cancelled" | "accepted" | "gone" = "cancelled";
+    await this.social(async (api, token) => {
+      try {
+        const r = await api.rpc<string>(token, "cancel_friend_request", { p_user_id: id });
+        result = r === "accepted" || r === "gone" ? r : "cancelled";
+      } catch (error) {
+        if (!missingFunction(error)) throw error;
+        await api.rpc(token, "remove_friend", { p_user_id: id });
+      }
+    });
+    return { result, view: this.changed() };
+  }
+
+  // Ends a friendship (both people lose it).
   async removeFriend(userId: unknown): Promise<TeamsView> {
     const id = this.uuid(userId, "person");
     await this.social((api, token) => api.rpc(token, "remove_friend", { p_user_id: id }));

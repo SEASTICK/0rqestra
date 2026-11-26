@@ -93,6 +93,8 @@ contextBridge.exposeInMainWorld("orqestra", {
     acceptInvite: (code: string) => ipcRenderer.invoke("teams:accept-invite", String(code)),
     setUsername: (name: string) => ipcRenderer.invoke("teams:set-username", String(name)),
     addFriend: (username: string) => ipcRenderer.invoke("teams:add-friend", String(username)),
+    findFriend: (username: string) => ipcRenderer.invoke("teams:find-friend", String(username)),
+    cancelFriend: (userId: string) => ipcRenderer.invoke("teams:cancel-friend", String(userId)),
     respondFriend: (requestId: string, accept: boolean) => ipcRenderer.invoke("teams:respond-friend", String(requestId), accept === true),
     removeFriend: (userId: string) => ipcRenderer.invoke("teams:remove-friend", String(userId)),
     inviteFriend: (teamId: string, userId: string) => ipcRenderer.invoke("teams:invite-friend", String(teamId), String(userId)),

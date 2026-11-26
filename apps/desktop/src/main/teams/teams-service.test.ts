@@ -51,6 +51,9 @@ class FakeSupabase {
   profiles = new Map<string, string>(); // user id -> username
   friendships: { id: string; requester: string; addressee: string; status: "pending" | "accepted" }[] = [];
   memberInvites: { id: string; team_id: string; invitee: string; invited_by: string; status: "pending" | "accepted" | "declined" | "revoked" }[] = [];
+  // A server without the …_friends_lookup_live migration: no lookup or cancel, and a request back
+  // accepts the first one.
+  legacyFriends = false;
 
   fetch: FetchLike = async (url, init) => {
     if (this.offline) throw new Error("offline");
@@ -232,6 +235,9 @@ class FakeSupabase {
     // ---- usernames, friends and team invitations to friends (same rules as the migration)
     const pair = (x: string, y: string) => this.friendships.find((f) => (f.requester === x && f.addressee === y) || (f.requester === y && f.addressee === x));
     const needName = () => (this.profiles.has(me) ? null : pgError(401, "28000", "username_required"));
+    const displayOf = (id: string) => this.meta.get([...this.users].find(([, uid]) => uid === id)?.[0] ?? "") ?? null;
+    const byName = (raw: unknown) => [...this.profiles].find(([, name]) => name === String(raw).trim().toLowerCase())?.[0];
+    const missing = () => pgError(404, "PGRST202", "Could not find the function in the schema cache");
     if (init.method === "GET" && u.pathname === "/rest/v1/profiles") {
       return reply(200, this.profiles.has(me) ? [{ username: this.profiles.get(me) }] : []);
     }
@@ -245,19 +251,43 @@ class FakeSupabase {
     if (u.pathname === "/rest/v1/rpc/list_friends") {
       return reply(200, this.friendships.filter((f) => f.requester === me || f.addressee === me).map((f) => {
         const other = f.requester === me ? f.addressee : f.requester;
-        return { request_id: f.id, user_id: other, username: this.profiles.get(other) ?? "unknown", state: f.status === "accepted" ? "friend" : f.requester === me ? "outgoing" : "incoming" };
+        return { request_id: f.id, user_id: other, username: this.profiles.get(other) ?? "unknown", ...(this.legacyFriends ? {} : { display_name: displayOf(other) }), state: f.status === "accepted" ? "friend" : f.requester === me ? "outgoing" : "incoming" };
       }));
+    }
+    if (u.pathname === "/rest/v1/rpc/find_friend_candidate") {
+      if (this.legacyFriends) return missing();
+      const refusal = needName();
+      if (refusal) return refusal;
+      const target = byName(body.p_username);
+      if (!target) return pgError(404, "P0002", "user_not_found");
+      const f = pair(me, target);
+      const relation = target === me ? "self" : !f ? "none" : f.status === "accepted" ? "friend" : f.requester === me ? "outgoing" : "incoming";
+      return reply(200, [{ user_id: target, username: this.profiles.get(target), display_name: displayOf(target), relation, request_id: f?.id ?? null }]);
     }
     if (u.pathname === "/rest/v1/rpc/send_friend_request") {
       const refusal = needName();
       if (refusal) return refusal;
-      const target = [...this.profiles].find(([, name]) => name === String(body.p_username).trim().toLowerCase())?.[0];
+      const target = byName(body.p_username);
       if (!target) return pgError(404, "P0002", "user_not_found");
       if (target === me) return pgError(400, "22023", "cannot_friend_self");
       let f = pair(me, target);
-      if (f && f.status === "pending" && f.addressee === me) f.status = "accepted";
-      if (!f) this.friendships.push((f = { id: crypto.randomUUID(), requester: me, addressee: target, status: "pending" }));
-      return reply(200, [{ request_id: f.id, status: f.status }]);
+      if (this.legacyFriends) {
+        if (f && f.status === "pending" && f.addressee === me) f.status = "accepted";
+        if (!f) this.friendships.push((f = { id: crypto.randomUUID(), requester: me, addressee: target, status: "pending" }));
+        return reply(200, [{ request_id: f.id, status: f.status }]);
+      }
+      if (f) return reply(200, [{ request_id: f.id, status: f.status, outcome: f.status === "accepted" ? "already_friends" : f.requester === me ? "already_pending" : "incoming_pending" }]);
+      this.friendships.push((f = { id: crypto.randomUUID(), requester: me, addressee: target, status: "pending" }));
+      return reply(200, [{ request_id: f.id, status: f.status, outcome: "sent" }]);
+    }
+    if (u.pathname === "/rest/v1/rpc/cancel_friend_request") {
+      if (this.legacyFriends) return missing();
+      const f = pair(me, String(body.p_user_id));
+      if (!f) return reply(200, "gone");
+      if (f.status === "accepted") return reply(200, "accepted");
+      if (f.requester !== me) return pgError(404, "P0002", "request_not_found");
+      this.friendships = this.friendships.filter((x) => x !== f);
+      return reply(200, "cancelled");
     }
     if (u.pathname === "/rest/v1/rpc/respond_friend_request") {
       const f = this.friendships.find((x) => x.id === body.p_request_id && (x.requester === me || x.addressee === me));
@@ -330,6 +360,7 @@ function computer(name: string, server: FakeSupabase, now = () => server.now) {
   const make = () => {
     const events: TeamsView[] = [];
     const targets: PresenceTarget[][] = [];
+    const inbox: (string | null)[] = [];
     const service = new TeamsService({
       config,
       fetch: server.fetch,
@@ -338,10 +369,11 @@ function computer(name: string, server: FakeSupabase, now = () => server.now) {
       git: gitRunner(() => process.env),
       emit: (v) => events.push(v),
       onPresenceTargets: (t) => targets.push(t),
+      onInbox: (u) => inbox.push(u),
       now,
       caseInsensitivePaths: process.platform !== "linux",
     });
-    return { service, events, targets };
+    return { service, events, targets, inbox };
   };
   return { dir, ...make(), restart: make };
 }
@@ -840,6 +872,107 @@ describe("usernames, friends and team invitations", () => {
     va = await a.service.refresh();
     expect(va.teams[0]!.members.map((m) => m.name)).toEqual(["ann_user", "bob_user"]);
     await expect(a.service.inviteFriend(team.id, bobId)).rejects.toThrow(/already in the team/);
+  });
+
+  it("looks a friend up first, explains repeats, and keeps one friendship for crossing requests", async () => {
+    const server = new FakeSupabase();
+    const a = computer("la", server);
+    const b = computer("lb", server);
+    const c = computer("lc", server);
+    await signIn(a.service, "ann@example.test");
+    await signIn(b.service, "bob@example.test");
+    await signIn(c.service, "cat@example.test");
+    server.meta.set("bob@example.test", "Bob Builder");
+
+    // Lookup: exact username, any case, display name and username only.
+    await expect(a.service.findFriend("nobody_x")).rejects.toThrow(/No 0rqestra account has that username/);
+    await expect(a.service.findFriend("ann_user")).rejects.toThrow(/your own username/);
+    const found = await a.service.findFriend("@BOB_USER");
+    expect(found).toMatchObject({ username: "bob_user", displayName: "Bob Builder", relation: "none", requestId: null });
+    expect(JSON.stringify(found)).not.toContain("@example.test");
+
+    // Send; repeated clicks make nothing new and say so.
+    expect((await a.service.sendFriendRequest("bob_user")).outcome).toBe("sent");
+    expect((await a.service.sendFriendRequest("bob_user")).outcome).toBe("already_pending");
+    expect(server.friendships).toHaveLength(1);
+    expect((await a.service.findFriend("bob_user")).relation).toBe("outgoing");
+
+    // Bob asks back: no second row, and Bob is told to accept Ann's request instead.
+    const back = await b.service.sendFriendRequest("ann_user");
+    expect(back).toMatchObject({ outcome: "incoming_pending", status: "pending", requestId: server.friendships[0]!.id });
+    expect(server.friendships).toHaveLength(1);
+    expect(await b.service.findFriend("ann_user")).toMatchObject({ relation: "incoming", requestId: server.friendships[0]!.id });
+    const vb = await b.service.respondFriend(back.requestId, true);
+    expect(vb.friends).toEqual([expect.objectContaining({ username: "ann_user", state: "friend" })]);
+    await a.service.refreshSocial();
+    expect(a.service.view().friends).toEqual([expect.objectContaining({ username: "bob_user", displayName: "Bob Builder", state: "friend" })]);
+    expect((await a.service.sendFriendRequest("bob_user")).outcome).toBe("already_friends");
+    expect(server.friendships).toHaveLength(1);
+
+    // Cancel: only a waiting request you sent; an accepted friendship survives a late cancel.
+    await a.service.sendFriendRequest("cat_user");
+    const catId = server.users.get("cat@example.test")!;
+    const annId = server.users.get("ann@example.test")!;
+    await c.service.refreshSocial();
+    await expect(c.service.cancelFriendRequest(annId)).rejects.toThrow(/no longer there/);
+    expect((await a.service.cancelFriendRequest(catId)).result).toBe("cancelled");
+    expect(server.friendships).toHaveLength(1);
+    expect((await a.service.cancelFriendRequest(catId)).result).toBe("gone");
+    const bobId = server.users.get("bob@example.test")!;
+    expect((await a.service.cancelFriendRequest(bobId)).result).toBe("accepted");
+    expect(server.friendships).toHaveLength(1);
+
+    // Cat, a third person, cannot answer, cancel or end Ann and Bob's friendship.
+    await expect(c.service.respondFriend(server.friendships[0]!.id, false)).rejects.toThrow(/no longer there/);
+    await c.service.removeFriend(bobId);
+    await c.service.cancelFriendRequest(bobId);
+    expect(server.friendships).toEqual([expect.objectContaining({ status: "accepted" })]);
+    expect(c.service.view().friends).toEqual([]);
+
+    // Remove: both lose it.
+    expect((await b.service.removeFriend(annId)).friends).toEqual([]);
+    await a.service.refreshSocial();
+    expect(a.service.view().friends).toEqual([]);
+  });
+
+  it("listens for its own friend changes while signed in, and clears friends on sign-out and account switch", async () => {
+    const server = new FakeSupabase();
+    const a = computer("ia", server);
+    const b = computer("ib", server);
+    await signIn(b.service, "bob@example.test");
+    await signIn(a.service, "ann@example.test");
+    const annId = server.users.get("ann@example.test")!;
+    expect(a.inbox.at(-1)).toBe(annId);
+    await a.service.sendFriendRequest("bob_user");
+    expect(a.service.view().friends).toHaveLength(1);
+
+    let v = await a.service.signOut();
+    expect(a.inbox.at(-1)).toBeNull();
+    expect(v).toMatchObject({ status: "signed_out", friends: [], teamInvites: [], username: null });
+    expect(a.events.at(-1)!.friends).toEqual([]);
+
+    // Another account on the same computer sees only its own friends.
+    v = await signIn(a.service, "cat@example.test");
+    expect(a.inbox.at(-1)).toBe(server.users.get("cat@example.test"));
+    expect(v.friends).toEqual([]);
+    expect(v.username).toBe("cat_user");
+  });
+
+  it("still works with a server that has no lookup or cancel functions yet", async () => {
+    const server = new FakeSupabase();
+    server.legacyFriends = true;
+    const a = computer("oa", server);
+    const b = computer("ob", server);
+    await signIn(a.service, "ann@example.test");
+    await signIn(b.service, "bob@example.test");
+    expect(await a.service.findFriend("bob_user")).toMatchObject({ username: "bob_user", relation: "none" });
+    expect((await a.service.sendFriendRequest("bob_user")).outcome).toBe("sent");
+    expect((await a.service.findFriend("bob_user")).relation).toBe("outgoing");
+    expect((await a.service.cancelFriendRequest(server.users.get("bob@example.test"))).result).toBe("cancelled");
+    expect(server.friendships).toEqual([]);
+    await a.service.sendFriendRequest("bob_user");
+    expect((await b.service.sendFriendRequest("ann_user")).outcome).toBe("accepted");
+    expect(server.friendships).toEqual([expect.objectContaining({ status: "accepted" })]);
   });
 
   it("says when the server cannot be reached, and clears it when it answers again", async () => {

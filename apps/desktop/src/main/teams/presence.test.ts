@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ActivityMonitor, isActive } from "./activity";
-import { HEARTBEAT_MS, PresenceHub, UNAVAILABLE_AFTER_MS, presenceTopic, type PresenceSnapshot, type SocketLike } from "./presence";
+import { HEARTBEAT_MS, PresenceHub, UNAVAILABLE_AFTER_MS, inboxTopic, presenceTopic, type PresenceSnapshot, type SocketLike } from "./presence";
 
 // A controlled clock and timers, and sockets that record what is sent.
 function harness() {
@@ -297,5 +297,45 @@ describe("team membership changes", () => {
     h.hub.setTargets([{ projectId: P, selfId: ME, memberIds: [ME, ANN] }]);
     await h.flush();
     expect(s.joins().some((j) => j.topic === `realtime:${presenceTopic(P, ANN)}`)).toBe(true);
+  });
+});
+
+describe("friend changes", () => {
+  it("listens on the user's own topic without any project, and reads friends again on each change", async () => {
+    let changed = 0;
+    const h = harness();
+    (h.hub as unknown as { deps: { onFriendsChanged: () => void } }).deps.onFriendsChanged = () => (changed += 1);
+    h.hub.setInbox(ME);
+    const s = h.sockets[0]!;
+    s.onopen?.();
+    await h.flush();
+    const join = s.joins().find((j) => j.topic === `realtime:${inboxTopic(ME)}`)!;
+    expect(join).toBeTruthy();
+    expect((join.payload as { config: { private: boolean; presence: { enabled: boolean } } }).config).toMatchObject({ private: true, presence: { enabled: false } });
+    s.acceptJoins();
+    // Joining reads the lists once (recovers anything missed), then every broadcast reads them again.
+    expect(changed).toBe(1);
+    s.serverSends({ topic: join.topic, event: "broadcast", payload: { type: "broadcast", event: "friends_changed", payload: {} }, ref: null });
+    expect(changed).toBe(2);
+    // Nothing is ever sent on it, and the project status is unaffected.
+    expect(s.sent.filter((m) => m.topic === join.topic && m.event !== "phx_join")).toEqual([]);
+    expect(h.hub.snapshot()).toEqual({});
+    // Signing out leaves the topic and closes the connection.
+    h.hub.setInbox(null);
+    expect(s.closed).toBe(true);
+  });
+
+  it("a refused friends topic does not keep the projects from going live", async () => {
+    const h = harness();
+    h.hub.setTargets([{ projectId: P, selfId: ME, memberIds: [ME] }]);
+    h.hub.setInbox(ME);
+    const s = h.sockets[0]!;
+    s.onopen?.();
+    await h.flush();
+    const inbox = s.joins().find((j) => j.topic === `realtime:${inboxTopic(ME)}`)!;
+    (inbox as { answered?: boolean }).answered = true;
+    s.serverSends({ topic: inbox.topic, event: "phx_reply", payload: { status: "error", response: { reason: "Unauthorized" } }, ref: inbox.ref, join_ref: inbox.join_ref });
+    s.acceptJoins();
+    expect(h.last()[P]!.connection).toBe("live");
   });
 });
