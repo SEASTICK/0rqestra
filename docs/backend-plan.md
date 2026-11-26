@@ -323,10 +323,10 @@ with team" under a Manager reply posts it as a Manager summary. Each person's Ma
 day's chat in "Team right now", marked as data from people in the team, with the instruction to point out
 overlaps and suggest who does which part in what order before planning. There is no shared Manager: each person
 keeps their own Manager and subscription, and the chat plus the existing briefs and file reservations keep them
-in sync. Database: `supabase/migrations/20261126210000_team_chat.sql` (table `team_messages`, read by project
+in sync. Database: `supabase/migrations/20261126212421_team_chat.sql` (table `team_messages`, read by project
 members only; written only by `send_team_message`, which takes the author from the session and the name from the
 username, 1–4,000 characters, at most 30 a minute; a new message is announced as `message_added` on the
-project's existing private topic). **The migration is not applied to the production project yet**: until it is,
+project's existing private topic). **Applied to the production project on 2026-11-26** (before that,
 the panel says that the server does not have the team chat. Verified with unit tests (a fake Supabase: two people
 write and read, refused input, a server without the table, the Manager's note, sign-out) and a rendered harness of
 the bridge and panel. Not verified: the migration against a real database (`supabase/tests/team_chat_test.sql`

@@ -222,7 +222,7 @@ interface ChecklistRow { id: string; project_id: string; title: string; notes: s
 const CHECKLIST_COLUMNS = "id,project_id,title,notes,status,assignee_id,blocked_reason,archived,run_id,created_by,updated_by,updated_at,version";
 const CHECKLIST_LIMIT = 600;
 const RUN_ID = /^[A-Za-z0-9_-]{1,100}$/;
-const CHECKLIST_MISSING = "The Teams server does not have the shared checklist yet. The owner of the server applies its database update (supabase/migrations/20261127120000_project_checklist.sql).";
+const CHECKLIST_MISSING = "The Teams server does not have the shared checklist yet. The owner of the server applies its database update (supabase/migrations/20261126212521_project_checklist.sql).";
 const CHECKLIST_MESSAGES: Record<string, string> = {
   checklist_item_not_found: "That checklist item is no longer there.",
   invalid_assignee: "Only someone in this shared project can be assigned.",
@@ -586,7 +586,7 @@ export class TeamsService {
       const missing = isMissingTable(error);
       for (const id of ids) {
         const old = this.chat[id] ?? { messages: [], at: null, problem: null, needsUpdate: false };
-        this.chat = { ...this.chat, [id]: { ...old, needsUpdate: missing, problem: missing ? "The Teams server does not have the team chat yet. The owner of the server applies its database update (supabase/migrations/20261126210000_team_chat.sql)." : friendlyError(error) } };
+        this.chat = { ...this.chat, [id]: { ...old, needsUpdate: missing, problem: missing ? "The Teams server does not have the team chat yet. The owner of the server applies its database update (supabase/migrations/20261126212421_team_chat.sql)." : friendlyError(error) } };
       }
     }
     this.changed();
