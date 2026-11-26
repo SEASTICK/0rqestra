@@ -107,6 +107,36 @@ export function bridgeLayout(manager, teammateCount) {
   return { bridge, teammates };
 }
 
+// Everyone in the shared project as a box on the bridge: you first, then the others by name, each with the
+// approved work they run right now (their active briefs). Your own runs that the server does not have yet are
+// included from this computer, marked as not synced. Only titles and states: never prompts or chat.
+export const MAX_WORK_SHOWN = 2;
+export function personBoxes(view, linked) {
+  if (!view || !linked) return [];
+  const { team, project } = linked;
+  const me = view.userId;
+  const active = (b) => b.status === 'in_progress' || b.status === 'blocked';
+  const briefs = (project.briefs || []).filter(active);
+  const known = new Set(briefs.map((b) => b.runId));
+  const local = (view.localBriefs?.[project.id] || []).filter((b) => active(b) && !known.has(b.runId))
+    .map((b) => ({ id: `local-${b.runId}`, runId: b.runId, title: b.title, status: b.status, authorId: me, updatedAt: b.updatedAt, unsynced: b.sync !== 'synced' }));
+  const all = [...briefs, ...local];
+  const time = (b) => (typeof b.updatedAt === 'number' ? b.updatedAt : Date.parse(b.updatedAt) || 0);
+  const people = [...(team.members || [])].sort((a, b) => Number(b.userId === me) - Number(a.userId === me) || String(a.name).localeCompare(String(b.name)));
+  return people.map((m) => {
+    const work = all.filter((b) => b.authorId === m.userId).sort((a, b) => time(b) - time(a));
+    return {
+      userId: m.userId,
+      name: displayName(m.name),
+      you: m.userId === me,
+      owner: m.role === 'owner',
+      status: memberStatus(view, project.id, m.userId),
+      work: work.slice(0, MAX_WORK_SHOWN).map((b) => ({ id: b.id, title: b.title, status: b.status, unsynced: Boolean(b.unsynced) })),
+      more: Math.max(0, work.length - MAX_WORK_SHOWN),
+    };
+  });
+}
+
 // ---- Phase 3: work briefs -------------------------------------------------------------------
 
 export const BRIEF_STATUS_TEXT = { in_progress: 'In progress', blocked: 'Blocked', completed: 'Completed', stopped: 'Stopped', failed: 'Failed' };
@@ -199,3 +229,13 @@ export function outgoingTeamInvites(view, team) {
 export function waitingCount(view) {
   return friendGroups(view).incoming.length + incomingTeamInvites(view).length;
 }
+
+// ---- Team chat --------------------------------------------------------------------------------
+
+// Messages from others since the person last opened the Team Bridge (seen: ms, or 0 for never).
+export function unreadCount(view, projectId, seen) {
+  const messages = view?.chat?.[projectId]?.messages || [];
+  return messages.filter((m) => m.authorId !== view.userId && Date.parse(m.createdAt) > (Number(seen) || 0)).length;
+}
+
+export const SORT_REQUEST = 'Sort what the team asked for in the team chat: who wants what, where it overlaps with what I want, and who should do which part in what order. Do not start any work yet.';

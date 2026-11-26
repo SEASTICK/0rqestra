@@ -3,7 +3,7 @@ import path from "node:path";
 import { app, clipboard, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { killTree, providerEnv } from "../providers/process";
 import { toolEnvironment } from "../providers/tool-env";
-import type { ProviderAdapter, ProviderId } from "../providers/types";
+import type { AdapterSet } from "../providers/types";
 import { AccountsService, parseKind, parseProvider } from "./accounts-service";
 import { installScript } from "./commands";
 import { openTerminalWindow, startInstallerProcess } from "./terminal";
@@ -15,7 +15,7 @@ import { openTerminalWindow, startInstallerProcess } from "./terminal";
 export function registerAccountsIpc(
   isTrusted: (event: IpcMainInvokeEvent) => boolean,
   getWindow: () => BrowserWindow | null,
-  adapters: Record<ProviderId, ProviderAdapter>,
+  adapters: AdapterSet,
   invalidate: () => void,
 ): AccountsService {
   // Installers and sign-in get the same cleaned environment as the tools: no API keys.

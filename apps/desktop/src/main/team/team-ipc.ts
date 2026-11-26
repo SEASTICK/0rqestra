@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { app, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
-import type { ProviderAdapter, ProviderId } from "../providers/types";
+import type { AdapterSet } from "../providers/types";
 import type { Plan } from "./plan";
 import type { TeamEvent } from "./runner";
 import { TeamService } from "./team-service";
@@ -20,7 +20,7 @@ import { rememberPreviewHost } from "../preview/preview-protocol";
 export function registerTeamIpc(
   isTrusted: (event: IpcMainInvokeEvent) => boolean,
   getWindow: () => BrowserWindow | null,
-  adapters: Record<ProviderId, ProviderAdapter>,
+  adapters: AdapterSet,
   observe?: (info: { runId: string; localProjectId: string; plan: Plan }, event: TeamEvent) => void,
   // Teams phase 5: a coordinated start reserves the run's paths first (solo projects pass).
   gate?: (info: { runId: string; localProjectId: string; plan: Plan }) => Promise<StartGate>,

@@ -11,7 +11,7 @@ import { ALLOWANCES_KEY, LEGACY_ALLOWANCES_KEY } from './storage-keys.mjs';
 export const DEMO_REMOVED_KEY = 'orqestra-demo-removed';
 const DEMO_NODE_FIELDS = ['backups', 'activeProfileId', 'recoveryPaused'];
 
-const realTool = (node) => Boolean(node && node.agent && (node.agent.tool === 'claude' || node.agent.tool === 'codex'));
+const realTool = (node) => Boolean(node && node.agent && (node.agent.tool === 'claude' || node.agent.tool === 'codex' || node.agent.tool === 'gemini'));
 
 export function migrateNode(node) {
   const out = { ...node };

@@ -159,7 +159,7 @@ describe("retrying one task", () => {
 describe("retry checks in the service", () => {
   function service(codex: Tool, claude: Tool) {
     const events: { runId: string; event: TeamEvent }[] = [];
-    const svc = new TeamService({ codex, claude } as Record<ProviderId, ProviderAdapter>, () => dir, () => dir);
+    const svc = new TeamService({ codex, claude } as unknown as Record<ProviderId, ProviderAdapter>, () => dir, () => dir);
     return { svc, events, emit: (runId: string, event: TeamEvent) => void events.push({ runId, event }) };
   }
   const agentsRaw = [{ ...builder }, { ...reviewer }];

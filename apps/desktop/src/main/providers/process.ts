@@ -15,6 +15,13 @@ const BLOCKED = [
   /^AZURE_OPENAI_/,
   /^AWS_/,
   /^GOOGLE_APPLICATION_CREDENTIALS$/,
+  // Gemini CLI: other ways to sign in or to reach a model than the Google account login.
+  /^GOOGLE_GENAI_/,
+  /^GOOGLE_CLOUD_/,
+  /^GOOGLE_GEMINI_/,
+  /^GEMINI_API_/,
+  /^GEMINI_CLI_USE_/,
+  /^CLOUD_SHELL$/,
   /_API_KEY$/,
   /_ACCESS_TOKEN$/,
   /^ELECTRON_/,

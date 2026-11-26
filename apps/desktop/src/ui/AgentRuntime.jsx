@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FAILURE_HELP, isTerminal, testState, usageLine } from './live-chat.mjs';
 
-export function AgentRunsOn({ run, onChange, tools }) {
+export function AgentRunsOn({ run, onChange, tools, canAuto = false }) {
   const status = tools.find((t) => t.provider === run.provider);
   const model = status?.models.find((m) => m.id === run.model);
   const set = (patch) => onChange({ ...run, ...patch });
@@ -11,14 +11,17 @@ export function AgentRunsOn({ run, onChange, tools }) {
     <>
       <label>Runs on
         <select value={run.provider} onChange={(e) => {
+          if (e.target.value === 'auto') { onChange({ provider: 'auto', model: 'auto', effort: null }); return; }
           const next = tools.find((t) => t.provider === e.target.value);
           const first = next?.models.find((m) => m.isDefault) || next?.models[0];
           onChange({ provider: e.target.value, model: first ? first.id : null, effort: null });
         }}>
           <option value="none">No tool yet (cannot work)</option>
+          {canAuto && tools.length > 0 && <option value="auto">Auto (0rqestra picks the tool and level)</option>}
           {tools.map((t) => <option key={t.provider} value={t.provider}>{t.name}</option>)}
         </select>
-        {tools.length === 0 && <small>Connect Claude Code or Codex under AI accounts to run an agent on a real model.</small>}
+        {run.provider === 'auto' && <small>For each message, 0rqestra picks Claude Code, Codex or Gemini and how strong a model, from the task. Code goes to Codex; quick questions, very long texts and PDFs to Gemini; writing and planning to Claude.</small>}
+        {tools.length === 0 && <small>Connect Claude Code, Codex or Gemini under AI accounts to run an agent on a real model.</small>}
       </label>
       {status && (
         <div className="field-row">

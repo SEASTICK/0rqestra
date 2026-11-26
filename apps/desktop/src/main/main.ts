@@ -11,6 +11,7 @@ import { registerAccountsIpc } from "./accounts/accounts-ipc";
 import { registerTeamsIpc } from "./teams/teams-ipc";
 import { registerSandboxIpc } from "./sandbox/sandbox-ipc";
 import { registerAccessIpc } from "./access/access-ipc";
+import { accessService } from "./access/registry";
 import { handlePreviewScheme, isPreviewUrl, registerPreviewScheme, watchPreviewProblems } from "./preview/preview-protocol";
 import {
   createSmokeOutcome,
@@ -104,7 +105,8 @@ const chatService = registerChatIpc(isFromMainWindow, () => mainWindow, provider
 registerAccountsIpc(isFromMainWindow, () => mainWindow, providerAdapters, () => chatService.invalidate());
 const teams = registerTeamsIpc(isFromMainWindow, () => mainWindow);
 registerSandboxIpc(isFromMainWindow, () => mainWindow);
-teamNow = (projectId) => teams.service.teamNow(projectId);
+// What teammates do now, and the code this project works on (Computer access), for the Manager and the Planner.
+teamNow = (projectId) => [teams.service.teamNow(projectId), accessService()?.overview(projectId) ?? null].filter(Boolean).join("\n\n") || null;
 // Computer access stays on this computer; Teams only answers which checkout is linked and what is reserved.
 registerAccessIpc(isFromMainWindow, () => mainWindow, { linkFor: (id) => teams.service.linkFor(id), reservedByOthers: (id, paths) => teams.service.reservedByOthers(id, paths) });
 registerTeamIpc(isFromMainWindow, () => mainWindow, providerAdapters, (info, event) => void teams.onRunEvent(info, event), (info) => teams.beforeStart(info), teamNow);

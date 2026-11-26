@@ -19,7 +19,7 @@ export function withChats(project, now = Date.now()) {
 
 // The current conversation, put away with its messages and title.
 function putAway(p, now) {
-  return p.chats.map((c) => (c.id === p.chatId ? { ...c, title: chatTitle(p.messages, c.title), messages: p.messages, updatedAt: p.messages.length ? now : c.updatedAt } : c));
+  return p.chats.map((c) => (c.id === p.chatId ? { ...c, title: c.named ? c.title : chatTitle(p.messages, c.title), messages: p.messages, updatedAt: p.messages.length ? now : c.updatedAt } : c));
 }
 
 export function switchChat(project, chatId, now = Date.now()) {
@@ -27,7 +27,8 @@ export function switchChat(project, chatId, now = Date.now()) {
   if (chatId === p.chatId) return p;
   const target = p.chats.find((c) => c.id === chatId);
   if (!target) return p;
-  const chats = putAway(p, now).map((c) => (c.id === chatId ? { id: c.id, title: c.title, updatedAt: c.updatedAt } : c));
+  // An empty open conversation is not kept when moving to another one.
+  const chats = (p.messages.length ? putAway(p, now) : p.chats.filter((c) => c.id !== p.chatId)).map((c) => (c.id === chatId ? { id: c.id, title: c.title, updatedAt: c.updatedAt, ...(c.named ? { named: true } : {}) } : c));
   return { ...p, chats, chatId, messages: target.messages || [] };
 }
 
@@ -44,7 +45,7 @@ export function removeChat(project, chatId, newId, now = Date.now()) {
   const rest = p.chats.filter((c) => c.id !== chatId).sort((a, b) => b.updatedAt - a.updatedAt);
   if (!rest.length) return { ...p, chats: [{ id: newId, title: 'New chat', updatedAt: now }], chatId: newId, messages: [] };
   const next = rest[0];
-  return { ...p, chats: rest.map((c) => (c.id === next.id ? { id: c.id, title: c.title, updatedAt: c.updatedAt } : c)), chatId: next.id, messages: next.messages || [] };
+  return { ...p, chats: rest.map((c) => (c.id === next.id ? { id: c.id, title: c.title, updatedAt: c.updatedAt, ...(c.named ? { named: true } : {}) } : c)), chatId: next.id, messages: next.messages || [] };
 }
 
 // The conversations to list, the open one first, then the most recent.
@@ -53,7 +54,7 @@ export function chatList(project) {
   return p.chats
     // An empty open conversation is not listed; "New chat" stands for it.
     .filter((c) => c.id !== p.chatId || p.messages.length > 0)
-    .map((c) => (c.id === p.chatId ? { id: c.id, title: chatTitle(p.messages, c.title === 'Chat' || c.title === 'New chat' ? 'New chat' : c.title), current: true, updatedAt: Infinity } : { id: c.id, title: c.title, current: false, updatedAt: c.updatedAt }))
+    .map((c) => (c.id === p.chatId ? { id: c.id, title: c.named ? c.title : chatTitle(p.messages, c.title === 'Chat' || c.title === 'New chat' ? 'New chat' : c.title), current: true, updatedAt: Infinity } : { id: c.id, title: c.title, current: false, updatedAt: c.updatedAt }))
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
@@ -65,3 +66,9 @@ export function ensureGeneral(projects) {
 }
 
 export const isGeneral = (project) => project?.id === GENERAL_ID || project?.kind === 'general';
+
+// Chats brought in from a file (chat-io.mjs), kept beside the open one.
+export function addChats(project, chats, now = Date.now()) {
+  const p = withChats(project, now);
+  return { ...p, chats: [...p.chats, ...chats] };
+}

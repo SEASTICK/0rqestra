@@ -14,7 +14,7 @@ export function PlanCard({ plan, assignments, startedRunId, busy, onStart, onTre
   return (
     <div className="plan-card" role="group" aria-label="Plan">
       <div className="plan-head"><span className="plan-eyebrow">{plannedBy ? `PLAN BY ${plannedBy.toUpperCase()}` : 'PLAN'}</span><strong>{plan.goal}</strong>{summary && <small className="plan-summary">{summary}</small>}</div>
-      {planTools(assignments).length > 1 && <div className="plan-together"><span className="tool-chip tool-claude">Claude</span><span className="tool-chip tool-codex">ChatGPT</span><span>work together on this plan — the Manager chose who does what.</span></div>}
+      {planTools(assignments).length > 1 && <div className="plan-together">{[...new Set(assignments.map((x) => x.agent?.tool).filter(Boolean))].map((t) => <span key={t} className={`tool-chip tool-${t}`}>{TOOL_LABEL[t] || t}</span>)}<span>work together on this plan — the Manager chose who does what.</span></div>}
       {plan.products?.length > 0 && <div className="plan-products"><span>Products</span>{plan.products.map((p) => <span key={p.id} className="plan-product"><strong>{p.name}</strong>{p.folder ? <code>{p.folder}/</code> : null}</span>)}</div>}
       <ol className="plan-tasks">
         {assignments.map((t) => (
@@ -30,7 +30,7 @@ export function PlanCard({ plan, assignments, startedRunId, busy, onStart, onTre
         ))}
       </ol>
       <div className="plan-actions">
-        {missing.length > 0 && <span className="plan-warning">Set an agent on Claude Code or Codex for: {missing.join(', ')}</span>}
+        {missing.length > 0 && <span className="plan-warning">Set an agent on Claude Code, Codex or Gemini for: {missing.join(', ')}</span>}
         {missing.length > 0 && <button type="button" className="shell-button" onClick={onTree}>Open team tree</button>}
         {startedRunId
           ? <span className="plan-started">Started — the team's progress is below.</span>

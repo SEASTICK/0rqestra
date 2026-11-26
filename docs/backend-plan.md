@@ -314,6 +314,168 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-26: people on the Team Bridge, and a team chat the Managers read.** In a project linked to a shared
+project, the tree shows everyone in it as a box on the Team Bridge, you first (orange), each with the team runs
+they have going right now (titles and states of their active briefs; your own runs that have not synced yet are
+marked). The Team Bridge panel has a **team chat**: everyone in the project reads it, the bridge box shows how many
+new messages there are, "Ask my Manager to sort this" asks your own Manager to sort who wants what, and "Share
+with team" under a Manager reply posts it as a Manager summary. Each person's Manager (and Planner) gets the last
+day's chat in "Team right now", marked as data from people in the team, with the instruction to point out
+overlaps and suggest who does which part in what order before planning. There is no shared Manager: each person
+keeps their own Manager and subscription, and the chat plus the existing briefs and file reservations keep them
+in sync. Database: `supabase/migrations/20261126210000_team_chat.sql` (table `team_messages`, read by project
+members only; written only by `send_team_message`, which takes the author from the session and the name from the
+username, 1–4,000 characters, at most 30 a minute; a new message is announced as `message_added` on the
+project's existing private topic). **The migration is not applied to the production project yet**: until it is,
+the panel says that the server does not have the team chat. Verified with unit tests (a fake Supabase: two people
+write and read, refused input, a server without the table, the Manager's note, sign-out) and a rendered harness of
+the bridge and panel. Not verified: the migration against a real database (`supabase/tests/team_chat_test.sql`
+runs on a local stack), and two real computers.
+
+**Status 2026-11-25: From GitHub clones without a dialog.** First use on Philip's Windows computer (real `gh`, real
+repositories incl. private and organisation ones) showed that clicking a repository opened Explorer, whose
+default was Documents, which is inside OneDrive. Now a click clones at once into ~/repos (made if missing); the
+list shows "Clones into …" with a Change button (the folder is kept in userData/github-folder.json), and a
+folder that OneDrive, Dropbox, iCloud, Google Drive or Box keeps in sync gets a warning (a repository has
+thousands of small files). Verified with unit tests and in the Electron app with a fake `gh`.
+
+**Status 2026-11-25: Import chat with a searchable list.** The + in the message box and the arrow beside "Chats" open
+**Import chat**: choose Claude, ChatGPT, or a file from 0rqestra; for Claude and ChatGPT it shows how to ask for
+the data export, and the zip they email is opened as it is (no unpacking; ChatGPT's split conversations-000.json
+files are read too). The export is read in the main process (`main/chat-library.ts`, kept in memory only while the
+dialog is open); the dialog lists every chat with date and size, searches titles and the words inside the chats
+(every word must be found; titles first, with a snippet), and imports the chosen chats (at most 100 at a time).
+Why not straight from the accounts: Claude and ChatGPT give a person's chats out only as a data export; there is
+no public interface for the chat history, and logging in with a session cookie or token would break the rule
+that 0rqestra handles no keys or logins. Also: leaving an empty chat for another one no longer keeps the empty
+one in the list. Verified with unit tests (a zip writer for the tests: stored and compressed files, split files,
+damaged, encrypted, zip64 and oversized zips are refused) and in the real Electron app with a Claude-format zip
+(search by a word that is only inside a chat, select, import, continue). Not verified: a real export from either
+service (formats as documented/observed earlier; a single conversations.json over about 500 MB cannot be read and
+says so). Chats kept locally by Claude Code (~/.claude) and Codex (~/.codex) could be offered the same way later.
+
+**Status 2026-11-25: New project → From GitHub.** Pick one of your GitHub repositories from a searchable list
+(own, shared with you and your organisations', newest push first, archived ones left out), choose where to
+put it, and it is cloned and set up for the team like "Work in a folder" (the project is named after the
+repository). It uses GitHub's official command line tool `gh` (`main/github/github.ts`): the dialog installs
+it in a terminal (winget on Windows, brew on macOS) and signs in with `gh auth login --web` (browser), then
+lists with `gh api user/repos` and clones with `gh repo clone owner/name`. 0rqestra never asks `gh` for a
+token (no `gh auth token`) and stores nothing; the window can only ask for the status, the list, and
+"clone this owner/name" (checked) into a folder picked in the system's folder picker. A folder that
+already holds a clone of the same repository is reused; any other existing folder is refused. `gh` also
+sets git up with the same sign-in (the dialog tells the user to say yes), which is what the push in
+Computer access then uses. Cancelling removes the empty project that was made for it. Verified with unit
+tests (a fake `gh`) and in the real Electron app with that fake (signed out, sign-in noticed, list, search,
+clone, set-up, reuse). Not verified: the real `gh` on Windows and macOS (output formats are from gh's
+documentation, version 2.89; this container's GitHub token is limited to the session's repositories, so a
+real listing could not be tried), the terminal flows for install and sign-in, and a push with the sign-in
+that `gh` sets up. Linux has no terminal window here: the command is shown to copy.
+
+**Status 2026-11-25: Gemini as the third tool.** Gemini CLI (`@google/gemini-cli`) runs through the user's own
+Google account login (Google AI Pro, Ultra or the free tier), headless: `gemini -p … -o stream-json`, the
+prompt on stdin, events `init`, `message` (assistant, delta), `result` with token stats (format read from
+the CLI's source, version 0.71.1). It is in AI accounts (install with `npm install -g @google/gemini-cli`,
+which needs Node.js; sign in by starting `gemini` and choosing Login with Google), in the chat picker
+(Auto, Pro, Flash, Flash-Lite, the CLI's own aliases), in Auto routing and on agents in the tree.
+Safety, tested against the real CLI on 2026-11-25: with only workspace settings a `GEMINI_API_KEY` in the
+environment was used. So the CLI is started with a system settings file of ours that forces the Google
+login, switches every built-in tool, MCP server, hook, skill and extension off, and turns off updates and
+telemetry; with it a key in the environment (also removed by `providerEnv`) is not used and the CLI asks
+for a login instead. The CLI skips that file when its folder is writable by others (it says so on stderr);
+that is checked before every chat and while it runs, and then nothing is sent. Only when a picture or PDF
+is attached is the file reader turned on, for a copy of the files in the empty chat folder.
+Auto routing: a quick everyday question, a very long text (over 12,000 characters) and a PDF go to Gemini
+in Ask anything (Flash for quick, Pro otherwise); code still goes to Codex, writing and planning to Claude.
+In a project Auto does not choose Gemini, and "Create the team" / "Use both" do not put agents on Gemini
+while Claude Code or Codex is connected: the team's markup is proven on those two. The user can set Gemini
+on an agent by hand. Verified with unit tests and in the real Electron app with a stand-in that follows
+the CLI's real output format (picker, Auto choices, the key not reaching the CLI, accounts card, usage).
+Not verified: a real Google login and a real answer; whether Google AI Pro's limits apply (the CLI does not
+report the plan or what is left, so the usage list says so); the folder-permission check on Windows (it
+uses the CLI's own ACL check and fails closed); `@file` for pictures and PDFs; the npm install flow; and
+Gemini on team agents (plan, file and review markup). The CLI keeps its own session files under ~/.gemini.
+
+**Status 2026-11-24: export and import chats.** The download button at the top of a chat exports it as
+Markdown (the system's save dialog; the window only suggests a name): readable anywhere, for example
+pasted into Claude or ChatGPT, with an invisible marker before each message so 0rqestra reads it back
+exactly. The upload button beside "Chats" in the sidebar imports a file: a chat exported from 0rqestra,
+plain Markdown with You/Assistant headings, or `conversations.json` from a Claude or ChatGPT data
+export (ChatGPT: the shown branch of each conversation; only text, no pictures or tool calls). Imported
+chats keep their names, open in Ask anything, and the next message continues them with the earlier turns
+as history; imported replies are read-only (no plan or question in them is offered again). At most 100
+chats and 2.5 million characters per import, so it fits in the window's storage; the rest is reported as
+left out. Verified with unit tests and in the real Electron app with the stand-in tools. Not verified:
+real data exports from Claude and ChatGPT (built from their documented shape; a .zip must be unpacked
+first, the file inside is conversations.json).
+
+**Status 2026-11-24: Work in a folder.** New project → **Work in a folder** creates the project with a team
+and opens a short setup: choose the folder (it is granted with changes allowed; each change is still
+reviewed before it is applied), see its git branch, and approve the checks its own setup offers
+(`package.json` scripts check/typecheck/lint/test, `cargo test`, pytest). **Start working** gives every
+agent read, apply and run-checks access in this project and puts a first request in the message box. The
+Manager and the Planner now see the names of the folder's files two levels deep (never their contents;
+`.git`, `node_modules` and build folders are skipped), so plans name real paths. Files waiting to be
+applied are saved (`access-pending.json`) and survive a restart. Honest limit: approved checks run in the
+user's real folder, so they test an agent's change only after the user applied it. Verified with unit
+tests and in the real Electron app with the stand-in tools.
+
+**Status 2026-11-24: improve a real repository from the app, with commit and push.** The whole flow was
+tried in the real Electron app with the stand-in tools and a real git repository: a project, its ⋯ menu →
+Computer access → Add folder → Allow changes → each agent may read and apply reviewed changes; the
+Manager's plan; the Builder read the repository's README through computer access, delivered a new one; the
+reviewer approved; Review changes showed the diff; Apply wrote it. New after Apply: **Commit to git**
+commits exactly the applied files with a message (the run's goal to start with), then **Push** sends the
+branch to its upstream (or to origin, and sets it). Only these buttons commit or push, never an agent; git
+runs without a shell, never prompts in a terminal, and with the repository's hooks switched off
+(`core.hooksPath` points to an empty folder), and a file inside a `.git` folder is never applied. Pushing
+uses the user's own git sign-in. Found and fixed on the way: agents made while the app runs (Create the
+team) got their agent key only at the next start, so Computer access could not list them until then.
+Not verified: a push to GitHub with a real sign-in (Git Credential Manager on Windows may open its own
+window), and the quality of real models on a large code base. Delivered files waiting to be applied are
+kept in memory, so they are lost if the app quits before Apply (they stay in the project workspace).
+
+**Status 2026-11-24: a simple sidebar.** Like Claude's: New chat and Teams at the top, then Chats (the Ask
+anything conversations, reachable from anywhere in the app) and Projects (the open project shows its chats
+and its team tree). Usage left, AI accounts and Friends moved to the profile menu; a dot on the profile
+button says when a friend waits for an answer. Verified in the real Electron app with the stand-in tools.
+
+**Status 2026-11-24: the look of Claude, and paste anything.**
+- A new style sheet (`ui/look.css`, loaded last) gives the app Claude's look: a warm paper palette in light
+  and dark, answers set in a serif, the user's message in a soft bubble, a rounded message box with an
+  orange send button, and no card around the chat. An empty chat shows a greeting ("Good evening, …") with
+  the box in the middle and suggestions under it, like Claude, ChatGPT and Gemini. "Thinking" shimmers.
+- Who answers is a menu like the model menus of Claude and ChatGPT (Auto, Claude Code, Codex, then the
+  level and effort, each with a short description) instead of plain drop-down lists.
+- Under each reply: Copy, Retry (the last reply: asks again with the same message and attachments) and who
+  answered. On the user's own message: Copy and Edit (puts the text back in the box).
+- Paste: pictures and files on the clipboard become attachments, also when the page itself has focus; a
+  text longer than 4,000 characters becomes a "Pasted" card (a text attachment) like in Claude. When the
+  page cannot see what was copied (files copied in Explorer, Finder or a file manager, some screenshots),
+  the main process reads the clipboard (`chat:paste`, Electron 44's clipboard API) and each file goes
+  through the same checks as a picked file. Dropping files anywhere on the chat shows a drop area, and a
+  picture opens big when clicked (`chat:attachment-image`).
+- Verified with unit tests and in the real Electron app with the stand-in tools (a pasted picture, a long
+  text pasted on the page, a picture and a file read from the real clipboard by the main process, the
+  picture reaching the tool, the big picture, Retry, Edit, the drop area, light and dark). Not verified:
+  pasting files copied in Windows Explorer or macOS Finder on those systems (built from their clipboard
+  formats; only the Linux format ran here), and how it looks with the fonts on Windows and macOS.
+
+**Status 2026-11-22: Auto picks the chatbot, the + menu, a sharp tree.**
+- The chatbot picker has **Auto** (the default when both tools are connected): for each message the main
+  process picks the connected tool (`pickTool`: code and errors to Codex; writing, explaining, studying,
+  planning and design to Claude; a PDF to Claude, which can read it) and then the level (`autoModel`). The
+  reply says "Auto → Codex · <model>". Choosing Claude Code or Codex by hand works as before, with its own
+  Auto or a fixed model.
+- The **+** in the message box opens a menu like Claude's: Add files or photos (also Ctrl+U), Add a file
+  from this project (the project's files, read by the main process from its folder only), New chat, and
+  Project memory.
+- The tree was blurry when zoomed in: its layer had `will-change: transform`, so Chromium drew it once and
+  scaled the picture. Without it the text is drawn again at every zoom.
+- Verified with unit tests and in the real Electron app with the stand-in tools (a code question went to
+  Codex and a writing request to Claude; the menu, Ctrl+U and a project file; the tree at 145 %).
+  Not related to this change: Edwin's test "stops a running check when access is revoked" times out in
+  this container (also on main without these changes) and passes in CI.
+
 **Status 2026-11-20: the Manager leads, the team builds; the chat no longer pulls you down.**
 - Found with Philip's own run: in a project whose tree had only the Manager, the window sent an empty team,
   which was taken as "no team" (as in Ask anything), so the Manager got no planning instructions and wrote

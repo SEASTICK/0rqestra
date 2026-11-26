@@ -33,7 +33,7 @@ function compile(file, compilerOptions) {
 
 fs.rmSync(outdir, { recursive: true, force: true });
 fs.mkdirSync(outdir, { recursive: true });
-for (const file of ['index.html', 'app.css', 'recovery.css', 'connections.css', 'tasks.css', 'live.css', 'theme.css', 'boot.css', 'boot.js', 'shell.css', 'livechat.css']) {
+for (const file of ['index.html', 'app.css', 'recovery.css', 'connections.css', 'tasks.css', 'live.css', 'theme.css', 'boot.css', 'boot.js', 'shell.css', 'livechat.css', 'look.css']) {
   fs.copyFileSync(path.join(src, file), path.join(outdir, file));
 }
 
@@ -59,6 +59,7 @@ modules.markdownUI = compile('Markdown.jsx', jsx);
 modules.attachmentsUI = compile('Attachments.jsx', jsx);
 modules.memoryUI = compile('Memory.jsx', jsx);
 modules.chats = compile('chats.mjs', plain);
+modules.chatIO = compile('chat-io.mjs', plain);
 modules.markdown = compile('markdown.mjs', plain);
 modules.camera = compile('camera.mjs', plain);
 modules.treeRules = compile('tree-rules.mjs', plain);
@@ -75,6 +76,10 @@ modules.migrateDemo = compile('migrate-demo.mjs', plain);
 modules.accountWelcome = compile('AccountWelcome.jsx', jsx);
 modules.accountUI = compile('account-ui.mjs', plain);
 modules.projectMenuUI = compile('ProjectMenu.jsx', jsx);
+modules.folderSetupUI = compile('FolderSetup.jsx', jsx);
+modules.githubSetupUI = compile('GithubSetup.jsx', jsx);
+modules.importChatsUI = compile('ImportChats.jsx', jsx);
+modules.githubRepos = compile('github-repos.mjs', plain);
 modules.projectRemoval = compile('project-removal.mjs', plain);
 modules.computerAccessUI = compile('ComputerAccess.jsx', jsx);
 modules.paneLayout = compile('pane-layout.mjs', plain);
@@ -83,7 +88,7 @@ modules.getStartedUI = compile('GetStarted.jsx', jsx);
 modules.onboarding = compile('onboarding.mjs', plain);
 
 const aliases = {
-  './UpdateDialog.jsx': 'updateUI', './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './storage-keys.mjs': 'storageKeys', './Shell.jsx': 'shell', './theme.mjs': 'theme', './launch.mjs': 'launch', './LiveChat.jsx': 'liveChatUI', './live-chat.mjs': 'liveChat', './AgentRuntime.jsx': 'agentRuntime', './TeamRun.jsx': 'teamRun', './Preview.jsx': 'previewUI', './tree-layout.mjs': 'treeLayout', './Activity.jsx': 'activityUI', './AgentPanel.jsx': 'agentPanelUI', './Capabilities.jsx': 'capabilitiesUI', './Markdown.jsx': 'markdownUI', './Attachments.jsx': 'attachmentsUI', './Memory.jsx': 'memoryUI', './chats.mjs': 'chats', './markdown.mjs': 'markdown', './AccountsSetup.jsx': 'accountsUI', './account-setup.mjs': 'accountSetup', './TeamsPage.jsx': 'teamsUI', './FriendsPage.jsx': 'friendsUI', './teams-ui.mjs': 'teamsText', './TeamBridge.jsx': 'teamBridge', './team-catchup.mjs': 'teamCatchUp', './migrate-demo.mjs': 'migrateDemo', './AccountWelcome.jsx': 'accountWelcome', './account-ui.mjs': 'accountUI', './ProjectMenu.jsx': 'projectMenuUI', './project-removal.mjs': 'projectRemoval', './ComputerAccess.jsx': 'computerAccessUI', './pane-layout.mjs': 'paneLayout', './RunReview.jsx': 'runReviewUI', './GetStarted.jsx': 'getStartedUI', './onboarding.mjs': 'onboarding','react-dom/client': 'react-dom-client',
+  './UpdateDialog.jsx': 'updateUI', './camera.mjs': 'camera', './tree-rules.mjs': 'treeRules', './update-gate.mjs': 'updateGate', './storage-keys.mjs': 'storageKeys', './Shell.jsx': 'shell', './theme.mjs': 'theme', './launch.mjs': 'launch', './LiveChat.jsx': 'liveChatUI', './live-chat.mjs': 'liveChat', './AgentRuntime.jsx': 'agentRuntime', './TeamRun.jsx': 'teamRun', './Preview.jsx': 'previewUI', './tree-layout.mjs': 'treeLayout', './Activity.jsx': 'activityUI', './AgentPanel.jsx': 'agentPanelUI', './Capabilities.jsx': 'capabilitiesUI', './Markdown.jsx': 'markdownUI', './Attachments.jsx': 'attachmentsUI', './Memory.jsx': 'memoryUI', './chats.mjs': 'chats', './chat-io.mjs': 'chatIO', './markdown.mjs': 'markdown', './AccountsSetup.jsx': 'accountsUI', './account-setup.mjs': 'accountSetup', './TeamsPage.jsx': 'teamsUI', './FriendsPage.jsx': 'friendsUI', './teams-ui.mjs': 'teamsText', './TeamBridge.jsx': 'teamBridge', './team-catchup.mjs': 'teamCatchUp', './migrate-demo.mjs': 'migrateDemo', './AccountWelcome.jsx': 'accountWelcome', './account-ui.mjs': 'accountUI', './ProjectMenu.jsx': 'projectMenuUI', './FolderSetup.jsx': 'folderSetupUI', './GithubSetup.jsx': 'githubSetupUI', './ImportChats.jsx': 'importChatsUI', './github-repos.mjs': 'githubRepos', './project-removal.mjs': 'projectRemoval', './ComputerAccess.jsx': 'computerAccessUI', './pane-layout.mjs': 'paneLayout', 'react-dom/client': 'react-dom-client', './RunReview.jsx': 'runReviewUI', './GetStarted.jsx': 'getStartedUI', './onboarding.mjs': 'onboarding',
   'next/dist/compiled/react': 'react', 'next/dist/compiled/react-dom': 'react-dom', 'next/dist/compiled/scheduler': 'scheduler',
 };
 // Every local import must resolve inside the bundle. A missing entry above compiles fine but throws

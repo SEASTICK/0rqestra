@@ -21,6 +21,17 @@ contextBridge.exposeInMainWorld("orqestra", {
     send: (payload: unknown) => ipcRenderer.invoke("chat:send", payload),
     stop: (requestId: string) => ipcRenderer.invoke("chat:stop", String(requestId)),
     copy: (text: string) => ipcRenderer.invoke("chat:copy", String(text)),
+    projectFiles: (projectId: string) => ipcRenderer.invoke("chat:project-files", String(projectId)),
+    paste: () => ipcRenderer.invoke("chat:paste"),
+    library: {
+      open: () => ipcRenderer.invoke("chat:library-open"),
+      search: (token: string, query: string) => ipcRenderer.invoke("chat:library-search", String(token), String(query ?? "")),
+      pick: (token: string, ids: number[]) => ipcRenderer.invoke("chat:library-pick", String(token), Array.isArray(ids) ? ids.map(Number) : []),
+      close: (token: string) => ipcRenderer.invoke("chat:library-close", String(token)),
+    },
+    exportChat: (name: string, text: string) => ipcRenderer.invoke("chat:export", { name: String(name ?? ""), text: String(text ?? "") }),
+    attachmentImage: (id: string) => ipcRenderer.invoke("chat:attachment-image", String(id)),
+    attachProjectFile: (projectId: string, path: string) => ipcRenderer.invoke("chat:attach-project-file", { projectId: String(projectId), path: String(path) }),
     attach: (file: { name: string; data: Uint8Array }) => ipcRenderer.invoke("chat:attach", { name: String(file?.name ?? ""), data: file?.data instanceof Uint8Array ? file.data : null }),
     openLink: (url: string) => ipcRenderer.invoke("chat:open-link", String(url)),
     subscribe: (listener: (message: unknown) => void) => {
@@ -87,6 +98,8 @@ contextBridge.exposeInMainWorld("orqestra", {
     verifyCode: (code: string) => ipcRenderer.invoke("teams:verify-code", String(code)),
     cancelCode: () => ipcRenderer.invoke("teams:cancel-code"),
     signOut: () => ipcRenderer.invoke("teams:sign-out"),
+    sendMessage: (projectId: string, body: string, kind?: "message" | "summary") => ipcRenderer.invoke("teams:send-message", String(projectId), String(body ?? ""), kind === "summary" ? "summary" : "message"),
+    refreshChat: (projectId?: string) => ipcRenderer.invoke("teams:refresh-chat", projectId === undefined ? undefined : String(projectId)),
     createTeam: (name: string) => ipcRenderer.invoke("teams:create-team", String(name)),
     createInvite: (teamId: string, email: string) => ipcRenderer.invoke("teams:create-invite", String(teamId), String(email)),
     copyInvite: (inviteId: string) => ipcRenderer.invoke("teams:copy-invite", String(inviteId)),
@@ -128,6 +141,15 @@ contextBridge.exposeInMainWorld("orqestra", {
     view: (projectId: string) => ipcRenderer.invoke("access:view", String(projectId)),
     addFolder: (projectId: string) => ipcRenderer.invoke("access:add-folder", String(projectId)),
     addCheckout: (projectId: string) => ipcRenderer.invoke("access:add-checkout", String(projectId)),
+    setupFolder: (projectId: string) => ipcRenderer.invoke("access:setup-folder", String(projectId)),
+    github: {
+      status: () => ipcRenderer.invoke("github:status"),
+      repos: (refresh?: boolean) => ipcRenderer.invoke("github:repos", refresh === true),
+      openTerminal: (kind: "install" | "signIn") => ipcRenderer.invoke("github:open-terminal", kind === "install" ? "install" : "signIn"),
+      clone: (projectId: string, fullName: string) => ipcRenderer.invoke("github:clone", String(projectId), String(fullName)),
+      folder: () => ipcRenderer.invoke("github:folder"),
+      chooseFolder: () => ipcRenderer.invoke("github:choose-folder"),
+    },
     openProjectFolder: (projectId: string) => ipcRenderer.invoke("access:open-project-folder", String(projectId)),
     setFolderWrite: (projectId: string, folderId: string, write: boolean) => ipcRenderer.invoke("access:set-folder-write", String(projectId), String(folderId), write === true),
     revokeFolder: (projectId: string, folderId: string) => ipcRenderer.invoke("access:revoke-folder", String(projectId), String(folderId)),
@@ -141,6 +163,9 @@ contextBridge.exposeInMainWorld("orqestra", {
     reviewRun: (projectId: string, runId: string, folderId?: string) => ipcRenderer.invoke("access:review-run", String(projectId), String(runId), folderId ? String(folderId) : ""),
     applyRun: (projectId: string, runId: string, previewId: string, paths: string[]) => ipcRenderer.invoke("access:apply-run", String(projectId), String(runId), String(previewId), Array.isArray(paths) ? paths.map(String) : []),
     forgetProject: (projectId: string) => ipcRenderer.invoke("access:forget-project", String(projectId)),
+    gitState: (projectId: string, folderId: string) => ipcRenderer.invoke("access:git-state", String(projectId), String(folderId)),
+    commit: (projectId: string, folderId: string, paths: string[], message: string) => ipcRenderer.invoke("access:commit", String(projectId), String(folderId), Array.isArray(paths) ? paths.map(String) : [], String(message ?? "")),
+    push: (projectId: string, folderId: string) => ipcRenderer.invoke("access:push", String(projectId), String(folderId)),
     subscribe: (listener: (event: unknown) => void) => {
       const handler = (_event: unknown, payload: unknown) => listener(payload);
       ipcRenderer.on("access:event", handler);
