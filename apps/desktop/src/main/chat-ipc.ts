@@ -26,7 +26,7 @@ export function createAdapters(): { claude: ClaudeCodeAdapter; codex: CodexAdapt
   return {
     claude: recordLimits(new ClaudeCodeAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), limitsStore),
     codex: recordLimits(new CodexAdapter(), limitsStore),
-    gemini: recordLimits(new GeminiAdapter({ settingsDir: path.join(app.getPath("userData"), "provider-settings") }), limitsStore),
+    gemini: recordLimits(new GeminiAdapter(), limitsStore),
   };
 }
 

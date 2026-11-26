@@ -224,7 +224,7 @@ describe("Auto picks the tool", () => {
     expect(pickTool("Skriv en dikt", [], ["codex"]).provider).toBe("codex");
   });
 
-  it("gives Gemini quick everyday questions, very long texts and PDFs in Ask anything, but not work in a project", async () => {
+  it("gives Gemini quick everyday questions, very long texts in Ask anything, but not work in a project", async () => {
     const { pickTool, LONG_TEXT_CHARS } = await import("./chat-service.js");
     const all = ["claude", "codex", "gemini"] as const;
     expect(pickTool("Vad heter Frankrikes huvudstad?", [], [...all])).toEqual({ provider: "gemini", reason: "a quick question" });
@@ -233,9 +233,10 @@ describe("Auto picks the tool", () => {
     expect(pickTool("Skriv ett mejl till min lärare", [], [...all]).provider).toBe("claude");
     expect(pickTool("Varför får jag TypeError i min funktion?", [], [...all]).provider).toBe("codex");
     expect(pickTool("Planera min studievecka", [], [...all]).provider).toBe("claude");
-    // Long input and PDFs: Gemini (very long context); without Gemini, Claude reads the PDF as before.
+    // Long input: Gemini (very long context).
     expect(pickTool("Sammanfatta detta: " + "x".repeat(LONG_TEXT_CHARS + 1), [], [...all])).toEqual({ provider: "gemini", reason: "a very long text" });
-    expect(pickTool("Sammanfatta kapitlet", [{ kind: "pdf" }], [...all]).provider).toBe("gemini");
+    // Gemini reads text only here, so PDFs always go to Claude.
+    expect(pickTool("Sammanfatta kapitlet", [{ kind: "pdf" }], [...all]).provider).toBe("claude");
     expect(pickTool("Sammanfatta kapitlet", [{ kind: "pdf" }], ["claude", "codex"]).provider).toBe("claude");
     // In a project the Manager hands work to a team with its own markup: Gemini is not chosen by Auto there.
     expect(pickTool("Vad heter Frankrikes huvudstad?", [], [...all], true).provider).toBe("claude");
@@ -245,12 +246,12 @@ describe("Auto picks the tool", () => {
     expect(pickTool("Skriv en dikt", [], ["codex", "gemini"]).provider).toBe("codex");
   });
 
-  it("picks Gemini's level: Flash for quick questions, Pro for the rest", async () => {
+  it("picks Gemini's Flash model for quick questions and leaves the rest to agy's default", async () => {
     const { autoModel } = await import("./chat-service.js");
-    const statuses = [{ provider: "gemini", models: [{ id: "default" }, { id: "pro" }, { id: "flash" }, { id: "flash-lite" }] }] as never;
-    expect(autoModel("gemini", { text: "Hur många är 12 gånger 12?", history: [] }, false, statuses)).toBe("flash");
-    expect(autoModel("gemini", { text: "Bygg en app åt mig med inloggning och en databas", history: [] }, false, statuses)).toBe("pro");
-    expect(autoModel("gemini", { text: "Vad visar bilden?", history: [] }, true, statuses)).toBe("pro");
+    const statuses = [{ provider: "gemini", models: [{ id: "default", label: "Default" }, { id: "gemini-4-neon-high", label: "Gemini 4 Neon (High)" }, { id: "gemini-3-8-flash", label: "Gemini 3.8 Flash" }] }] as never;
+    expect(autoModel("gemini", { text: "Hur många är 12 gånger 12?", history: [] }, false, statuses)).toBe("gemini-3-8-flash");
+    expect(autoModel("gemini", { text: "Bygg en app åt mig med inloggning och en databas", history: [] }, false, statuses)).toBeNull();
+    expect(autoModel("gemini", { text: "Hur många är 12 gånger 12?", history: [] }, false, [{ provider: "gemini", models: [{ id: "default", label: "Default" }] }] as never)).toBeNull();
   });
 
   it("tells the window which tool and model it chose, then answers with that tool", async () => {

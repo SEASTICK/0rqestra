@@ -45,7 +45,7 @@ export interface AccountView extends ProviderStatus {
   canOpenTerminal: boolean;
 }
 
-export const LABELS: Record<ProviderId, string> = { claude: "Claude via Claude Code", codex: "ChatGPT via Codex", gemini: "Gemini via Gemini CLI" };
+export const LABELS: Record<ProviderId, string> = { claude: "Claude via Claude Code", codex: "ChatGPT via Codex", gemini: "Gemini via Antigravity CLI" };
 
 export const TEST_PROMPT = "Reply with one short sentence that confirms this connection test from 0rqestra works.";
 export const MAX_LOG_LINES = 14;
@@ -74,10 +74,7 @@ export function installAdvice(output: string, code: number | null, timedOut = fa
     return "PowerShell blocked the installer script. Choose Open in terminal and run the command there, or copy it into PowerShell yourself.";
   }
   if (/being used by another process|access (to the path .* )?is denied|access denied|eperm|ebusy|permission denied/i.test(output)) {
-    return "Windows refused to write the files. Close any open Claude Code, Codex or Gemini windows, then try again.";
-  }
-  if (/npm.*(not recognized|not found|is not an internal)|(command not found|no such file).*npm|'npm'|\bnpm: /i.test(output)) {
-    return "Gemini CLI is installed with npm, which comes with Node.js. Install Node.js 20 or newer from nodejs.org, then try again.";
+    return "Windows refused to write the files. Close any open Claude Code, Codex or Antigravity windows, then try again.";
   }
   if (/unsupported|not supported|requires windows|architecture/i.test(output)) {
     return "The installer says this computer is not supported. See the provider's system requirements.";
@@ -86,7 +83,7 @@ export function installAdvice(output: string, code: number | null, timedOut = fa
 }
 
 export function signInHint(provider: ProviderId): string {
-  if (provider === "gemini") return "In the screen that opens, choose Login with Google (not an API key) and your Google account with Google AI Pro. When it says you are signed in, type /quit and come back here.";
+  if (provider === "gemini") return "In the screen that opens, choose Google OAuth (not Use a Google Cloud project) and the Google account with Google AI Pro. When it says you are signed in, type /quit and come back here.";
   return provider === "claude"
     ? "In the terminal, choose your Claude account (Pro, Max, Team or Enterprise) in the browser, not Anthropic Console. When the terminal says Login successful, come back here."
     : "In the browser that opens, choose Sign in with ChatGPT, not an API key. When the terminal says you are logged in, come back here.";
@@ -137,7 +134,7 @@ interface Entry {
 }
 
 const blank = (provider: ProviderId): ProviderStatus => ({
-  provider, name: provider === "claude" ? "Claude Code" : provider === "gemini" ? "Gemini CLI" : "Codex", installed: false, version: null, signedIn: false, plan: null,
+  provider, name: provider === "claude" ? "Claude Code" : provider === "gemini" ? "Gemini" : "Codex", installed: false, version: null, signedIn: false, plan: null,
   subscription: false, models: [], limits: [], problem: null,
 });
 

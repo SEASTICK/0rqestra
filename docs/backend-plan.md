@@ -314,6 +314,17 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-26: Gemini now goes through Antigravity CLI (`agy`).** Google closed Gemini CLI for personal Google accounts
+("migrate to the Antigravity suite"), so the `gemini` provider now runs `agy` (provider id unchanged). Install: Google's own
+script (`irm https://antigravity.google/cli/install.ps1 | iex` / `curl -fsSL https://antigravity.google/cli/install.sh | bash`);
+sign in with `agy` and choose Google OAuth. Safety: API keys, ADC and gateway variables are stripped; before each chat
+`agy -p /usage` must prove an account sign-in (an API key is refused); `--mode default` must report `permission_mode`
+`request-review` or `plan`, otherwise the run is refused; any tool step in the stream stops the run ("Nothing was changed").
+Gemini reads text only here (no pictures or PDFs; Auto sends those to Claude). The 5-hour and weekly limits are now real,
+from `/usage`. Google collects interaction data unless opted out; agy stores conversations in `~/.gemini/antigravity-cli/conversations`.
+Not verified: the prompt on stdin with a valueless `--print`, `agy --version` output, the model list schema from `agy models`,
+the `step_type` names of tool steps, and real runs on Windows/macOS beyond the user's `/usage`, stream and models samples.
+
 **Status 2026-11-26: people on the Team Bridge, and a team chat the Managers read.** In a project linked to a shared
 project, the tree shows everyone in it as a box on the Team Bridge, you first (orange), each with the team runs
 they have going right now (titles and states of their active briefs; your own runs that have not synced yet are

@@ -83,7 +83,7 @@ export function stateLine(account) {
   const plan = PLAN[account.provider] || '';
   switch (account.setup) {
     case 'missing':
-      if (account.provider === 'gemini') return 'Gemini CLI is not installed. 0rqestra installs it with npm (Google\'s official way; it needs Node.js), and then you sign in with your Google account, for example with Google AI Pro.';
+      if (account.provider === 'gemini') return 'Antigravity CLI (agy) is not installed. 0rqestra installs it with Google\'s own installer, and then you sign in with your Google account (choose Google OAuth), for example with Google AI Pro.';
       return `${account.name} is not installed. 0rqestra installs it with ${VENDOR[account.provider]}'s official installer, and then you sign in with your ${plan} subscription.`;
     case 'signed_out':
       return `${account.name} is installed but not signed in. Sign in opens ${account.name}'s own sign-in in a terminal window; your password and tokens stay with ${VENDOR[account.provider]}.`;

@@ -73,18 +73,19 @@ export function autoModel(provider: ProviderId, payload: { text: string; history
     const want = quick ? "haiku" : "sonnet";
     return has(want) ? want : null;
   }
-  // Gemini: Flash for quick questions (fast, and it keeps the other plans' usage), Pro otherwise.
+  // Gemini (Antigravity CLI): a Flash model for quick questions when the plan offers one (fast, and light on the
+  // limits), otherwise the plan's own default model. The names come from `agy models`, so they are matched, not fixed.
   if (provider === "gemini") {
-    const want = quick ? "flash" : "pro";
-    return has(want) ? want : null;
+    if (!quick) return null;
+    return offered.find((m) => /flash/i.test(m.id) || /flash/i.test(m.label))?.id ?? null;
   }
   const light = offered.find((m) => /mini|nano|fast|lite/i.test(m.id));
   if (quick && light) return light.id;
   return offered.find((m) => m.isDefault)?.id ?? null;
 }
 
-// Which tool answers when the user chose "Auto": code and errors go to Codex, a very long text or a PDF to
-// Gemini (or Claude), a quick everyday question in Ask anything to Gemini (fast, and it spares the Claude and
+// Which tool answers when the user chose "Auto": code and errors go to Codex, a very long text to Gemini, a PDF to
+// Claude (Gemini reads text only here), a quick everyday question in Ask anything to Gemini (fast, and it spares the Claude and
 // ChatGPT plans), and writing, studying, planning and design to Claude. In a project the Manager hands work
 // to a team with its own markup, so there Gemini is not chosen unless it is the only tool. Only connected
 // tools are chosen.
@@ -96,13 +97,12 @@ export function pickTool(text: string, attachments: { kind: string }[], ready: P
   if (!ready.length) return { provider: "claude", reason: "no tool reported as ready" };
   if (ready.length === 1) return { provider: ready[0]!, reason: "the only connected tool" };
   const gemini = has("gemini") && !inProject;
-  if (attachments.some((a) => a.kind === "pdf")) {
-    if (gemini) return { provider: "gemini", reason: "reads the attached PDF" };
-    if (has("claude")) return { provider: "claude", reason: "reads the attached PDF" };
-  }
-  if (gemini && text.length > LONG_TEXT_CHARS) return { provider: "gemini", reason: "a very long text" };
+  if (attachments.some((a) => a.kind === "pdf") && has("claude")) return { provider: "claude", reason: "reads the attached PDF" };
+  // Gemini takes text only here: nothing with a picture or a PDF goes to it.
+  const textOnly = !attachments.some((a) => a.kind !== "text");
+  if (gemini && textOnly && text.length > LONG_TEXT_CHARS) return { provider: "gemini", reason: "a very long text" };
   if (CODE_WORDS.test(text) && has("codex")) return { provider: "codex", reason: "code" };
-  if (gemini && !WRITING_WORDS.test(text) && !CODE_WORDS.test(text) && isQuick(text, history, attachments.length > 0)) return { provider: "gemini", reason: "a quick question" };
+  if (gemini && textOnly && !WRITING_WORDS.test(text) && !CODE_WORDS.test(text) && isQuick(text, history, attachments.length > 0)) return { provider: "gemini", reason: "a quick question" };
   if (has("claude")) return { provider: "claude", reason: "writing, explaining and planning" };
   return { provider: ready.find((p) => p !== "gemini" || !inProject) ?? ready[0]!, reason: "the best connected tool" };
 }
