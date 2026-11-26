@@ -119,3 +119,46 @@ describe('friends and team invitations', () => {
     expect(waitingCount({ status: 'signed_out', friends: view.friends })).toBe(0);
   });
 });
+
+import { MAX_WORK_SHOWN, personBoxes } from './teams-ui.mjs';
+describe('People on the Team Bridge', () => {
+  const linked = {
+    team: { members: [{ userId: 'f', name: 'friend', role: 'member' }, { userId: 'me', name: 'seastick', role: 'owner' }, { userId: 'a', name: 'anna@example.com', role: 'member' }] },
+    project: { id: 'p', briefs: [
+      { id: 'b1', runId: 'r1', title: 'Fix login', status: 'in_progress', authorId: 'f', updatedAt: '2026-11-26T10:00:00Z' },
+      { id: 'b2', runId: 'r2', title: 'Old work', status: 'completed', authorId: 'f', updatedAt: '2026-11-26T11:00:00Z' },
+      { id: 'b3', runId: 'r3', title: 'Tests', status: 'blocked', authorId: 'f', updatedAt: '2026-11-26T12:00:00Z' },
+      { id: 'b4', runId: 'r4', title: 'Docs', status: 'in_progress', authorId: 'f', updatedAt: '2026-11-26T09:00:00Z' },
+      { id: 'b5', runId: 'r5', title: 'My synced run', status: 'in_progress', authorId: 'me', updatedAt: '2026-11-26T08:00:00Z' },
+    ] },
+  };
+  const view = {
+    userId: 'me',
+    presence: { p: { connection: 'live', online: ['f'], publishing: true } },
+    localBriefs: { p: [
+      { runId: 'r5', title: 'My synced run', status: 'in_progress', updatedAt: 1, sync: 'synced' },
+      { runId: 'r9', title: 'My new run', status: 'in_progress', updatedAt: Date.parse('2026-11-26T13:00:00Z'), sync: 'pending' },
+      { runId: 'r8', title: 'Finished', status: 'completed', updatedAt: 2, sync: 'pending' },
+    ] },
+  };
+
+  it('puts you first, then the others by name, with role and online status', () => {
+    const people = personBoxes(view, linked);
+    expect(people.map((p) => [p.name, p.you, p.owner, p.status])).toEqual([['seastick', true, true, 'online'], ['anna', false, false, 'offline'], ['friend', false, false, 'online']]);
+  });
+
+  it('shows each person only their active work, newest first, with how many more', () => {
+    const [me, anna, friend] = personBoxes(view, linked);
+    expect(friend.work.map((w) => w.title)).toEqual(['Tests', 'Fix login']);
+    expect(friend.work).toHaveLength(MAX_WORK_SHOWN);
+    expect(friend.more).toBe(1);
+    expect(anna.work).toEqual([]);
+    // Your own run that the server does not have yet shows from this computer, marked; a synced one once.
+    expect(me.work).toEqual([{ id: 'local-r9', title: 'My new run', status: 'in_progress', unsynced: true }, { id: 'b5', title: 'My synced run', status: 'in_progress', unsynced: false }]);
+  });
+
+  it('shows nothing without a linked project', () => {
+    expect(personBoxes(view, null)).toEqual([]);
+    expect(personBoxes(null, linked)).toEqual([]);
+  });
+});

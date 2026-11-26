@@ -1,16 +1,15 @@
-// The Team Bridge in the tree (Teams phase 2): Your Manager ↔ Team Bridge ↔ each teammate's
-// Manager, for a project linked to a shared team project. These nodes are drawn next to the tree,
+// The Team Bridge in the tree (Teams phase 2): Your Manager ↔ Team Bridge ↔ everyone in the shared project
+// (you first), each with the team runs they have going right now, for a project linked to a shared team project. These nodes are drawn next to the tree,
 // never saved into it: a teammate's Manager is read-only here and cannot be edited or run from
 // this computer. Solo projects do not show any of this.
 import React from 'react';
-import { BRIEF_STATUS_TEXT, NODE_H, NODE_W, STATUS_TEXT, ago, bridgeLayout, briefsNotice, unsyncedBriefs, bridgeSummary, displayName, memberStatus, repoName } from './teams-ui.mjs';
+import { BRIEF_STATUS_TEXT, NODE_H, NODE_W, STATUS_TEXT, ago, bridgeLayout, briefsNotice, unsyncedBriefs, bridgeSummary, displayName, memberStatus, personBoxes, repoName } from './teams-ui.mjs';
 
 // The boxes the tree's "fit" should include, in tree coordinates.
 export function overlayBoxes(graph, linked, view) {
   if (!linked) return [];
   const manager = graph.nodes.find((n) => n.role === 'Manager');
-  const teammates = linked.team.members.filter((m) => m.userId !== view?.userId);
-  const layout = bridgeLayout(manager, teammates.length);
+  const layout = bridgeLayout(manager, linked.team.members.length);
   return layout ? [layout.bridge, ...layout.teammates] : [];
 }
 
@@ -24,8 +23,9 @@ export function TeamOverlay({ graph, linked, view, onOpen, managerAt, Icon }) {
   const original = graph.nodes.find((n) => n.role === 'Manager');
   if (!original) return null;
   const manager = managerAt ? managerAt(original) : original;
-  const teammates = linked.team.members.filter((m) => m.userId !== view.userId);
-  const layout = bridgeLayout(manager, teammates.length);
+  // Everyone in the project, you included, hangs on the bridge with the work they run now.
+  const people = personBoxes(view, linked);
+  const layout = bridgeLayout(manager, people.length);
   const { bridge } = layout;
   const midY = (n) => n.y + NODE_H / 2;
   const open = (e) => { e.stopPropagation(); onOpen(); };
@@ -41,15 +41,19 @@ export function TeamOverlay({ graph, linked, view, onOpen, managerAt, Icon }) {
         <div className="node-model">github.com/{repoName(linked.project.repo)}{linked.project.briefs?.length ? ` · ${linked.project.briefs.length} active` : ''}</div>
         <div className="node-bottom"><span><span className={`status-dot team-dot-${view.presence?.[linked.project.id]?.connection || 'connecting'}`}/>{bridgeSummary(view, linked.team, linked.project)}</span><span className="node-bottom-actions"><span>Open</span></span></div>
       </div>
-      {teammates.map((m, i) => {
-        const status = memberStatus(view, linked.project.id, m.userId);
+      {people.map((p, i) => {
         const at = layout.teammates[i];
         return (
-          <div key={m.userId} className="agent-node team-node team-remote-node" style={{ left: at.x, top: at.y }} role="button" tabIndex={0} aria-label={`${displayName(m.name)}'s Manager, read-only, ${STATUS_TEXT[status]}`}
+          <div key={p.userId} className={`agent-node team-node team-person-node ${p.you ? 'is-you' : 'team-remote-node'}`} style={{ left: at.x, top: at.y }} role="button" tabIndex={0}
+            aria-label={`${p.you ? 'You' : p.name}, ${STATUS_TEXT[p.status] || p.status}. ${p.work.length ? `Working on ${p.work.map((w) => w.title).join(', ')}` : 'No active work'}. Open the Team Bridge.`}
             onPointerDown={(e) => e.stopPropagation()} onClick={open} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') open(e); }}>
-            <div className="node-heading"><span className="node-avatar"><Icon name="tree" size={19}/></span><div><span className="node-role">Manager · read-only</span><strong>{displayName(m.name)}’s Manager</strong></div></div>
-            <div className="node-model">@{m.name}</div>
-            <div className="node-bottom"><span><span className={`status-dot team-dot-${status}`}/>{STATUS_TEXT[status]}</span><span className="node-bottom-actions"><span>On their computer</span></span></div>
+            <div className="node-heading"><span className="node-avatar team-person-avatar">{p.name.slice(0, 1).toUpperCase()}</span><div><span className="node-role">{p.you ? 'You' : 'Teammate'}{p.owner ? ' · owner' : ''}</span><strong>@{p.name}</strong></div></div>
+            <ul className="team-person-work">
+              {p.work.length === 0 && <li className="team-person-idle">No team run right now</li>}
+              {p.work.map((w) => <li key={w.id} className={`team-work-${w.status}`} title={w.title}><span className="team-work-dot"/><span className="team-work-title">{w.title}</span>{w.unsynced && <em>not synced</em>}</li>)}
+              {p.more > 0 && <li className="team-person-more">and {p.more} more</li>}
+            </ul>
+            <div className="node-bottom"><span><span className={`status-dot team-dot-${p.status}`}/>{STATUS_TEXT[p.status] || p.status}</span><span className="node-bottom-actions"><span>{p.you ? 'This computer' : 'Their computer'}</span></span></div>
           </div>
         );
       })}

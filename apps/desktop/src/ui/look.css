@@ -266,3 +266,16 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .import-row em{font-style:normal;font-size:12.5px;color:var(--shell-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .github-folder{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--shell-muted);margin-bottom:8px}
 .github-folder code{font-family:ui-monospace,Consolas,monospace;color:var(--shell-text);overflow-wrap:anywhere}
+
+/* People on the Team Bridge: you and your teammates, each with the team runs they have going */
+.team-person-node{min-height:159px}
+.team-person-node.is-you{border-color:var(--look-orange);border-style:solid}
+.team-person-avatar{background:var(--shell-hover);color:var(--shell-text);font-weight:600;font-size:15px}
+.is-you .team-person-avatar{background:var(--look-orange);color:#fff}
+.team-person-work{list-style:none;margin:0;padding:0 14px 4px;display:flex;flex-direction:column;gap:4px;min-height:38px}
+.team-person-work li{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--shell-text);min-width:0}
+.team-work-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.team-work-dot{width:6px;height:6px;border-radius:50%;background:#3b8f5a;flex-shrink:0}
+.team-work-blocked .team-work-dot{background:#c98a2b}
+.team-person-work em{font-style:normal;font-size:9px;color:var(--shell-muted)}
+.team-person-idle,.team-person-more{color:var(--shell-muted)!important}
