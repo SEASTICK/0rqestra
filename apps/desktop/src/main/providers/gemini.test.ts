@@ -41,17 +41,17 @@ async function collect(handle: ChatHandle): Promise<ChatEvent[]> {
 const deltas = (events: ChatEvent[]) => events.filter((e) => e.type === "delta").map((e) => (e as { text: string }).text).join("");
 
 describe("Antigravity CLI as Gemini", () => {
-  it("answers through agy's stream, with usage, and sends the prompt on stdin, never on the command line", async () => {
+  it("answers through agy's stream, with usage, and gives the prompt as the value of --print", async () => {
     const events = await collect(gemini().chat(request({ text: "Vad är fotosyntes?" })));
     expect(events[0]).toEqual({ type: "started", model: null });
     expect(deltas(events).trim()).toBe("Hej från Gemini");
     expect(events.at(-1)).toMatchObject({ type: "completed", text: "Hej från Gemini", usage: { inputTokens: 10489, outputTokens: 33, cachedInputTokens: 100 } });
-    const chat = calls().find((c) => c.args.includes("--print"))!;
+    const chat = calls().find((c) => c.args.some((a: string) => a.startsWith("--print=")))!;
     expect(chat.input).toContain("Vad är fotosyntes?");
-    expect(chat.args).toEqual(["--print", "--output-format", "stream-json", "--mode", "default"]);
-    expect(JSON.stringify(chat.args)).not.toContain("fotosyntes");
-    expect(geminiArgs("gemini-4-neon-high")).toEqual(["--print", "--output-format", "stream-json", "--mode", "default", "--model", "gemini-4-neon-high"]);
-    expect(geminiArgs("default")).not.toContain("--model");
+    expect(chat.args.slice(1)).toEqual(["--output-format", "stream-json", "--mode", "default"]);
+    expect(geminiArgs("gemini-4-neon-high", "hej")).toEqual(["--print=hej", "--output-format", "stream-json", "--mode", "default", "--model", "gemini-4-neon-high"]);
+    expect(geminiArgs("default", "-x")[0]).toBe("--print=-x");
+    expect(geminiArgs("default", "x")).not.toContain("--model");
   });
 
   it("never lets an API key, Application Default Credentials or a gateway reach agy", async () => {
@@ -115,6 +115,11 @@ describe("Antigravity CLI as Gemini", () => {
     expect(quiet.at(-1)).toMatchObject({ type: "failed", reason: "provider_error" });
   });
 
+  it("refuses a message too long for the command line instead of cutting it", async () => {
+    const events = await collect(gemini().chat(request({ text: "x".repeat(25_000) })));
+    expect(events.at(-1)).toMatchObject({ type: "failed", message: expect.stringMatching(/too long/) });
+  });
+
   it("takes the answer from the result when no text came in the stream", async () => {
     const events = await collect(gemini({ FAKE_MODE: "no-deltas" }).chat(request()));
     expect(events.at(-1)).toMatchObject({ type: "completed", text: "Hej från Gemini" });
@@ -124,7 +129,7 @@ describe("Antigravity CLI as Gemini", () => {
     const txt = path.join(dir, "notes.txt");
     fs.writeFileSync(txt, "mina anteckningar");
     await collect(gemini().chat(request({ text: "Sammanfatta", attachments: [{ id: "b".repeat(24), name: "notes.txt", kind: "text", mediaType: "text/plain", size: 17, path: txt }] })));
-    expect(calls().find((c) => c.args.includes("--print"))!.input).toContain("mina anteckningar");
+    expect(calls().find((c) => c.args.some((a: string) => a.startsWith("--print=")))!.input).toContain("mina anteckningar");
     const pic = await collect(gemini().chat(request({ attachments: [{ id: "a".repeat(24), name: "p.png", kind: "image", mediaType: "image/png", size: 4, path: txt }] })));
     expect(pic.at(-1)).toMatchObject({ type: "failed", message: expect.stringMatching(/pictures or PDFs/) });
   });

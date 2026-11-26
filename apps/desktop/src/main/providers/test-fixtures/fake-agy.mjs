@@ -26,10 +26,10 @@ if (args.includes("--version")) {
   console.log(JSON.stringify([{ id: "gemini-4-neon-high", label: "Gemini 4 Neon (High)" }, { id: "gemini-4-carbon-high", label: "Gemini 4 Carbon (High)" }, { id: "gemini-3-8-flash", label: "Gemini 3.8 Flash" }]));
 } else {
   const mode = process.env.FAKE_MODE ?? "stream";
-  let input = "";
-  process.stdin.setEncoding("utf8");
-  process.stdin.on("data", (d) => (input += d));
-  process.stdin.on("end", () => {
+  const printArg = args.find((a) => a.startsWith("--print="));
+  const input = printArg ? printArg.slice("--print=".length) : "";
+  process.stdin.resume();
+  setImmediate(() => {
     log({ input });
     const conversation = "fake-conversation";
     if (mode === "crash") { process.stderr.write("boom\n"); process.exit(3); }

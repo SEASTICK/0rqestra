@@ -322,7 +322,7 @@ sign in with `agy` and choose Google OAuth. Safety: API keys, ADC and gateway va
 `request-review` or `plan`, otherwise the run is refused; any tool step in the stream stops the run ("Nothing was changed").
 Gemini reads text only here (no pictures or PDFs; Auto sends those to Claude). The 5-hour and weekly limits are now real,
 from `/usage`. Google collects interaction data unless opted out; agy stores conversations in `~/.gemini/antigravity-cli/conversations`.
-Not verified: the prompt on stdin with a valueless `--print`, `agy --version` output, the model list schema from `agy models`,
+The prompt goes as `--print=<prompt>` (a valueless `--print` swallowed the next flag on a real agy), so messages over 24,000 characters are refused. Not verified: `agy --version` output, the model list schema from `agy models`,
 the `step_type` names of tool steps, and real runs on Windows/macOS beyond the user's `/usage`, stream and models samples.
 
 **Status 2026-11-26: people on the Team Bridge, and a team chat the Managers read.** In a project linked to a shared

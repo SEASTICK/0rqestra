@@ -47,9 +47,14 @@ const QUIET_STEPS = /^(thinking|reasoning|planner_response|ephemeral_message|con
 const QUOTA = /quota|rate.?limit|resource.?exhausted|too many requests|\b429\b|usage limit|exhausted|prepaid|out of credits/i;
 const NOT_SIGNED_IN = /not signed in|sign in|log ?in|unauthenticated|authentication|authorize|\b401\b|credentials|keyring/i;
 
-export function geminiArgs(model: string | null): string[] {
-  // --print without a text: the prompt is read from stdin. --mode default: agy asks before it changes anything.
-  return ["--print", "--output-format", "stream-json", "--mode", "default", ...(model && model !== "default" ? ["--model", model] : [])];
+// The longest prompt put on the command line (Windows stops near 32,000 characters).
+export const MAX_PROMPT_CHARS = 24_000;
+
+export function geminiArgs(model: string | null, prompt: string): string[] {
+  // --print takes the prompt as its value (checked on a real agy: a valueless --print swallowed the next flag).
+  // Written as --print=<prompt> so a prompt that starts with "-" is still read as text.
+  // --mode default: agy asks before it changes anything.
+  return [`--print=${prompt}`, "--output-format", "stream-json", "--mode", "default", ...(model && model !== "default" ? ["--model", model] : [])];
 }
 
 interface UsageTokens {
@@ -236,7 +241,11 @@ export class GeminiAdapter implements ProviderAdapter {
       return;
     }
 
-    const child = spawnTool({ bin, prefixArgs: this.options.prefixArgs, args: geminiArgs(request.model), cwd: request.cwd, env: this.env() });
+    // A note says it answers in text: agy has tools it must not use here.
+    const body = request.raw ? request.text : buildPrompt(request.history, request.text, request.team, request.teamNow, request.planMode ? "plan" : "auto", request.memory ?? []);
+    const prompt = `${withTextFiles(body, request.attachments ?? [])}\n\n(Answer in text only. Do not use tools: do not read files, run commands or search the web.)`;
+    if (prompt.length > MAX_PROMPT_CHARS) return fail("provider_error", "This message is too long to send to Gemini through the Antigravity CLI. Choose Claude Code for it, or shorten it.");
+    const child = spawnTool({ bin, prefixArgs: this.options.prefixArgs, args: geminiArgs(request.model, prompt), cwd: request.cwd, env: this.env() });
     let finished = false;
     let stderr = "";
     let sawText = false;
@@ -313,11 +322,5 @@ export class GeminiAdapter implements ProviderAdapter {
       }
     });
 
-    // The prompt goes on stdin and stdin is then closed (agy waits for the end of stdin on Windows). A note says
-    // it answers in text: it has tools it must not use here.
-    const body = request.raw ? request.text : buildPrompt(request.history, request.text, request.team, request.teamNow, request.planMode ? "plan" : "auto", request.memory ?? []);
-    const prompt = `${withTextFiles(body, request.attachments ?? [])}\n\n(Answer in text only. Do not use tools: do not read files, run commands or search the web.)`;
-    child.stdin?.on("error", () => {});
-    child.stdin?.end(prompt);
   }
 }

@@ -100,7 +100,7 @@ function pickByTask(text: string, attachments: { kind: string }[], ready: Provid
   if (attachments.some((a) => a.kind === "pdf") && has("claude")) return { provider: "claude", reason: "reads the attached PDF" };
   // Gemini takes text only here: nothing with a picture or a PDF goes to it.
   const textOnly = !attachments.some((a) => a.kind !== "text");
-  if (gemini && textOnly && text.length > LONG_TEXT_CHARS) return { provider: "gemini", reason: "a very long text" };
+  if (gemini && textOnly && text.length > LONG_TEXT_CHARS && text.length < 20_000) return { provider: "gemini", reason: "a very long text" };
   if (CODE_WORDS.test(text) && has("codex")) return { provider: "codex", reason: "code" };
   if (gemini && textOnly && !WRITING_WORDS.test(text) && !CODE_WORDS.test(text) && isQuick(text, history, attachments.length > 0)) return { provider: "gemini", reason: "a quick question" };
   if (has("claude")) return { provider: "claude", reason: "writing, explaining and planning" };
