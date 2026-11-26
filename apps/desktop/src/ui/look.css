@@ -294,3 +294,10 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .team-chat-form textarea{width:100%;font:inherit;font-size:13.5px;padding:8px 10px;border-radius:10px;border:1px solid var(--shell-line);background:var(--shell-card);color:var(--shell-text);resize:vertical}
 .team-chat-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
 .team-unread{margin:0 14px 6px;font-size:10.5px;font-weight:600;color:#fff;background:var(--look-orange);border-radius:999px;padding:2px 8px;align-self:flex-start;display:inline-block}
+
+.environment-strip{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:0 28px 10px;font-size:12px;min-width:0}
+.environment-label{font-weight:600;color:light-dark(#545454,#a5a5a5)}
+.environment-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 9px;border:1px solid light-dark(#e2e2e2,#404040);border-radius:8px;background:light-dark(#fff,#303030)}
+.environment-chip strong{font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.environment-muted{color:light-dark(#757575,#858585);overflow-wrap:anywhere}
+.environment-edit{margin-left:auto;font-size:12px;text-decoration:underline;color:light-dark(#545454,#a5a5a5)}

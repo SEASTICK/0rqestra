@@ -235,3 +235,26 @@ export function AgentComputerAccess({ node, projectId, notify }) {
     </section>
   );
 }
+
+const lastPart = (p) => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || String(p || '');
+
+// A strip under the project title, like Claude's Environment: the folder or repository this project
+// works in on this computer, so it is clear at a glance what the agents can see.
+export function ProjectEnvironment({ project, Icon, onOpen }) {
+  const { api, view } = useAccess(project.id);
+  if (!api) return null;
+  const folders = view?.folders || [];
+  const agents = Object.values(view?.agents || {});
+  const level = agents.some((a) => a.write) ? 'Can propose changes' : agents.some((a) => a.read) ? 'Read only' : 'No agent has access yet';
+  return (
+    <div className="environment-strip" role="group" aria-label="Environment">
+      <span className="environment-label">Environment</span>
+      {!view ? <span className="environment-muted">Looking…</span>
+        : folders.length ? <>
+          {folders.map((f) => <span key={f.path} className="environment-chip" title={f.path}><Icon name="folder" size={13}/><strong>{lastPart(f.path)}</strong></span>)}
+          <span className="environment-muted">{level}</span>
+        </> : <span className="environment-muted">No folder connected. Agents cannot see any code.</span>}
+      <button type="button" className="environment-edit" onClick={onOpen}>{folders.length ? 'Manage' : 'Connect a folder'}</button>
+    </div>
+  );
+}

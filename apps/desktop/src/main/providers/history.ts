@@ -104,7 +104,7 @@ export const TOOL_STRENGTHS = [
   "What the tools are good at (a guide; you decide per task):",
   "- Claude Code (Claude): planning and structure, user interfaces and design, clear text, careful reviews, larger refactors.",
   "- Codex (ChatGPT): implementing features, algorithms and data handling, debugging, tests, precise changes to existing code.",
-  "- Gemini: very long documents and large amounts of text, summarising and comparing sources, quick factual answers, reading PDFs and images.",
+  "- Gemini: very long documents and large amounts of text, summarising and comparing sources, quick factual answers. It reads text only here (no pictures or PDFs).",
 ].join("\n");
 
 const TOOL_NAME: Record<string, string> = { claude: "Claude Code", codex: "Codex", gemini: "Gemini" };

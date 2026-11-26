@@ -9,10 +9,12 @@ import type { ProviderId } from "../providers/types";
 //   `powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"`;
 //   macOS/Linux `curl -fsSL https://chatgpt.com/codex/install.sh | sh`. Sign-in: `codex login`
 //   (learn.chatgpt.com/docs/auth: "Run codex login, then complete the browser flow").
-// - Gemini CLI, github.com/google-gemini/gemini-cli (checked 2026-11-25): `npm install -g @google/gemini-cli`
-//   (needs Node.js 20 or newer; also `brew install gemini-cli`). There is no separate sign-in command:
-//   `gemini` opens its own screen where "Login with Google" is chosen, and the CLI stays open afterwards
-//   (quit it with /quit). The login is saved in ~/.gemini/oauth_creds.json, which 0rqestra only checks for.
+// - Antigravity CLI (agy), github.com/google-antigravity/antigravity-cli (checked 2026-11-26): Windows PowerShell
+//   `irm https://antigravity.google/cli/install.ps1 | iex` (puts agy.exe in %LOCALAPPDATA%\agy\bin),
+//   macOS/Linux `curl -fsSL https://antigravity.google/cli/install.sh | bash` (~/.local/bin). Gemini CLI, which this
+//   replaces, stopped serving personal Google accounts on 2026-06-18. There is no separate sign-in command: `agy`
+//   asks for the login method ("Google OAuth", not "Use a Google Cloud project") and stays open afterwards (quit
+//   with /quit). 0rqestra checks the sign-in with `agy -p /usage`, never by reading the saved credentials.
 // These strings are constants. Nothing from the window ever becomes part of a command.
 
 export type CommandKind = "install" | "signIn";
@@ -42,14 +44,14 @@ const INSTALL_SCRIPT: Record<ProviderId, { ps: string; sh: string; docs: string 
     sh: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
   },
   gemini: {
-    ps: "npm install -g @google/gemini-cli",
-    docs: "npm install -g @google/gemini-cli",
-    sh: "npm install -g @google/gemini-cli",
+    ps: "irm https://antigravity.google/cli/install.ps1 | iex",
+    docs: "irm https://antigravity.google/cli/install.ps1 | iex",
+    sh: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
   },
 };
 
 const SIGN_IN_ARGS: Record<ProviderId, string> = { claude: "auth login", codex: "login", gemini: "" };
-const TOOL: Record<ProviderId, string> = { claude: "claude", codex: "codex", gemini: "gemini" };
+const TOOL: Record<ProviderId, string> = { claude: "claude", codex: "codex", gemini: "agy" };
 
 const psQuote = (s: string) => `'${s.replace(/'/g, "''")}'`;
 const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;

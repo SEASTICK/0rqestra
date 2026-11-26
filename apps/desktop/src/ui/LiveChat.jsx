@@ -12,7 +12,7 @@ const TOOL_INFO = {
   auto: 'Picks Claude, ChatGPT or Gemini and the level for each message',
   claude: 'Writing, explaining, studying, planning and design',
   codex: 'Code, bugs and technical questions',
-  gemini: 'Quick questions, very long texts and PDFs. Your Google plan',
+  gemini: 'Quick questions and very long texts (text only, no pictures or PDFs). Your Google plan',
 };
 const MODEL_INFO = { default: 'What your plan uses by default', opus: 'Most capable, for hard problems', sonnet: 'Smart and fast, for everyday work', haiku: 'Fastest, for quick answers' };
 const modelInfo = (m) => MODEL_INFO[m.id] || (/mini|nano|lite|fast/i.test(m.id) ? 'Fast and light' : m.isDefault ? 'Default for your plan' : '');

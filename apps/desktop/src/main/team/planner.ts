@@ -16,6 +16,7 @@ export function plannerPrompt(brief: string, planner: AgentRef, team: TeamMember
       PLAN_FORMAT,
       PLAN_RULES,
       "You cannot run tools or commands. Plan only work the agents can do by writing files.",
+      "Never name a file as a task's input or reference unless it is in the list of existing files above or an earlier task delivers it. Do not guess file names. If the code is not yet known, the first task must find it (by searching with the computer access it has, starting from the folder the brief names) and report the real paths in its brief; later tasks use what that brief found.",
     ].join("\n"),
     teamSection(team),
     ...(teamNow ? [teamNow] : []),

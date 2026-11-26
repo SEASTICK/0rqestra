@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { classifyFailure, GEMINI_MODELS, geminiArgs, GeminiAdapter, geminiSettings, geminiSignedIn, geminiUsage } from "./gemini.js";
+import { classifyFailure, geminiArgs, GeminiAdapter, geminiLimits, geminiUsage, parseModels, SAFE_MODES } from "./gemini.js";
 import { providerEnv } from "./process.js";
 import type { ChatEvent, ChatHandle, ChatRequest } from "./types.js";
 import { adapterOf } from "./types.js";
@@ -10,9 +10,8 @@ import { adapterOf } from "./types.js";
 const fixtures = path.join(__dirname, "test-fixtures");
 const node = { path: process.execPath, viaCmd: false };
 let dir: string;
-let home: string;
 let logFile: string;
-const cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), "orq-gemini-cwd-"));
+const cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), "orq-agy-cwd-"));
 afterAll(() => {
   try {
     fs.rmSync(cwdDir, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
@@ -22,21 +21,18 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "orq-gemini-"));
-  home = path.join(dir, "home");
-  fs.mkdirSync(path.join(home, ".gemini"), { recursive: true });
-  fs.writeFileSync(path.join(home, ".gemini", "oauth_creds.json"), JSON.stringify({ access_token: "a", refresh_token: "r" }));
-  logFile = path.join(dir, "log.json");
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "orq-agy-"));
+  logFile = path.join(dir, "log.jsonl");
 });
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 }));
 
 const request = (over: Partial<ChatRequest> = {}): ChatRequest => ({ provider: "gemini", model: null, effort: null, history: [], text: "Hej", cwd: cwdDir, ...over });
 const env = (extra: Record<string, string> = {}) => ({
-  ...process.env, FAKE_LOG: logFile, GEMINI_API_KEY: "should-not-pass", GOOGLE_API_KEY: "should-not-pass", GOOGLE_GENAI_USE_VERTEXAI: "true", ...extra,
+  ...process.env, FAKE_LOG: logFile, GEMINI_API_KEY: "should-not-pass", GOOGLE_API_KEY: "should-not-pass", AGY_ADC_AUTH: "1", AGY_LLM_GATEWAY_MODELS: "x", GOOGLE_CLOUD_PROJECT: "p", ...extra,
 });
 const gemini = (extra: Record<string, string> = {}, more: Partial<ConstructorParameters<typeof GeminiAdapter>[0]> = {}) =>
-  new GeminiAdapter({ find: () => node, prefixArgs: [path.join(fixtures, "fake-gemini-chat.mjs")], env: env(extra), settingsDir: path.join(dir, "settings"), home, ...more });
-const readLog = () => JSON.parse(fs.readFileSync(logFile, "utf8"));
+  new GeminiAdapter({ find: () => node, prefixArgs: [path.join(fixtures, "fake-agy.mjs")], env: env(extra), cacheMs: 0, ...more });
+const calls = () => fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l));
 async function collect(handle: ChatHandle): Promise<ChatEvent[]> {
   const events: ChatEvent[] = [];
   for await (const event of handle.events) events.push(event);
@@ -44,110 +40,112 @@ async function collect(handle: ChatHandle): Promise<ChatEvent[]> {
 }
 const deltas = (events: ChatEvent[]) => events.filter((e) => e.type === "delta").map((e) => (e as { text: string }).text).join("");
 
-describe("Gemini CLI", () => {
-  it("answers through the CLI's stream, with usage, and sends the prompt on stdin", async () => {
-    const events = await collect(gemini().chat(request({ text: "Vad är fotosyntes?", model: "flash" })));
+describe("Antigravity CLI as Gemini", () => {
+  it("answers through agy's stream, with usage, and gives the prompt as the value of --print", async () => {
+    const events = await collect(gemini().chat(request({ text: "Vad är fotosyntes?" })));
     expect(events[0]).toEqual({ type: "started", model: null });
-    expect(deltas(events)).toBe("Hej från Gemini");
-    expect(events.at(-1)).toMatchObject({ type: "completed", text: "Hej från Gemini", usage: { inputTokens: 30, outputTokens: 10, cachedInputTokens: 5 }, limits: [] });
-    const log = readLog();
-    expect(log.input).toContain("Vad är fotosyntes?");
-    expect(log.args).toEqual(expect.arrayContaining(["-p", "Reply to the message above.", "-o", "stream-json", "--skip-trust", "-e", "none", "-m", "flash"]));
-    // The prompt is never an argument.
-    expect(JSON.stringify(log.args)).not.toContain("fotosyntes");
+    expect(deltas(events).trim()).toBe("Hej från Gemini");
+    expect(events.at(-1)).toMatchObject({ type: "completed", text: "Hej från Gemini", usage: { inputTokens: 10489, outputTokens: 33, cachedInputTokens: 100 } });
+    const chat = calls().find((c) => c.args.some((a: string) => a.startsWith("--print=")))!;
+    expect(chat.input).toContain("Vad är fotosyntes?");
+    expect(chat.args.slice(1)).toEqual(["--output-format", "stream-json", "--mode", "default"]);
+    expect(geminiArgs("gemini-4-neon-high", "hej")).toEqual(["--print=hej", "--output-format", "stream-json", "--mode", "default", "--model", "gemini-4-neon-high"]);
+    expect(geminiArgs("default", "-x")[0]).toBe("--print=-x");
+    expect(geminiArgs("default", "x")).not.toContain("--model");
   });
 
-  it("uses no model flag for the default, and refuses unknown or unsafe names", async () => {
-    await collect(gemini().chat(request({ model: "default" })));
-    expect(readLog().args).not.toContain("-m");
-    expect(geminiArgs("pro")).toContain("pro");
-    const bad = await collect(gemini().chat(request({ model: "pro; rm -rf" })));
-    expect(bad.at(-1)).toMatchObject({ type: "failed", reason: "provider_error" });
-    const odd = await collect(gemini().chat(request({ model: "gpt-5" })));
-    expect(odd.at(-1)).toMatchObject({ type: "failed", message: "Unknown Gemini model." });
-  });
-
-  it("never lets an API key or another sign-in reach the CLI, and forces the Google login with every tool off", async () => {
+  it("never lets an API key, Application Default Credentials or a gateway reach agy", async () => {
     await collect(gemini().chat(request()));
-    const log = readLog();
-    expect(log.geminiKeyReached).toBe(false);
-    expect(log.googleKeyReached).toBe(false);
-    expect(log.genaiReached).toBe(false);
-    expect(log.settings.security.auth).toEqual({ selectedType: "oauth-personal", enforcedType: "oauth-personal" });
-    expect(log.settings.tools.core).toEqual([]);
-    expect(log.settings.mcp.allowed).toEqual(["orqestra-none"]);
-    expect(log.settings.hooksConfig.enabled).toBe(false);
-    expect(providerEnv({ GOOGLE_GENAI_USE_GCA: "true", GOOGLE_CLOUD_PROJECT: "p", GEMINI_API_KEY: "k", GOOGLE_GEMINI_BASE_URL: "u", CLOUD_SHELL: "true", HOME: "/h" })).toEqual({ HOME: "/h" });
+    for (const c of calls()) {
+      expect(c.geminiKeyReached).toBe(false);
+      expect(c.adcReached).toBe(false);
+      expect(c.googleReached).toBe(false);
+    }
+    expect(providerEnv({ AGY_ADC_AUTH: "1", AGY_LLM_GATEWAY_MODELS: "m", GEMINI_API_KEY: "k", GOOGLE_GEMINI_BASE_URL: "u", AGY_CLI_HIDE_LOGO: "1", HOME: "/h" })).toEqual({ AGY_CLI_HIDE_LOGO: "1", HOME: "/h" });
   });
 
-  it("does not send anything when it is not signed in with a Google account", async () => {
-    fs.rmSync(path.join(home, ".gemini", "oauth_creds.json"));
-    const events = await collect(gemini().chat(request()));
-    expect(events.at(-1)).toMatchObject({ type: "failed", reason: "not_signed_in" });
-    expect(fs.existsSync(logFile)).toBe(false);
-    expect(geminiSignedIn(home)).toBe(false);
+  it("proves a Google account sign-in with /usage before it sends anything, and refuses an API key or no sign-in", async () => {
+    await collect(gemini().chat(request()));
+    expect(calls()[0]!.args).toEqual(["-p", "/usage", "--output-format", "json"]);
+    const signedOut = await collect(gemini({ FAKE_AUTH: "signed-out" }).chat(request()));
+    expect(signedOut.at(-1)).toMatchObject({ type: "failed", reason: "not_signed_in" });
+    const key = await collect(gemini({ FAKE_AUTH: "apikey" }).chat(request()));
+    expect(key.at(-1)).toMatchObject({ type: "failed", reason: "not_subscription" });
+    expect(deltas(key)).toBe("");
   });
 
-  it("fails closed when the CLI does not accept the settings file (folder permissions)", async () => {
-    const events = await collect(gemini({ FAKE_INSECURE: "1" }).chat(request()));
-    expect(events.at(-1)).toMatchObject({ type: "failed", reason: "not_subscription" });
-    expect(deltas(events)).toBe("");
-    const status = await gemini({ FAKE_INSECURE: "1" }).status();
-    expect(status).toMatchObject({ installed: true, signedIn: true, subscription: false });
-    expect(status.problem).toMatch(/refused/);
-  });
-
-  it("reports the status: version, Google account sign-in, models", async () => {
+  it("reports the status with the plan's real limits and the models agy lists", async () => {
     const status = await gemini().status();
-    expect(status).toMatchObject({ provider: "gemini", name: "Gemini CLI", installed: true, version: "9.9.9", signedIn: true, subscription: true, plan: null, problem: null });
-    expect(status.models.map((m) => m.id)).toEqual(["default", "pro", "flash", "flash-lite"]);
-    expect(GEMINI_MODELS.filter((m) => m.isDefault)).toHaveLength(1);
-    fs.rmSync(path.join(home, ".gemini", "oauth_creds.json"));
-    expect(await gemini().status()).toMatchObject({ signedIn: false, subscription: false });
-    expect(await new GeminiAdapter({ find: () => null, env: env(), home }).status()).toMatchObject({ installed: false, problem: "Gemini CLI is not installed." });
+    expect(status).toMatchObject({ provider: "gemini", name: "Gemini", installed: true, version: "1.5.18", signedIn: true, subscription: true, problem: null });
+    expect(status.limits).toEqual([
+      { label: "7-day limit", usedPercent: 1, windowMinutes: 10080, resetsAt: 1796330313 },
+      { label: "5-hour limit", usedPercent: 1, windowMinutes: 300, resetsAt: 1795743513 },
+    ]);
+    expect(status.models.map((m) => m.id)).toEqual(["default", "gemini-4-neon-high", "gemini-4-carbon-high", "gemini-3-8-flash"]);
+    expect(await gemini({ FAKE_AUTH: "signed-out" }).status()).toMatchObject({ installed: true, signedIn: false, subscription: false, limits: [] });
+    expect((await gemini({ FAKE_AUTH: "apikey" }).status()).problem).toMatch(/API key/);
+    expect(await new GeminiAdapter({ find: () => null, env: env() }).status()).toMatchObject({ installed: false, problem: "Antigravity CLI (agy) is not installed." });
   });
 
-  it("sorts failures: signed-out CLI, usage limit, other errors, crashes", async () => {
-    expect((await collect(gemini({ FAKE_MODE: "auth" }).chat(request()))).at(-1)).toMatchObject({ type: "failed", reason: "not_signed_in" });
+  it("ends the run, naming the tool, the moment agy tries a tool instead of answering", async () => {
+    const events = await collect(gemini({ FAKE_MODE: "tool" }).chat(request()));
+    expect(events.at(-1)).toMatchObject({ type: "failed", reason: "provider_error" });
+    expect((events.at(-1) as { message: string }).message).toMatch(/tool \("run_command"\).*Nothing was changed/);
+  });
+
+  it("refuses to run when agy starts in a mode that does not ask before changing things", async () => {
+    for (const perm of ["auto", "accept-edits", "", "bypass"]) {
+      const events = await collect(gemini({ FAKE_PERM: perm }).chat(request()));
+      expect(events.at(-1)).toMatchObject({ type: "failed", reason: "not_subscription" });
+      expect(deltas(events)).toBe("");
+    }
+    expect([...SAFE_MODES].sort()).toEqual(["plan", "request-review"]);
+  });
+
+  it("sorts failures: usage limit, crash; and stops on request and when the answer goes silent", async () => {
     expect((await collect(gemini({ FAKE_MODE: "quota" }).chat(request()))).at(-1)).toMatchObject({ type: "failed", reason: "usage_limit" });
-    expect((await collect(gemini({ FAKE_MODE: "error-result" }).chat(request()))).at(-1)).toMatchObject({ type: "failed", reason: "provider_error", message: "The model failed." });
     expect((await collect(gemini({ FAKE_MODE: "crash" }).chat(request()))).at(-1)).toMatchObject({ type: "failed", reason: "crashed" });
-    expect(classifyFailure("HTTP 429 too many requests", null).reason).toBe("usage_limit");
-    expect(classifyFailure("anything", 41).reason).toBe("not_signed_in");
-  });
-
-  it("stops on request and when the answer goes silent", async () => {
+    expect(classifyFailure("RESOURCE_EXHAUSTED · You have exhausted your quota", null).reason).toBe("usage_limit");
+    expect(classifyFailure("UNAUTHENTICATED", null).reason).toBe("not_signed_in");
     const handle = gemini({ FAKE_MODE: "stall" }).chat(request());
     const seen: ChatEvent[] = [];
-    const run = (async () => { for await (const e of handle.events) { seen.push(e); if (e.type === "delta") handle.stop(); } })();
-    await run;
+    for await (const e of handle.events) { seen.push(e); if (e.type === "delta") handle.stop(); }
     expect(seen.at(-1)).toMatchObject({ type: "cancelled" });
     const quiet = await collect(gemini({ FAKE_MODE: "stall" }, { idleMs: 300 }).chat(request()));
     expect(quiet.at(-1)).toMatchObject({ type: "failed", reason: "provider_error" });
   });
 
-  it("puts text files in the message and copies pictures next to the chat for the CLI's @ syntax, then removes them", async () => {
-    const png = path.join(dir, "pic.png");
-    const txt = path.join(dir, "notes.txt");
-    fs.writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-    fs.writeFileSync(txt, "mina anteckningar");
-    const before = fs.readdirSync(cwdDir).length;
-    await collect(gemini().chat(request({ text: "Vad visar bilden?", attachments: [
-      { id: "a".repeat(24), name: "pic.png", kind: "image", mediaType: "image/png", size: 4, path: png },
-      { id: "b".repeat(24), name: "notes.txt", kind: "text", mediaType: "text/plain", size: 17, path: txt },
-    ] })));
-    const log = readLog();
-    expect(log.input).toContain("mina anteckningar");
-    expect(log.input).toMatch(/@attached-[a-z0-9-]+\/file1\.png/);
-    // The file reader is only on when a picture or PDF is attached.
-    expect(log.settings.tools.core).toEqual(["read_file"]);
-    expect(fs.readdirSync(cwdDir).length).toBe(before);
-    expect(JSON.parse(geminiSettings(false)).tools.core).toEqual([]);
+  it("refuses a message too long for the command line instead of cutting it", async () => {
+    const events = await collect(gemini().chat(request({ text: "x".repeat(25_000) })));
+    expect(events.at(-1)).toMatchObject({ type: "failed", message: expect.stringMatching(/too long/) });
   });
 
-  it("turns the final stats into usage, and a missing Gemini adapter into 'not available'", async () => {
-    expect(geminiUsage({ input_tokens: 100, output_tokens: 7, cached: 40 })).toEqual({ inputTokens: 100, outputTokens: 7, cachedInputTokens: 40 });
+  it("takes the answer from the result when no text came in the stream", async () => {
+    const events = await collect(gemini({ FAKE_MODE: "no-deltas" }).chat(request()));
+    expect(events.at(-1)).toMatchObject({ type: "completed", text: "Hej från Gemini" });
+  });
+
+  it("puts text files in the message and refuses pictures and PDFs, which agy could only read with a tool", async () => {
+    const txt = path.join(dir, "notes.txt");
+    fs.writeFileSync(txt, "mina anteckningar");
+    await collect(gemini().chat(request({ text: "Sammanfatta", attachments: [{ id: "b".repeat(24), name: "notes.txt", kind: "text", mediaType: "text/plain", size: 17, path: txt }] })));
+    expect(calls().find((c) => c.args.some((a: string) => a.startsWith("--print=")))!.input).toContain("mina anteckningar");
+    const pic = await collect(gemini().chat(request({ attachments: [{ id: "a".repeat(24), name: "p.png", kind: "image", mediaType: "image/png", size: 4, path: txt }] })));
+    expect(pic.at(-1)).toMatchObject({ type: "failed", message: expect.stringMatching(/pictures or PDFs/) });
+  });
+
+  it("reads usage, limits and model lists from agy's own output", async () => {
+    expect(geminiUsage({ input_tokens: 10489, output_tokens: 33, thinking_tokens: 31, cache_read_tokens: 0 })).toEqual({ inputTokens: 10489, outputTokens: 33, cachedInputTokens: 0 });
     expect(geminiUsage({})).toBeNull();
+    expect(geminiLimits({})).toEqual([]);
+    expect(geminiLimits({ command: { data: { groups: [{ name: "Claude and GPT models", buckets: [{ window: "5h", remaining_fraction: 1, reset_time: "1970-01-01T00:00:00Z" }] }] } } })).toEqual([]);
+    // The text form of `/model` (id, tab, label) and a JSON list both work; junk gives nothing.
+    expect(parseModels('{"response":"gemini-4-neon-high\\tGemini 4 Neon (High)\\n","command":{"data":{"id":"gemini-4-neon-high","label":"Gemini 4 Neon (High)"}}}').map((m) => m.id)).toEqual(["gemini-4-neon-high"]);
+    expect(parseModels("gemini-4-argon-low\tGemini 4 Argon (Low)\nnot a model line").map((m) => m.label)).toEqual(["Gemini 4 Argon (Low)"]);
+    expect(parseModels("<html>")).toEqual([]);
+  });
+
+  it("answers as 'not available' when the adapter is missing", async () => {
     const missing = adapterOf({ claude: {} as never, codex: {} as never }, "gemini");
     expect((await missing.status()).installed).toBe(false);
     expect((await collect(missing.chat(request()))).at(-1)).toMatchObject({ type: "failed", reason: "not_installed" });

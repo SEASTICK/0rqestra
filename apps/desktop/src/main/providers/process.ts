@@ -15,7 +15,10 @@ const BLOCKED = [
   /^AZURE_OPENAI_/,
   /^AWS_/,
   /^GOOGLE_APPLICATION_CREDENTIALS$/,
-  // Gemini CLI: other ways to sign in or to reach a model than the Google account login.
+  // Antigravity CLI (agy): other ways to sign in or to reach a model than the Google account login: an API key,
+  // Application Default Credentials (pay as you go on Google Cloud), an enterprise model gateway.
+  /^AGY_ADC_/,
+  /^AGY_LLM_GATEWAY/,
   /^GOOGLE_GENAI_/,
   /^GOOGLE_CLOUD_/,
   /^GOOGLE_GEMINI_/,
@@ -91,6 +94,8 @@ export function officialLocations(name: string, env: NodeJS.ProcessEnv, platform
     const roaming = env.APPDATA ?? (home ? path.join(home, "AppData", "Roaming") : "");
     if (name === "codex" && env.CODEX_INSTALL_DIR) out.push({ dir: env.CODEX_INSTALL_DIR, source: "native" });
     if (name === "codex" && local) out.push({ dir: path.join(local, "Programs", "OpenAI", "Codex", "bin"), source: "native" });
+    // Antigravity CLI's installer (install.ps1) puts agy.exe here; a fresh install is not on the PATH of a running app.
+    if (name === "agy" && local) out.push({ dir: path.join(local, "agy", "bin"), source: "native" });
     if (local) {
       out.push({ dir: path.join(local, "Microsoft", "WinGet", "Links"), source: "winget" });
       const pkg = name === "claude" ? "Anthropic.ClaudeCode_" : "OpenAI.Codex_";
