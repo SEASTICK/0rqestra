@@ -197,3 +197,13 @@ export function outgoingTeamInvites(view, team) {
 export function waitingCount(view) {
   return friendGroups(view).incoming.length + incomingTeamInvites(view).length;
 }
+
+// ---- Team chat --------------------------------------------------------------------------------
+
+// Messages from others since the person last opened the Team Bridge (seen: ms, or 0 for never).
+export function unreadCount(view, projectId, seen) {
+  const messages = view?.chat?.[projectId]?.messages || [];
+  return messages.filter((m) => m.authorId !== view.userId && Date.parse(m.createdAt) > (Number(seen) || 0)).length;
+}
+
+export const SORT_REQUEST = 'Sort what the team asked for in the team chat: who wants what, where it overlaps with what I want, and who should do which part in what order. Do not start any work yet.';

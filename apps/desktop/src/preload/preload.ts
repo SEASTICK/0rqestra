@@ -97,6 +97,8 @@ contextBridge.exposeInMainWorld("orqestra", {
     verifyCode: (code: string) => ipcRenderer.invoke("teams:verify-code", String(code)),
     cancelCode: () => ipcRenderer.invoke("teams:cancel-code"),
     signOut: () => ipcRenderer.invoke("teams:sign-out"),
+    sendMessage: (projectId: string, body: string, kind?: "message" | "summary") => ipcRenderer.invoke("teams:send-message", String(projectId), String(body ?? ""), kind === "summary" ? "summary" : "message"),
+    refreshChat: (projectId?: string) => ipcRenderer.invoke("teams:refresh-chat", projectId === undefined ? undefined : String(projectId)),
     createTeam: (name: string) => ipcRenderer.invoke("teams:create-team", String(name)),
     createInvite: (teamId: string, email: string) => ipcRenderer.invoke("teams:create-invite", String(teamId), String(email)),
     copyInvite: (inviteId: string) => ipcRenderer.invoke("teams:copy-invite", String(inviteId)),

@@ -68,7 +68,7 @@ export function ChatTargetPicker({ target, statuses, onChange, onAccounts }) {
   );
 }
 
-export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPlan, renderPlanRequest, onRetry, who = 'Manager' }) {
+export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPlan, renderPlanRequest, onRetry, onShare, who = 'Manager' }) {
   // "Auto" shows which model it chose once the tool says so.
   const modelName = m.model && m.model !== 'default' && m.model !== 'auto' ? m.model : null;
   const label = m.routed
@@ -107,14 +107,14 @@ export function AssistantMessage({ m, Icon, onAccounts, onAnswer, busy, renderPl
       {question && !m.answered && <QuestionCard questions={questions} disabled={busy} onAnswer={(choices) => onAnswer(m.id, answersFor(questions, choices), answeredSummary(questions, choices))}/>}
       {question && m.answered && <div className="question-answered-list">{(m.answered.items || [{ question: question.question, answer: m.answered.kind === 'skip' ? 'Skipped — the Manager decides' : m.answered.label }]).map((item, i) => <div key={i} className="question-answered"><span>{item.question}</span><strong>{item.answer}</strong></div>)}</div>}
       {remembered.facts.length > 0 && <div className="memory-saved"><Icon name="spark" size={13}/> Saved to project memory: {remembered.facts.join(' · ')}</div>}
-      {m.status !== 'streaming' && <MessageActions text={body} usage={usage} label={[who, label].filter(Boolean).join(' · ')} onRetry={onRetry} Icon={Icon} />}
+      {m.status !== 'streaming' && <MessageActions text={body} usage={usage} label={[who, label].filter(Boolean).join(' · ')} onRetry={onRetry} onShare={onShare} Icon={Icon} />}
       {m.status === 'streaming' && <div className="message-who">{[who, label].filter(Boolean).join(' · ')}</div>}
     </div>
   );
 }
 
 // Under a reply, like Claude and ChatGPT: copy the answer, try it again, and who answered with which model.
-export function MessageActions({ text, usage, label, onRetry, Icon, onEdit }) {
+export function MessageActions({ text, usage, label, onRetry, Icon, onEdit, onShare }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1500); };
@@ -125,6 +125,7 @@ export function MessageActions({ text, usage, label, onRetry, Icon, onEdit }) {
     {text && <button type="button" className="action-button" title={copied ? 'Copied' : 'Copy'} aria-label={copied ? 'Copied' : 'Copy'} onClick={copy}><Icon name={copied ? 'check' : 'copy'} size={15} /></button>}
     {onEdit && <button type="button" className="action-button" title="Edit: put this message back in the box" aria-label="Edit" onClick={onEdit}><Icon name="edit" size={15} /></button>}
     {onRetry && <button type="button" className="action-button" title="Retry: ask again for a new answer" aria-label="Retry" onClick={onRetry}><Icon name="retry" size={15} /></button>}
+    {onShare && <button type="button" className="action-button" title="Share with the team: post this answer in the team chat as a Manager summary" aria-label="Share with team" onClick={onShare}><Icon name="link" size={15} /></button>}
     {label && <span className="message-who" title={usage || undefined}>{label}</span>}
   </div>;
 }

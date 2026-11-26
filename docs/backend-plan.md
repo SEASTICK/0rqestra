@@ -314,6 +314,24 @@ The user's idea (2026-11-17), inspired by Lovable's preview window, but built fo
   Claude Code and Codex building a product while the preview updates.
 - Not yet: several previews side by side, and products other than web pages.
 
+**Status 2026-11-26: people on the Team Bridge, and a team chat the Managers read.** In a project linked to a shared
+project, the tree shows everyone in it as a box on the Team Bridge, you first (orange), each with the team runs
+they have going right now (titles and states of their active briefs; your own runs that have not synced yet are
+marked). The Team Bridge panel has a **team chat**: everyone in the project reads it, the bridge box shows how many
+new messages there are, "Ask my Manager to sort this" asks your own Manager to sort who wants what, and "Share
+with team" under a Manager reply posts it as a Manager summary. Each person's Manager (and Planner) gets the last
+day's chat in "Team right now", marked as data from people in the team, with the instruction to point out
+overlaps and suggest who does which part in what order before planning. There is no shared Manager: each person
+keeps their own Manager and subscription, and the chat plus the existing briefs and file reservations keep them
+in sync. Database: `supabase/migrations/20261126210000_team_chat.sql` (table `team_messages`, read by project
+members only; written only by `send_team_message`, which takes the author from the session and the name from the
+username, 1–4,000 characters, at most 30 a minute; a new message is announced as `message_added` on the
+project's existing private topic). **The migration is not applied to the production project yet**: until it is,
+the panel says that the server does not have the team chat. Verified with unit tests (a fake Supabase: two people
+write and read, refused input, a server without the table, the Manager's note, sign-out) and a rendered harness of
+the bridge and panel. Not verified: the migration against a real database (`supabase/tests/team_chat_test.sql`
+runs on a local stack), and two real computers.
+
 **Status 2026-11-25: From GitHub clones without a dialog.** First use on Philip's Windows computer (real `gh`, real
 repositories incl. private and organisation ones) showed that clicking a repository opened Explorer, whose
 default was Documents, which is inside OneDrive. Now a click clones at once into ~/repos (made if missing); the

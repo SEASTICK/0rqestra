@@ -51,6 +51,9 @@ class FakeSupabase {
   profiles = new Map<string, string>(); // user id -> username
   friendships: { id: string; requester: string; addressee: string; status: "pending" | "accepted" }[] = [];
   memberInvites: { id: string; team_id: string; invitee: string; invited_by: string; status: "pending" | "accepted" | "declined" | "revoked" }[] = [];
+  // Team chat (migration …_team_chat.sql). chatMissing: a server without that migration.
+  messages: { id: string; project_id: string; author_id: string; author_name: string; kind: string; body: string; created_at: string }[] = [];
+  chatMissing = false;
 
   fetch: FetchLike = async (url, init) => {
     if (this.offline) throw new Error("offline");
@@ -298,6 +301,20 @@ class FakeSupabase {
       if (!isMember(inv.team_id)) this.members.push({ team_id: inv.team_id, user_id: me, email: myEmail, role: "member" });
       inv.status = "accepted";
       return reply(200, inv.team_id);
+    }
+    if (!this.chatMissing && init.method === "GET" && u.pathname === "/rest/v1/team_messages") {
+      const memberOf = (projectId: string) => this.projects.some((p) => p.id === projectId && isMember(p.team_id));
+      return reply(200, this.messages.filter((m) => memberOf(m.project_id)).sort((x, y) => y.created_at.localeCompare(x.created_at)));
+    }
+    if (!this.chatMissing && u.pathname === "/rest/v1/rpc/send_team_message") {
+      const project = this.projects.find((p) => p.id === body.p_project_id);
+      if (!project || !isMember(project.team_id)) return pgError(403, "42501", "not_project_member");
+      const text = String(body.p_body ?? "").trim();
+      if (!text || text.length > 4000) return pgError(400, "22023", "invalid_message");
+      const id = crypto.randomUUID();
+      this.now += 1000;
+      this.messages.push({ id, project_id: project.id, author_id: me, author_name: this.profiles.get(me) ?? "member", kind: body.p_kind === "summary" ? "summary" : "message", body: text, created_at: new Date(this.now).toISOString() });
+      return reply(200, [{ message_id: id, created_at: new Date(this.now).toISOString() }]);
     }
     if (u.pathname === "/rest/v1/rpc/revoke_team_invite") {
       const inv = this.memberInvites.find((i) => i.id === body.p_invite_id && isOwner(i.team_id));
@@ -901,5 +918,67 @@ describe("managing a team", () => {
     expect((await b.service.removeSharedProject(shared.id)).teams[0]!.projects).toEqual([]);
     expect((await b.service.deleteTeam(team.id)).teams).toEqual([]);
     expect(server.teams).toEqual([]);
+  });
+});
+
+describe("Team chat", () => {
+  async function twoInAProject() {
+    const server = new FakeSupabase();
+    const a = computer("a", server);
+    const b = computer("b", server);
+    await signIn(a.service, "a@example.test");
+    const teamId = (await a.service.createTeam("T")).teams[0]!.id;
+    const pick = await a.service.inspectFolder(checkout(`chat-${crypto.randomUUID()}`, { origin: "https://github.com/seastick/chat.git" }));
+    const project = (await a.service.registerProject({ teamId, selectionId: pick.id, localProjectId: "la", name: "P" })).teams[0]!.projects[0]!;
+    const code = (await a.service.createInvite(teamId, "b@example.test")).invite.code;
+    await signIn(b.service, "b@example.test");
+    await b.service.acceptInvite(code);
+    return { server, a, b, project };
+  }
+
+  it("lets both people write and read the project's chat, oldest first, with usernames", async () => {
+    const { a, b, project } = await twoInAProject();
+    await a.service.sendTeamMessage(project.id, "  I fix the login page  ");
+    await b.service.sendTeamMessage(project.id, "I take the tests");
+    await a.service.refreshChat(project.id);
+    const chat = a.service.view().chat[project.id]!;
+    expect(chat.needsUpdate).toBe(false);
+    expect(chat.messages.map((m) => [m.authorName, m.body, m.kind])).toEqual([["a_user", "I fix the login page", "message"], ["b_user", "I take the tests", "message"]]);
+    expect(chat.at).toBeGreaterThan(0);
+    // A Manager summary the user chose to share is marked as such.
+    await b.service.sendTeamMessage(project.id, "Summary: A does login, B does tests.", "summary");
+    expect(b.service.view().chat[project.id]!.messages.at(-1)).toMatchObject({ kind: "summary", authorName: "b_user" });
+  });
+
+  it("refuses empty or too long messages, and projects the account is not in", async () => {
+    const { a, project } = await twoInAProject();
+    await expect(a.service.sendTeamMessage(project.id, "   ")).rejects.toThrow(/1 to 4,000/);
+    await expect(a.service.sendTeamMessage(project.id, "x".repeat(4001))).rejects.toThrow(/1 to 4,000/);
+    await expect(a.service.sendTeamMessage("not-a-project", "hej")).rejects.toThrow(/Unknown shared project/);
+  });
+
+  it("says plainly when the Teams server has no team chat yet, instead of failing", async () => {
+    const { server, a, project } = await twoInAProject();
+    server.chatMissing = true;
+    await a.service.refreshChat(project.id);
+    expect(a.service.view().chat[project.id]).toMatchObject({ needsUpdate: true, messages: [] });
+    expect(a.service.view().chat[project.id]!.problem).toMatch(/team_chat\.sql/);
+    await expect(a.service.sendTeamMessage(project.id, "hej")).rejects.toThrow(/does not have the team chat yet/);
+  });
+
+  it("gives the Manager the latest team chat in Team right now, as data, with a request to sort it", async () => {
+    const { a, b, project } = await twoInAProject();
+    await b.service.sendTeamMessage(project.id, "Please make the sidebar blue");
+    await a.service.sendTeamMessage(project.id, "I am changing the sidebar layout");
+    // A reads the team again (B joined after A loaded it), which also reads the chat.
+    await a.service.refresh();
+    const note = a.service.teamNow("la")!;
+    expect(note).toContain("Team chat of the last day");
+    expect(note).toContain('@b_user: "Please make the sidebar blue"');
+    expect(note).toContain('the user (you work for them): "I am changing the sidebar layout"');
+    expect(note).toMatch(/Sort and sync/);
+    // Signing out leaves no chat behind for the next account.
+    await a.service.signOut();
+    expect(a.service.view().chat).toEqual({});
   });
 });

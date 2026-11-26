@@ -2,7 +2,7 @@
 // (you first), each with the team runs they have going right now, for a project linked to a shared team project. These nodes are drawn next to the tree,
 // never saved into it: a teammate's Manager is read-only here and cannot be edited or run from
 // this computer. Solo projects do not show any of this.
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { BRIEF_STATUS_TEXT, NODE_H, NODE_W, STATUS_TEXT, ago, bridgeLayout, briefsNotice, unsyncedBriefs, bridgeSummary, displayName, memberStatus, personBoxes, repoName } from './teams-ui.mjs';
 
 // The boxes the tree's "fit" should include, in tree coordinates.
@@ -18,7 +18,7 @@ function edgePath(ax, ay, bx, by) {
   return `M ${ax} ${ay} C ${mid} ${ay}, ${mid} ${by}, ${bx} ${by}`;
 }
 
-export function TeamOverlay({ graph, linked, view, onOpen, managerAt, Icon }) {
+export function TeamOverlay({ graph, linked, view, onOpen, managerAt, Icon, unread = 0 }) {
   if (!linked) return null;
   const original = graph.nodes.find((n) => n.role === 'Manager');
   if (!original) return null;
@@ -39,6 +39,7 @@ export function TeamOverlay({ graph, linked, view, onOpen, managerAt, Icon }) {
         onPointerDown={(e) => e.stopPropagation()} onClick={open} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') open(e); }}>
         <div className="node-heading"><span className="node-avatar team-bridge-avatar"><Icon name="link" size={19}/></span><div><span className="node-role">Team Bridge</span><strong>{linked.team.name}</strong></div></div>
         <div className="node-model">github.com/{repoName(linked.project.repo)}{linked.project.briefs?.length ? ` · ${linked.project.briefs.length} active` : ''}</div>
+        {unread > 0 && <div className="team-unread" aria-label={`${unread} new team ${unread === 1 ? 'message' : 'messages'}`}>{unread} new {unread === 1 ? 'message' : 'messages'}</div>}
         <div className="node-bottom"><span><span className={`status-dot team-dot-${view.presence?.[linked.project.id]?.connection || 'connecting'}`}/>{bridgeSummary(view, linked.team, linked.project)}</span><span className="node-bottom-actions"><span>Open</span></span></div>
       </div>
       {people.map((p, i) => {
@@ -61,7 +62,43 @@ export function TeamOverlay({ graph, linked, view, onOpen, managerAt, Icon }) {
   );
 }
 
-export function BridgePanel({ linked, view, onClose, Icon }) {
+// The team chat of a shared project: everyone in it reads it, and each one's Manager reads the latest
+// messages too, so it can sort what people ask for (main/teams/team-now.ts).
+function TeamChat({ chat, view, onSend, onSort }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const list = useRef(null);
+  const messages = chat?.messages || [];
+  useEffect(() => { if (list.current) list.current.scrollTop = list.current.scrollHeight; }, [messages.length]);
+  const send = async () => {
+    const body = text.trim();
+    if (!body || busy) return;
+    setBusy(true); setError(null);
+    try { await onSend(body); setText(''); } catch (e) { setError(String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')); } finally { setBusy(false); }
+  };
+  if (chat?.needsUpdate) return <p className="team-muted team-sync-problem" role="note">{chat.problem}</p>;
+  return <div className="team-chat">
+    <ol className="team-chat-list" ref={list} aria-label="Team chat">
+      {messages.length === 0 && <li className="team-muted">No messages yet. Write what you want done; your teammates and their Managers see it.</li>}
+      {messages.map((m) => <li key={m.id} className={`team-chat-msg ${m.authorId === view.userId ? 'is-you' : ''} ${m.kind === 'summary' ? 'is-summary' : ''}`}>
+        <div className="team-chat-head"><strong>{m.authorId === view.userId ? 'You' : `@${displayName(m.authorName)}`}</strong>{m.kind === 'summary' && <em>Manager summary</em>}<time>{ago(m.createdAt)}</time></div>
+        <div className="team-chat-body">{m.body}</div>
+      </li>)}
+    </ol>
+    {chat?.problem && <p className="team-muted" role="status">{chat.problem}</p>}
+    {error && <div className="setup-error" role="alert"><span>{error}</span></div>}
+    <form className="team-chat-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+      <textarea rows={2} maxLength={4000} aria-label="Message to the team" placeholder="Message the team…" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}/>
+      <div className="team-chat-actions">
+        {onSort && messages.length > 0 && <button type="button" className="button" onClick={onSort}>Ask my Manager to sort this</button>}
+        <button type="submit" className="button primary-button" disabled={busy || !text.trim()}>{busy ? 'Sending…' : 'Send'}</button>
+      </div>
+    </form>
+  </div>;
+}
+
+export function BridgePanel({ linked, view, onClose, Icon, onSend, onSort }) {
   const { team, project } = linked;
   const presence = view.presence?.[project.id];
   const nameOf = (userId) => displayName(team.members.find((m) => m.userId === userId)?.name);
@@ -71,6 +108,10 @@ export function BridgePanel({ linked, view, onClose, Icon }) {
     <aside className="task-drawer team-bridge-panel" aria-label={`Team Bridge for ${team.name}`}>
       <div className="task-drawer-top"><div><span className="eyebrow">TEAM BRIDGE</span><h2>{team.name}</h2></div><button className="icon-button" title="Close Team Bridge" aria-label="Close Team Bridge" onClick={onClose}><Icon name="close"/></button></div>
       <div className="task-drawer-scroll team-bridge-body">
+        {onSend && <section>
+          <h3>Team chat</h3>
+          <TeamChat chat={view.chat?.[project.id]} view={view} onSend={onSend} onSort={onSort}/>
+        </section>}
         <section>
           <h3>Shared repository</h3>
           <p><strong>{project.name}</strong><br/><span className="team-muted">github.com/{repoName(project.repo)}</span></p>

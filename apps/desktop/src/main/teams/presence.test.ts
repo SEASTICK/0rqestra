@@ -250,6 +250,28 @@ describe("activity from the system idle time", () => {
   });
 });
 
+describe("team chat over the private briefs channel", () => {
+  it("asks for the chat to be read again when the channel is joined and when a message is added", async () => {
+    const chat: string[] = [];
+    const briefs: string[] = [];
+    const h = harness();
+    const deps = (h.hub as unknown as { deps: { onBriefs: (p: string) => void; onChat: (p: string) => void } }).deps;
+    deps.onBriefs = (p) => briefs.push(p);
+    deps.onChat = (p) => chat.push(p);
+    h.hub.setTargets([{ projectId: P, selfId: ME, memberIds: [ME] }]);
+    const s = h.sockets[0]!;
+    s.onopen?.();
+    await h.flush();
+    const join = s.joins().find((j) => j.topic === `realtime:teams:${P}:briefs`)!;
+    s.acceptJoins();
+    expect(chat).toEqual([P]);
+    s.serverSends({ topic: join.topic, event: "broadcast", payload: { type: "broadcast", event: "message_added", payload: { message_id: "m" } }, ref: null });
+    expect(chat).toEqual([P, P]);
+    // A chat message does not make the briefs be read again.
+    expect(briefs).toEqual([P]);
+  });
+});
+
 describe("brief changes over the private briefs channel", () => {
   it("joins the project's briefs channel without presence and asks for a re-read on join and on each change", async () => {
     const changed: string[] = [];
