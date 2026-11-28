@@ -319,11 +319,18 @@ export function teamMembers(graph, statuses = []) {
 
 // The agents that can work, as the main process needs them.
 export function teamAgents(graph, statuses = []) {
-  return (graph?.nodes || []).filter((n) => n.role !== 'Manager' && isRealAgent(n)).map((n) => {
+  const reals = (graph?.nodes || []).filter((n) => n.role !== 'Manager' && isRealAgent(n));
+  const ready = new Set(readyProviders(statuses).map((s) => s.provider));
+  const known = Array.isArray(statuses) && statuses.length > 0;
+  return reals.map((n) => {
     const models = modelsOf(n.agent.tool, statuses);
+    // Backups: other real agents with the same role, in the order the user chose.
+    const backups = (Array.isArray(n.backups) ? n.backups : []).filter((id) => reals.some((b) => b.id === id && b.id !== n.id && b.role === n.role)).slice(0, 8);
     return {
       id: n.id, name: String(n.name).slice(0, 48), role: n.role, priority: Number(n.priority) || 0,
       tool: n.agent.tool, model: n.agent.model ?? null, effort: n.agent.effort ?? null, ...(models.length ? { models } : {}), ...skillRefs(n, graph),
+      ...(backups.length ? { backups, backupMode: n.backupMode === 'ask' ? 'ask' : 'auto' } : {}),
+      ...(known && !ready.has(n.agent.tool) ? { ready: false } : {}),
     };
   });
 }
@@ -371,6 +378,8 @@ function applyTeamEventCore(run, event) {
     case 'brief': return patch(event.taskId, (t) => ({ ...t, brief: event.brief }));
     case 'skills': return patch(event.taskId, (t) => ({ ...t, skills: [...(t.skills || []).filter((s) => !(s.agentId === event.agentId && s.kind === event.kind)), { agentId: event.agentId, kind: event.kind, loaded: event.loaded || [], refused: event.refused || [] }] }));
     case 'usage': return { ...run, usageEntries: [...(run.usageEntries || []).filter((e) => e.seq !== event.entry.seq), event.entry] };
+    // A backup agent took over after a usage limit, from the last checkpoint.
+    case 'switch': return patch(event.taskId, (t) => ({ ...t, switches: [...(t.switches || []), { fromName: event.fromName, fromTool: event.fromTool, toName: event.toName, toTool: event.toTool, resetsAt: event.resetsAt ?? null }].slice(-5) }));
     case 'run-finished': return { ...run, status: event.status, summary: event.summary, files: event.files, calls: event.calls, usage: event.usage, totals: event.totals || null };
     default: return run;
   }

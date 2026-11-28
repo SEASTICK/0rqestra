@@ -74,6 +74,7 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
       onFriendsChanged: () => void service.refreshSocial(),
       onChat: (projectId) => void service.refreshChat(projectId),
       onChecklist: (projectId) => void service.refreshChecklist(projectId),
+      onFriends: (presence) => service.setFriendsPresence(presence),
     });
     hub.setActive(activity.isActive());
     return hub;
@@ -101,6 +102,11 @@ export function registerTeamsIpc(isTrusted: (event: IpcMainInvokeEvent) => boole
     },
     // Friend requests and team invitations arrive live on the user's own topic (the 20-second
     // poll below stays as the fallback).
+    // Friends' online status: share mine and watch my accepted friends'.
+    onFriendTargets: (selfId: string | null, friendIds: string[]) => {
+      if (selfId) ensureHub()?.setFriends(selfId, friendIds);
+      else hub?.setFriends(null);
+    },
     onInbox: (userId: string | null) => {
       if (userId) ensureHub()?.setInbox(userId);
       else hub?.setInbox(null);

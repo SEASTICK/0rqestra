@@ -490,6 +490,7 @@ function computer(name: string, server: FakeSupabase, now = () => server.now) {
     const events: TeamsView[] = [];
     const targets: PresenceTarget[][] = [];
     const inbox: (string | null)[] = [];
+    const friendTargets: [string | null, string[]][] = [];
     const service = new TeamsService({
       config,
       fetch: server.fetch,
@@ -499,10 +500,11 @@ function computer(name: string, server: FakeSupabase, now = () => server.now) {
       emit: (v) => events.push(v),
       onPresenceTargets: (t) => targets.push(t),
       onInbox: (u) => inbox.push(u),
+      onFriendTargets: (self, ids) => friendTargets.push([self, ids]),
       now,
       caseInsensitivePaths: process.platform !== "linux",
     });
-    return { service, events, targets, inbox };
+    return { service, events, targets, inbox, friendTargets };
   };
   return { dir, ...make(), restart: make };
 }
@@ -1323,6 +1325,33 @@ describe("usernames, friends and team invitations", () => {
     const projectId = v.teams[0]!.projects[0]!.id;
     expect(v.checklist[projectId]).toMatchObject({ needsUpdate: true, items: [] });
     await expect(a.service.addChecklistItem(projectId, { title: "x" })).rejects.toThrow(/does not have the shared checklist yet/);
+  });
+
+  it("shares presence only with accepted friends, never with a pending request, and stops on sign-out", async () => {
+    const server = new FakeSupabase();
+    const a = computer("pa", server);
+    const b = computer("pb", server);
+    const c = computer("pc", server);
+    await signIn(a.service, "ann@example.test");
+    await signIn(b.service, "bob@example.test");
+    await signIn(c.service, "cat@example.test");
+    const annId = server.users.get("ann@example.test")!;
+    const bobId = server.users.get("bob@example.test")!;
+    expect(a.friendTargets.at(-1)).toEqual([annId, []]);
+    await a.service.sendFriendRequest("bob_user");
+    await c.service.sendFriendRequest("ann_user");
+    await a.service.refreshSocial();
+    // Bob has not accepted and Cat's request waits: neither sees Ann's status.
+    expect(a.friendTargets.at(-1)).toEqual([annId, []]);
+    await b.service.refreshSocial();
+    await b.service.respondFriend(b.service.view().friends[0]!.requestId, true);
+    await a.service.refreshSocial();
+    expect(a.friendTargets.at(-1)).toEqual([annId, [bobId]]);
+    a.service.setFriendsPresence({ connection: "live", online: [bobId], problem: null });
+    expect(a.service.view().friendsPresence).toEqual({ connection: "live", online: [bobId], problem: null });
+    const v = await a.service.signOut();
+    expect(a.friendTargets.at(-1)).toEqual([null, []]);
+    expect(v.friendsPresence).toEqual({ connection: "off", online: [], problem: null });
   });
 
   it("says when the server cannot be reached, and clears it when it answers again", async () => {

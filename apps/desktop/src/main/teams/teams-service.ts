@@ -5,7 +5,7 @@ import type { CheckoutLink, LinkStore, SessionStore } from "./local-store";
 import { remoteMatching, resolveIdentity, type RemoteChoice } from "./repo-identity";
 import { SupabaseApi, SupabaseError, type AuthSession, type FetchLike } from "./supabase-api";
 import type { ConfigResult } from "./teams-config";
-import type { PresenceSnapshot, PresenceTarget } from "./presence";
+import type { FriendsPresence, PresenceSnapshot, PresenceTarget } from "./presence";
 import { teamNowText } from "./team-now";
 import { pathsOverlap } from "./reservations";
 
@@ -108,6 +108,8 @@ export interface TeamsView {
   loadProblem: string | null;
   // Who is online, per shared project (phase 2). Empty until the presence connection reports.
   presence: PresenceSnapshot;
+  // Friends' online status (accepted friends only), from the presence hub.
+  friendsPresence: FriendsPresence;
   // When the active briefs were last read from the server (ms), per shared project (phase 3).
   briefsAt: Record<string, number>;
   // This computer's own briefs per shared project, with their sync state (phase 3).
@@ -268,6 +270,8 @@ export interface TeamsDeps {
   onPresenceTargets?: (targets: PresenceTarget[]) => void;
   // Told whose friend changes to listen for (the signed-in user), or null when signed out.
   onInbox?: (userId: string | null) => void;
+  // Told whose presence to share and watch: the signed-in user and their accepted friends.
+  onFriendTargets?: (selfId: string | null, friendIds: string[]) => void;
   // This computer's own briefs for a shared project (from the brief publisher).
   localBriefs?: (projectId: string) => LocalBriefView[];
   now?: () => number;
@@ -300,6 +304,8 @@ export class TeamsService {
   private checklist: Record<string, ChecklistView> = {};
   private lastTargets = "";
   private lastInbox: string | null | undefined = undefined;
+  private lastFriendTargets = "";
+  private friendsPresence: FriendsPresence = { connection: "off", online: [], problem: null };
   private readonly now: () => number;
 
   constructor(private readonly deps: TeamsDeps) {
@@ -351,6 +357,7 @@ export class TeamsService {
       teams: status === "signed_in" ? this.teams : [],
       loadProblem: status === "signed_in" ? this.loadProblem : null,
       presence: status === "signed_in" ? this.presence : {},
+      friendsPresence: status === "signed_in" ? this.friendsPresence : { connection: "off", online: [], problem: null },
       briefsAt: status === "signed_in" ? this.briefsAt : {},
       localBriefs: status === "signed_in" && this.deps.localBriefs
         ? Object.fromEntries(this.teams.flatMap((t) => t.projects).map((p) => [p.id, this.deps.localBriefs!(p.id)]))
@@ -372,6 +379,13 @@ export class TeamsService {
     if (inbox !== this.lastInbox) {
       this.lastInbox = inbox;
       this.deps.onInbox?.(inbox);
+    }
+    // Presence is shared only with accepted friends (the database checks it again on every join).
+    const friendIds = inbox ? v.friends.filter((f) => f.state === "friend").map((f) => f.userId).sort() : [];
+    const fkey = JSON.stringify([inbox, friendIds]);
+    if (fkey !== this.lastFriendTargets) {
+      this.lastFriendTargets = fkey;
+      this.deps.onFriendTargets?.(inbox, friendIds);
     }
     this.deps.emit(v);
     return v;
@@ -751,6 +765,13 @@ export class TeamsService {
     if (this.session) this.changed();
   }
 
+  // Friends' online status from the presence hub.
+  setFriendsPresence(presence: FriendsPresence): void {
+    if (JSON.stringify(presence) === JSON.stringify(this.friendsPresence)) return;
+    this.friendsPresence = presence;
+    this.changed();
+  }
+
   setPresence(snapshot: PresenceSnapshot): void {
     this.presence = snapshot;
     this.changed();
@@ -829,6 +850,7 @@ export class TeamsService {
     this.resetAccountData();
     this.teams = [];
     this.presence = {};
+    this.friendsPresence = { connection: "off", online: [], problem: null };
     this.briefsAt = {};
     this.chat = {};
     this.checklist = {};
@@ -889,6 +911,7 @@ export class TeamsService {
     this.teams = [];
     this.loadProblem = null;
     this.presence = {};
+    this.friendsPresence = { connection: "off", online: [], problem: null };
     this.briefsAt = {};
     this.chat = {};
     this.checklist = {};

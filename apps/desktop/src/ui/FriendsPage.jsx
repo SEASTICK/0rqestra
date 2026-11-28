@@ -1,9 +1,11 @@
-// Friends: find an account by its exact username, send a friend request, and answer requests and
-// team invitations. Only usernames and display names are shown; email addresses stay private. The
-// main process does every step (main/teams); this page never handles a token.
-import React, { useEffect, useState } from 'react';
+// Friends, as a full page: add someone by username, answer requests, and start shared projects.
+// Tabs for Friends, Requests and Project invites; on a wide page the selected friend's details sit
+// beside the list, on a narrow one they open full width with Back. Only usernames and display
+// names are shown; email addresses stay private. The main process does every step (main/teams);
+// this page never handles a token.
+import React, { useEffect, useRef, useState } from 'react';
 import { AccountForms, UsernameForm } from './AccountWelcome.jsx';
-import { candidateState, errorText, friendGroups, friendLabel, incomingProjectInvites, incomingTeamInvites, projectChoices, projectInvitesWith, projectsTogether, repoName, sendOutcomeText, togetherChoices, togetherStatus } from './teams-ui.mjs';
+import { candidateState, errorText, friendGroups, friendLabel, friendStatus, friendsLayout, friendsTabCounts, incomingProjectInvites, incomingTeamInvites, initialsOf, projectChoices, projectInvitesWith, projectsTogether, repoName, sendOutcomeText, togetherChoices, togetherStatus } from './teams-ui.mjs';
 import { CheckoutPicker, LinkCheckout, ProjectSelect } from './TeamsCheckout.jsx';
 import { USERNAME_RULE, cleanUsername } from './account-ui.mjs';
 
@@ -17,10 +19,6 @@ function useAction(notify) {
   return [pending, run];
 }
 
-function Person({ person }) {
-  const label = friendLabel(person);
-  return <span className="friend-person"><strong>{label.name}</strong>{label.handle && <small>{label.handle}</small>}</span>;
-}
 
 // Team invitations sent to me. Shown here and on the Teams page.
 export function TeamInvitesInbox({ api, view, notify, onView }) {
@@ -41,69 +39,6 @@ export function TeamInvitesInbox({ api, view, notify, onView }) {
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-// Your own username, to share with people who want to add you.
-function ShareUsername({ username }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => navigator.clipboard?.writeText(username).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }).catch(() => {});
-  return (
-    <div className="provider-card teams-card friends-share">
-      <span>Your username <strong className="friends-handle">@{username}</strong></span>
-      <button type="button" className="button" onClick={copy} aria-live="polite">{copied ? 'Copied' : 'Copy username'}</button>
-      <small>Share it so people can add you. Your email address stays private.</small>
-    </div>
-  );
-}
-
-// Look the person up first (exact username, any case), then send or accept.
-function AddFriend({ api, onView, onAccept }) {
-  const [name, setName] = useState('');
-  const [found, setFound] = useState(null);
-  const [message, setMessage] = useState(null);
-  const [pending, setPending] = useState(false);
-  const clean = cleanUsername(name);
-  const act = async (fn) => {
-    if (pending) return;
-    setPending(true);
-    setMessage(null);
-    try { await fn(); } catch (error) { setMessage({ tone: 'error', text: errorText(error) }); } finally { setPending(false); }
-  };
-  const find = () => act(async () => { setFound(null); setFound(await api.findFriend(clean)); });
-  const send = () => act(async () => {
-    const r = await api.addFriend(found.username);
-    onView(r.view);
-    setMessage(sendOutcomeText(r.outcome, found.username));
-    if (r.outcome === 'incoming_pending' && r.requestId) setFound({ ...found, relation: 'incoming', requestId: r.requestId });
-    else { setFound(null); setName(''); }
-  });
-  const accept = () => act(async () => {
-    await onAccept(found.requestId);
-    setMessage({ tone: 'ok', text: `You and @${found.username} are now friends.` });
-    setFound(null);
-    setName('');
-  });
-  const state = found ? candidateState(found) : null;
-  return (
-    <div className="provider-card teams-card" aria-label="Add friend">
-      <h2>Add friend</h2>
-      <form className="teams-inline" onSubmit={(e) => { e.preventDefault(); if (USERNAME_RULE.test(clean)) find(); }}>
-        <input aria-label="Username" value={name} onChange={(e) => { setName(e.target.value); setFound(null); setMessage(null); }} placeholder="Their exact username" maxLength={25} spellCheck={false} autoComplete="off" required/>
-        <button className="button" type="submit" disabled={pending || !USERNAME_RULE.test(clean)}>Find</button>
-      </form>
-      {found && (
-        <div className="friends-found">
-          <Person person={found}/>
-          {state.text && <small>{state.text}</small>}
-          <span className="friends-actions">
-            {state.action === 'send' && <button type="button" className="button primary-button" disabled={pending} onClick={send}>Send request</button>}
-            {state.action === 'accept' && found.requestId && <button type="button" className="button primary-button" disabled={pending} onClick={accept}>Accept request</button>}
-          </span>
-        </div>
-      )}
-      {message && <p className={`friends-message friends-message-${message.tone}`} role={message.tone === 'error' ? 'alert' : 'status'}>{message.text}</p>}
     </div>
   );
 }
@@ -175,159 +110,350 @@ function StartTogether({ api, friend, view, projects, onCreateProject, notify, o
 }
 
 // One shared project we are both in: membership, their presence and my checkout, each on its own,
-// and "Open shared project" (or linking my checkout first).
+// and "Open shared project" (which first links this computer's checkout if there is none yet).
 function TogetherProject({ api, view, project, team, friend, projects, onCreateProject, onOpenProject, notify, onView }) {
   const [linking, setLinking] = useState(false);
   const status = togetherStatus(view, project, friend.userId);
   const open = () => (project.link?.state === 'linked' ? onOpenProject?.(project.link.localProjectId) : setLinking(true));
   return (
-    <div className="friends-together-project">
-      <span><strong>{project.name}</strong><small>Member · {status.presence === 'unknown' ? 'status unknown' : status.presence} · your checkout {status.myCheckout} · {repoLine(project.repo)}</small></span>
-      {linking ? (
-        <div className="friends-together-link">
-          <p className="provider-line">No copy of {repoName(project.repo)} on this computer yet? Clone it first (for example with New project → From GitHub, or git clone), then choose that folder. Your folder and branch stay on this computer.</p>
+    <div className="fr-project">
+      <div className="fr-project-head">
+        <span className="fr-project-main"><strong>{project.name}</strong><small>{repoLine(project.repo)} · team {team.name}</small></span>
+        {!linking && <button type="button" className="fr-primary" onClick={open}>Open shared project</button>}
+      </div>
+      <div className="fr-badges">
+        <span className="fr-badge fr-badge-good">Member</span>
+        <span className={`fr-badge ${status.presence === 'online' ? 'fr-badge-good' : ''}`}>{status.presence === 'unknown' ? 'Status unknown' : status.presence === 'online' ? 'Online' : 'Offline'}</span>
+        <span className={`fr-badge ${status.myCheckout === 'ready' ? 'fr-badge-good' : 'fr-badge-warn'}`}>Your checkout: {status.myCheckout}</span>
+      </div>
+      {linking && (
+        <div className="fr-link">
+          <p className="fr-muted">Open it on this computer by choosing your own copy of {repoName(project.repo)}. No copy yet? Clone it first (New project → From GitHub, or git clone). Your folder and branch stay on this computer.</p>
           <LinkCheckout api={api} project={project} teams={view.teams} projects={projects} onCreateProject={onCreateProject} notify={notify} onView={onView} onDone={() => setLinking(false)}/>
         </div>
-      ) : <button type="button" className="button" onClick={open}>{project.link?.state === 'linked' ? 'Open shared project' : 'Set up my checkout'}</button>}
-      <small className="friends-together-team">Team {team.name}</small>
+      )}
     </div>
   );
 }
 
-function FriendRow({ api, friend, view, projects, onCreateProject, onOpenProject, notify, onView, pending, run }) {
-  const [starting, setStarting] = useState(false);
+// A small "⋯" menu for secondary actions. Escape or a click outside closes it.
+function MoreMenu({ label, items }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const down = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const key = (e) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', down);
+    window.addEventListener('keydown', key);
+    return () => { window.removeEventListener('mousedown', down); window.removeEventListener('keydown', key); };
+  }, [open]);
+  return (
+    <span className="fr-menu" ref={ref}>
+      <button type="button" className="fr-icon" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>⋯</button>
+      {open && (
+        <span className="fr-menu-list" role="menu">
+          {items.map((it) => <button key={it.label} type="button" role="menuitem" className={it.danger ? 'is-danger' : ''} autoFocus={it === items[0]} onClick={() => { setOpen(false); it.onSelect(); }}>{it.label}</button>)}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function Avatar({ person, size = 'md' }) {
+  return <span className={`fr-avatar fr-avatar-${size}`} aria-hidden="true">{initialsOf(person)}</span>;
+}
+
+function Who({ person, view = null }) {
+  const label = friendLabel(person);
+  const status = view ? friendStatus(view, person.userId) : null;
+  return <span className="fr-who"><strong>{label.name}{status?.text && <span className={`fr-status fr-status-${status.state}`}><i aria-hidden="true"/>{status.text}</span>}</strong>{label.handle && <small>{label.handle}</small>}</span>;
+}
+
+// "Add friend": one username field (paste it with or without @), the matching account before sending,
+// and the outcome in words. If they already asked me, Accept and Decline right here.
+function AddFriendDialog({ api, onView, onClose, onRespond }) {
+  const [name, setName] = useState('');
+  const [found, setFound] = useState(null);
+  const [message, setMessage] = useState(null);
+  const [pending, setPending] = useState(false);
+  const clean = cleanUsername(name);
+  const act = async (fn) => {
+    if (pending) return;
+    setPending(true);
+    setMessage(null);
+    try { await fn(); } catch (error) { setMessage({ tone: 'error', text: errorText(error) }); } finally { setPending(false); }
+  };
+  const find = () => act(async () => { setFound(null); setFound(await api.findFriend(clean)); });
+  const send = () => act(async () => {
+    const r = await api.addFriend(found.username);
+    onView(r.view);
+    setMessage(sendOutcomeText(r.outcome, found.username));
+    if (r.outcome === 'incoming_pending' && r.requestId) setFound({ ...found, relation: 'incoming', requestId: r.requestId });
+    else setFound({ ...found, relation: r.outcome === 'sent' || r.outcome === 'already_pending' ? 'outgoing' : 'friend' });
+  });
+  const respond = (accept) => act(async () => {
+    await onRespond(found.requestId, accept);
+    setMessage({ tone: 'ok', text: accept ? `You and @${found.username} are now friends.` : `Declined @${found.username}'s request.` });
+    setFound({ ...found, relation: accept ? 'friend' : 'none', requestId: null });
+  });
+  const state = found ? candidateState(found) : null;
+  return (
+    <div className="fr-scrim" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="fr-dialog" role="dialog" aria-modal="true" aria-labelledby="fr-add-title" onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}>
+        <div className="fr-dialog-head"><h2 id="fr-add-title">Add friend</h2><button type="button" className="fr-icon" aria-label="Close" onClick={onClose}>×</button></div>
+        <form className="fr-add-form" onSubmit={(e) => { e.preventDefault(); if (USERNAME_RULE.test(clean)) find(); }}>
+          <label className="fr-field">Username
+            <input autoFocus value={name} onChange={(e) => { setName(e.target.value); setFound(null); setMessage(null); }} placeholder="@username" maxLength={26} spellCheck={false} autoComplete="off"/>
+          </label>
+          <button type="submit" className="fr-secondary" disabled={pending || !USERNAME_RULE.test(clean)}>Find</button>
+        </form>
+        <p className="fr-muted">Their exact username, with or without the @. Email addresses stay private.</p>
+        {found && (
+          <div className="fr-candidate">
+            <Avatar person={found}/>
+            <Who person={found}/>
+            {state.text && <small className="fr-muted fr-candidate-state">{state.text}</small>}
+            <span className="fr-actions">
+              {state.action === 'send' && <button type="button" className="fr-primary" autoFocus disabled={pending} onClick={send}>Send request</button>}
+              {state.action === 'accept' && found.requestId && <>
+                <button type="button" className="fr-primary" autoFocus disabled={pending} onClick={() => respond(true)}>Accept</button>
+                <button type="button" className="fr-secondary" disabled={pending} onClick={() => respond(false)}>Decline</button>
+              </>}
+            </span>
+          </div>
+        )}
+        {message && <p className={`fr-message fr-message-${message.tone}`} role={message.tone === 'error' ? 'alert' : 'status'}>{message.text}</p>}
+      </div>
+    </div>
+  );
+}
+
+// The selected friend: who, the projects we share, invitations waiting, and starting a new one.
+function FriendDetail({ api, friend, view, projects, onCreateProject, onOpenProject, notify, onView, starting, setStarting, onRemove, onBack }) {
+  const [pending, run] = useAction(notify);
   const waiting = projectInvitesWith(view, friend.userId, 'outgoing');
   const together = projectsTogether(view, friend.userId);
   return (
-    <li className="friends-row">
-      <div className="friends-row-head">
-        <Person person={friend}/>
-        <span className="friends-actions">
-          {!starting && <button type="button" className="button" onClick={() => setStarting(true)}>Start a project together</button>}
-          <button type="button" className="provider-text-link" disabled={pending} onClick={() => { if (window.confirm(`Remove @${friend.username} from your friends? You both lose the friendship, and pending project invitations between you are cancelled.`)) run(async () => { onView(await api.removeFriend(friend.userId)); notify?.(`@${friend.username} is no longer your friend.`); }); }}>Remove</button>
-        </span>
+    <section className="fr-detail" aria-label={`${friendLabel(friend).name}`}>
+      {onBack && <button type="button" className="fr-back" onClick={onBack}>← Back to friends</button>}
+      <div className="fr-detail-head">
+        <Avatar person={friend} size="lg"/>
+        <Who person={friend} view={view}/>
+        <MoreMenu label={`More for ${friendLabel(friend).name}`} items={[{ label: 'Remove friend', danger: true, onSelect: onRemove }]}/>
       </div>
-      {waiting.map((i) => (
-        <div key={i.id} className="friends-together-pending">
-          <span>Invitation pending · <strong>{i.projectName}</strong> · {repoLine(i.repo)}</span>
-          <button type="button" className="provider-text-link" disabled={pending} onClick={() => run(async () => { onView(await api.revokeProjectInvite(i.id)); notify?.(`Invitation to ${i.projectName} cancelled.`); })}>Cancel invitation</button>
-        </div>
-      ))}
-      {together.map(({ project, team }) => <TogetherProject key={project.id} api={api} view={view} project={project} team={team} friend={friend} projects={projects} onCreateProject={onCreateProject} onOpenProject={onOpenProject} notify={notify} onView={onView}/>)}
+      {!starting && <button type="button" className="fr-primary fr-wide" onClick={() => setStarting(true)}>Start a project together</button>}
       {starting && <StartTogether api={api} friend={friend} view={view} projects={projects} onCreateProject={onCreateProject} notify={notify} onView={onView} onDone={() => setStarting(false)}/>}
-    </li>
+      {waiting.length > 0 && <div className="fr-block">
+        <h3>Invitations waiting for {friendLabel(friend).name}</h3>
+        {waiting.map((i) => (
+          <div key={i.id} className="fr-pending">
+            <span className="fr-project-main"><strong>{i.projectName}</strong><small>{repoLine(i.repo)}</small></span>
+            <span className="fr-badge fr-badge-warn">Invitation pending</span>
+            <button type="button" className="fr-link-button" disabled={pending} onClick={() => run(async () => { onView(await api.revokeProjectInvite(i.id)); notify?.(`Invitation to ${i.projectName} cancelled.`); })}>Cancel invitation</button>
+          </div>
+        ))}
+      </div>}
+      <div className="fr-block">
+        <h3>Shared projects</h3>
+        {together.length ? together.map(({ project, team }) => <TogetherProject key={project.id} api={api} view={view} project={project} team={team} friend={friend} projects={projects} onCreateProject={onCreateProject} onOpenProject={onOpenProject} notify={notify} onView={onView}/>)
+          : <p className="fr-muted">No shared projects yet. Start one together; {friendLabel(friend).name} joins when they accept.</p>}
+      </div>
+    </section>
   );
 }
 
-// Project invitations sent to me: who, which project, which repository.
-function ProjectInvitesInbox({ api, view, notify, onView }) {
-  const [pending, run] = useAction(notify);
-  const invites = incomingProjectInvites(view);
-  if (!invites.length) return null;
-  return (
-    <div className="provider-card teams-card friends-inbox" aria-label="Project invitations">
-      <h2>Project invitations</h2>
-      <ul className="teams-list">
-        {invites.map((i) => (
-          <li key={i.id}>
-            <span className="friend-person"><strong>{i.projectName}</strong><small>from {friendLabel(i).name}{friendLabel(i).handle ? ` (${friendLabel(i).handle})` : ''} · {repoLine(i.repo)}</small></span>
-            <span className="friends-actions">
-              <button type="button" className="button primary-button" disabled={pending} onClick={() => run(async () => { const r = await api.respondProjectInvite(i.id, true); onView(r.view); notify?.(`You joined ${i.projectName}. Open it from ${friendLabel(i).name}'s row below.`); })}>Accept</button>
-              <button type="button" className="button" disabled={pending} onClick={() => run(async () => { const r = await api.respondProjectInvite(i.id, false); onView(r.view); })}>Decline</button>
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
+const TABS = [['friends', 'Friends'], ['requests', 'Requests'], ['invites', 'Project invites']];
 
 export function FriendsPage({ view, onView: setView, onBack, notify, onTeams, projects = [], onCreateProject, onOpenProject }) {
   const api = typeof window !== 'undefined' ? window.orqestra?.teams : null;
   const onView = (v) => { if (v && typeof v === 'object' && v.status) setView(v); };
   const [pending, run] = useAction(notify);
+  const [tab, setTab] = useState('friends');
+  const [selectedId, setSelectedId] = useState(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [width, setWidth] = useState(1200);
+  const root = useRef(null);
   // Read the lists again every time the page opens.
   useEffect(() => { if (api) api.status(true).then(onView).catch(() => {}); }, []);
+  // The layout follows the page's own width (so it adapts when the sidebar is shown or hidden).
+  useEffect(() => {
+    const el = root.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [view?.status, view?.username]);
+  const layout = friendsLayout(width);
   const groups = friendGroups(view);
+  const counts = friendsTabCounts(view);
+  const selected = groups.friends.find((f) => f.userId === selectedId) || (layout === 'two' ? groups.friends[0] : null) || null;
   const respond = async (requestId, accept) => onView(await api.respondFriend(requestId, accept));
+  const select = (f, start = false) => { setSelectedId(f.userId); setStarting(start); setDetailOpen(true); };
+  const remove = (f) => {
+    if (!window.confirm(`Remove @${f.username} from your friends? You both lose the friendship, and pending project invitations between you are cancelled. Shared projects stay.`)) return;
+    void run(async () => { onView(await api.removeFriend(f.userId)); if (selectedId === f.userId) { setSelectedId(null); setDetailOpen(false); } notify?.(`@${f.username} is no longer your friend.`); });
+  };
+  const copy = () => navigator.clipboard?.writeText(`@${view.username}`).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }).catch(() => notify?.('Could not copy. Select the username and copy it.'));
+  const tabKeys = (e) => {
+    const i = TABS.findIndex(([id]) => id === tab);
+    const next = e.key === 'ArrowRight' ? (i + 1) % TABS.length : e.key === 'ArrowLeft' ? (i + TABS.length - 1) % TABS.length : -1;
+    if (next >= 0) { e.preventDefault(); setTab(TABS[next][0]); document.getElementById(`fr-tab-${TABS[next][0]}`)?.focus(); }
+  };
+
+  if (!api || !view || view.status !== 'signed_in' || !view.username) {
+    return (
+      <section className="accounts-page teams-page friends-page" aria-label="Friends">
+        <div className="accounts-heading"><div><div className="eyebrow">FRIENDS</div><h1>Friends<span className="account-heading-dot">.</span></h1></div><div className="accounts-actions"><button className="button" onClick={onBack}>Back</button></div></div>
+        {!api ? <div className="simulated-notice" role="note"><strong>Preview</strong><h2>Friends works in the installed app.</h2></div>
+          : !view ? <p className="provider-line">Loading…</p>
+          : view.status === 'unconfigured' ? <div className="provider-card teams-card"><h2>Friends is not available in this build</h2><p className="provider-line">{view.configProblem || 'This build has no 0rqestra server.'}</p></div>
+          : view.status !== 'signed_in' ? <div className="provider-card teams-card">{view.serverProblem && <div className="setup-error" role="alert"><span>{view.serverProblem}</span></div>}<p className="provider-line">Friends needs your 0rqestra account.</p><AccountForms api={api} view={view} onView={onView} initialStep="sign_in"/></div>
+          : <div className="provider-card teams-card">{view.needsUsername ? <UsernameForm api={api} view={view} onView={onView}/> : <p className="provider-line">Loading your account…</p>}</div>}
+      </section>
+    );
+  }
+
+  const showList = layout === 'two' || !detailOpen || !selected;
+  const showDetail = selected && (layout === 'two' || detailOpen);
   return (
-    <section className="accounts-page teams-page friends-page" aria-label="Friends">
-      <div className="accounts-heading">
-        <div>
-          <div className="eyebrow">FRIENDS</div>
-          <h1>Friends<span className="account-heading-dot">.</span></h1>
-          <p>Add the people you work with. Friends can be invited to your teams; everyone sees usernames and display names, never email addresses.</p>
+    <section className={`fr-page fr-${layout}`} aria-label="Friends" ref={root}>
+      <header className="fr-header">
+        <div className="fr-header-row">
+          <h1>Friends</h1>
+          <span className="fr-me">
+            <span className="fr-handle" title="Your username">@{view.username}</span>
+            <button type="button" className="fr-secondary fr-small" onClick={copy} aria-live="polite">{copied ? 'Copied' : 'Copy'}</button>
+          </span>
+          <span className="fr-header-actions">
+            <button type="button" className="fr-primary" onClick={() => setAdding(true)}>+ Add friend</button>
+            <MoreMenu label="More" items={[{ label: 'Teams', onSelect: onTeams }, { label: 'Back to projects', onSelect: onBack }]}/>
+          </span>
         </div>
-        <div className="accounts-actions">
-          {view?.status === 'signed_in' && <button className="button" onClick={onTeams}>Teams</button>}
-          <button className="button" onClick={onBack}>Back</button>
+        <div className="fr-tabs" role="tablist" aria-label="Friends sections" onKeyDown={tabKeys}>
+          {TABS.map(([id, label]) => (
+            <button key={id} id={`fr-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls={`fr-panel-${id}`} tabIndex={tab === id ? 0 : -1} className={`fr-tab ${tab === id ? 'is-on' : ''}`} onClick={() => setTab(id)}>
+              {label}{counts[id] > 0 && <span className="fr-count" aria-label={`${counts[id]} waiting for you`}>{counts[id]}</span>}
+            </button>
+          ))}
         </div>
-      </div>
-      {!api ? (
-        <div className="simulated-notice" role="note"><strong>Preview</strong><h2>Friends works in the installed app.</h2></div>
-      ) : !view ? (
-        <p className="provider-line">Loading…</p>
-      ) : view.status === 'unconfigured' ? (
-        <div className="provider-card teams-card"><h2>Friends is not available in this build</h2><p className="provider-line">{view.configProblem || 'This build has no 0rqestra server.'}</p></div>
-      ) : view.status !== 'signed_in' ? (
-        <div className="provider-card teams-card">
-          {view.serverProblem && <div className="setup-error" role="alert"><span>{view.serverProblem}</span></div>}
-          <p className="provider-line">Friends needs your 0rqestra account.</p>
-          <AccountForms api={api} view={view} onView={onView} initialStep="sign_in"/>
+        {view.serverProblem && <div className="setup-error" role="alert"><span>Could not reach the 0rqestra server: {view.serverProblem}</span></div>}
+      </header>
+
+      {tab === 'friends' && (
+        <div className="fr-body" id="fr-panel-friends" role="tabpanel" aria-labelledby="fr-tab-friends">
+          {showList && (
+            <div className="fr-list-col">
+              {groups.friends.length === 0 ? <div className="fr-empty"><p>No friends yet.</p><button type="button" className="fr-primary" onClick={() => setAdding(true)}>+ Add friend</button></div> : (
+                <ul className="fr-list" aria-label="Your friends">
+                  {groups.friends.map((f) => (
+                    <li key={f.requestId} className={`fr-row ${showDetail && selected?.userId === f.userId ? 'is-selected' : ''}`}>
+                      <button type="button" className="fr-row-main" aria-current={showDetail && selected?.userId === f.userId ? 'true' : undefined} onClick={() => select(f)}>
+                        <Avatar person={f}/><Who person={f} view={view}/>
+                        {projectInvitesWith(view, f.userId, 'outgoing').length > 0 && <span className="fr-badge fr-badge-warn">Invitation pending</span>}
+                        {projectsTogether(view, f.userId).length > 0 && <span className="fr-badge fr-badge-good">{projectsTogether(view, f.userId).length} shared</span>}
+                      </button>
+                      <span className="fr-row-actions">
+                        <button type="button" className="fr-primary fr-small" onClick={() => select(f, true)}>Start a project together</button>
+                        <MoreMenu label={`More for ${friendLabel(f).name}`} items={[{ label: 'Remove friend', danger: true, onSelect: () => remove(f) }]}/>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          {showDetail && (
+            <FriendDetail key={selected.userId} api={api} friend={selected} view={view} projects={projects} onCreateProject={onCreateProject} onOpenProject={onOpenProject} notify={notify} onView={onView}
+              starting={starting} setStarting={setStarting} onRemove={() => remove(selected)} onBack={layout === 'one' ? () => setDetailOpen(false) : null}/>
+          )}
         </div>
-      ) : !view.username ? (
-        <div className="provider-card teams-card">
-          {view.serverProblem && <div className="setup-error" role="alert"><span>{view.serverProblem}</span></div>}
-          {view.needsUsername ? <UsernameForm api={api} view={view} onView={onView}/> : <p className="provider-line">Loading your account…</p>}
-        </div>
-      ) : (
-        <>
-          {view.serverProblem && <div className="setup-error" role="alert"><span>Could not reach the 0rqestra server: {view.serverProblem}</span></div>}
-          <ShareUsername username={view.username}/>
-          <ProjectInvitesInbox api={api} view={view} notify={notify} onView={onView}/>
-          <TeamInvitesInbox api={api} view={view} notify={notify} onView={onView}/>
-          <AddFriend api={api} onView={onView} onAccept={(id) => respond(id, true)}/>
-          <div className="provider-card teams-card" aria-label="Your friends">
-            <h2>Friends <span className="friends-count">{groups.friends.length}</span></h2>
-            {groups.friends.length === 0 ? <p className="provider-line">No friends yet. Add someone by their username.</p> : (
-              <ul className="teams-list">
-                {groups.friends.map((f) => <FriendRow key={f.requestId} api={api} friend={f} view={view} projects={projects} onCreateProject={onCreateProject} onOpenProject={onOpenProject} notify={notify} onView={onView} pending={pending} run={run}/>)}
-              </ul>
-            )}
-          </div>
-          <div className="provider-card teams-card" aria-label="Incoming requests">
-            <h2>Incoming requests <span className="friends-count">{groups.incoming.length}</span></h2>
-            {groups.incoming.length === 0 ? <p className="provider-line">No requests waiting for your answer.</p> : (
-              <ul className="teams-list">
+      )}
+
+      {tab === 'requests' && (
+        <div className="fr-body fr-single" id="fr-panel-requests" role="tabpanel" aria-labelledby="fr-tab-requests">
+          <div className="fr-block">
+            <h3>Incoming</h3>
+            {groups.incoming.length === 0 ? <p className="fr-muted">No requests waiting for your answer.</p> : (
+              <ul className="fr-list">
                 {groups.incoming.map((f) => (
-                  <li key={f.requestId}>
-                    <Person person={f}/>
-                    <span className="friends-actions">
-                      <button type="button" className="button primary-button" disabled={pending} onClick={() => run(async () => { await respond(f.requestId, true); notify?.(`You and @${f.username} are now friends.`); })}>Accept</button>
-                      <button type="button" className="button" disabled={pending} onClick={() => run(async () => { await respond(f.requestId, false); notify?.(`Declined @${f.username}'s request.`); })}>Decline</button>
+                  <li key={f.requestId} className="fr-row fr-row-static">
+                    <span className="fr-row-main"><Avatar person={f}/><Who person={f}/></span>
+                    <span className="fr-row-actions">
+                      <button type="button" className="fr-primary fr-small" disabled={pending} onClick={() => run(async () => { await respond(f.requestId, true); notify?.(`You and @${f.username} are now friends.`); })}>Accept</button>
+                      <button type="button" className="fr-secondary fr-small" disabled={pending} onClick={() => run(async () => { await respond(f.requestId, false); notify?.(`Declined @${f.username}'s request.`); })}>Decline</button>
                     </span>
                   </li>
                 ))}
               </ul>
             )}
           </div>
-          <div className="provider-card teams-card" aria-label="Sent requests">
-            <h2>Sent requests <span className="friends-count">{groups.outgoing.length}</span></h2>
-            {groups.outgoing.length === 0 ? <p className="provider-line">No requests waiting for someone else's answer.</p> : (
-              <ul className="teams-list">
+          <div className="fr-block">
+            <h3>Sent</h3>
+            {groups.outgoing.length === 0 ? <p className="fr-muted">No requests waiting for someone else.</p> : (
+              <ul className="fr-list">
                 {groups.outgoing.map((f) => (
-                  <li key={f.requestId}><Person person={f}/><small>Waiting for an answer</small>
-                    <button type="button" className="provider-text-link" disabled={pending} onClick={() => run(async () => {
-                      const r = await api.cancelFriend(f.userId);
-                      onView(r.view);
-                      notify?.(r.result === 'accepted' ? `@${f.username} accepted just before you cancelled. You are friends now.` : `Cancelled your request to @${f.username}.`);
-                    })}>Cancel</button></li>
+                  <li key={f.requestId} className="fr-row fr-row-static">
+                    <span className="fr-row-main"><Avatar person={f}/><Who person={f}/><span className="fr-badge fr-badge-warn">Request pending</span></span>
+                    <span className="fr-row-actions">
+                      <button type="button" className="fr-link-button" disabled={pending} onClick={() => run(async () => {
+                        const r = await api.cancelFriend(f.userId);
+                        onView(r.view);
+                        notify?.(r.result === 'accepted' ? `@${f.username} accepted just before you cancelled. You are friends now.` : `Cancelled your request to @${f.username}.`);
+                      })}>Cancel request</button>
+                    </span>
+                  </li>
                 ))}
               </ul>
             )}
           </div>
-        </>
+        </div>
       )}
+
+      {tab === 'invites' && (
+        <div className="fr-body fr-single" id="fr-panel-invites" role="tabpanel" aria-labelledby="fr-tab-invites">
+          <div className="fr-block">
+            <h3>Invitations to you</h3>
+            {incomingProjectInvites(view).length === 0 ? <p className="fr-muted">No project invitations waiting for your answer.</p> : (
+              <ul className="fr-list">
+                {incomingProjectInvites(view).map((i) => (
+                  <li key={i.id} className="fr-row fr-row-static">
+                    <span className="fr-row-main"><Avatar person={i}/><span className="fr-who"><strong>{i.projectName}</strong><small>from {friendLabel(i).name}{friendLabel(i).handle ? ` (${friendLabel(i).handle})` : ''} · {repoLine(i.repo)}</small></span></span>
+                    <span className="fr-row-actions">
+                      <button type="button" className="fr-primary fr-small" disabled={pending} onClick={() => run(async () => {
+                        const r = await api.respondProjectInvite(i.id, true);
+                        onView(r.view);
+                        notify?.(`You joined ${i.projectName}.`);
+                        setTab('friends'); setSelectedId(i.userId); setStarting(false); setDetailOpen(true);
+                      })}>Accept</button>
+                      <button type="button" className="fr-secondary fr-small" disabled={pending} onClick={() => run(async () => { const r = await api.respondProjectInvite(i.id, false); onView(r.view); })}>Decline</button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="fr-block">
+            <h3>Sent by you</h3>
+            {(view.projectInvites || []).filter((i) => i.direction === 'outgoing').length === 0 ? <p className="fr-muted">No invitations waiting for a friend’s answer.</p> : (
+              <ul className="fr-list">
+                {(view.projectInvites || []).filter((i) => i.direction === 'outgoing').map((i) => (
+                  <li key={i.id} className="fr-row fr-row-static">
+                    <span className="fr-row-main"><Avatar person={i}/><span className="fr-who"><strong>{i.projectName}</strong><small>to {friendLabel(i).name} · {repoLine(i.repo)}</small></span><span className="fr-badge fr-badge-warn">Invitation pending</span></span>
+                    <span className="fr-row-actions"><button type="button" className="fr-link-button" disabled={pending} onClick={() => run(async () => { onView(await api.revokeProjectInvite(i.id)); notify?.(`Invitation to ${i.projectName} cancelled.`); })}>Cancel invitation</button></span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <TeamInvitesInbox api={api} view={view} notify={notify} onView={onView}/>
+        </div>
+      )}
+
+      {adding && <AddFriendDialog api={api} onView={onView} onClose={() => setAdding(false)} onRespond={respond}/>}
     </section>
   );
 }

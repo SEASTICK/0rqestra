@@ -13,6 +13,7 @@ export type StartGate =
 import { projectWorkspace } from "./workspace";
 import { findProducts } from "../preview/products";
 import { rememberPreviewHost } from "../preview/preview-protocol";
+import { CheckpointStore } from "./checkpoint";
 
 // Electron wiring for team runs: start, stop, and open the project's folder. Requests are accepted
 // only from the app's own window.
@@ -33,7 +34,7 @@ export function registerTeamIpc(
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   };
-  const service = new TeamService(adapters, (projectId) => projectWorkspace(base(), projectId), cwd, observe, teamNow);
+  const service = new TeamService(adapters, (projectId) => projectWorkspace(base(), projectId), cwd, observe, teamNow, new CheckpointStore(path.join(base(), "team-checkpoints")));
   const guard = (event: IpcMainInvokeEvent) => {
     if (!isTrusted(event)) throw new Error("Rejected IPC from an untrusted sender.");
   };

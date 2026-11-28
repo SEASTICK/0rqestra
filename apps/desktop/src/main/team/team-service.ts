@@ -8,6 +8,7 @@ import { directPlan, missingProjectFiles, parsePlan, type Plan } from "./plan";
 import { agentsFor, reviewerFor, TeamRun, type TeamAgent, type TeamEvent } from "./runner";
 import type { TaskReason } from "./recovery";
 import { pruneHistory, RunSnapshot, undoRun } from "./history";
+import type { CheckpointStore, RunState } from "./checkpoint";
 import { accessService } from "../access/registry";
 
 // Team runs between the window and the runner, free of Electron so it is unit-tested. The plan came
@@ -33,7 +34,10 @@ export function parseAgents(value: unknown): TeamAgent[] {
     const models = Array.isArray(a.models) ? a.models.filter((m): m is string => typeof m === "string" && MODEL_NAME.test(m)).slice(0, 16) : [];
     const refs = parseSkillRefs(a);
     const skills = skillsFor(refs.agentKey, refs.projectSkills);
-    return { id: a.id, name: a.name.trim(), role: a.role, priority: a.priority as number, tool: a.tool as ProviderId, model: model as string | null, effort: effort as string | null, ...(models.length ? { models } : {}), ...refs, ...(skills.length ? { skills } : {}) };
+    // Backup agents for a usage limit: ids of other agents in this team, in priority order.
+    const backups = Array.isArray(a.backups) ? [...new Set(a.backups.filter((b): b is string => typeof b === "string" && ID.test(b) && b !== a.id))].slice(0, 8) : [];
+    const backupMode = a.backupMode === "ask" ? "ask" : "auto";
+    return { id: a.id, name: a.name.trim(), role: a.role, priority: a.priority as number, tool: a.tool as ProviderId, model: model as string | null, effort: effort as string | null, ...(models.length ? { models } : {}), ...refs, ...(skills.length ? { skills } : {}), ...(backups.length ? { backups, backupMode } : {}), ...(a.ready === false ? { ready: false } : {}) };
   });
 }
 
@@ -80,11 +84,12 @@ export function assignAgents(plan: Plan, agents: TeamAgent[]): Plan {
 
 export type TeamEmit = (runId: string, event: TeamEvent) => void;
 
-// A run the window may still retry a task of: kept in memory after it finished (not across restarts).
-interface KeptRun { projectId: string; run: TeamRun; plan: Plan; coordId: string; retries: number }
+// A run the window may still retry a task of: kept in memory after it finished, and rebuilt from its
+// checkpoint after the app restarts (checkpoint.ts). emit: where its events go now.
+interface KeptRun { projectId: string; run: TeamRun; plan: Plan; coordId: string; retries: number; emit: TeamEmit | null }
 const KEEP_RUNS = 12;
 
-export type RetryPrepared = { kept: KeptRun; runId: string; taskId: string; agents: TeamAgent[]; coordId: string; scope: Plan };
+export type RetryPrepared = { kept: KeptRun; runId: string; taskId: string; agents: TeamAgent[]; coordId: string; scope: Plan; switchTo?: string };
 
 export class TeamService {
   private runs = new Map<string, { projectId: string; run: TeamRun }>();
@@ -101,6 +106,8 @@ export class TeamService {
     private readonly observe?: (info: { runId: string; localProjectId: string; plan: Plan }, event: TeamEvent) => void,
     // Teams: what teammates are doing in this project right now, for the Planner.
     private readonly teamNow: (projectId: string) => string | null = () => null,
+    // Task checkpoints on this computer, so a backup agent or a restarted app continues a run.
+    private readonly checkpoints: CheckpointStore | null = null,
   ) {}
 
   // Validates a start request without starting anything (so a reservation can be made first).
@@ -146,27 +153,8 @@ export class TeamService {
     if (this.runs.has(runId)) throw new Error("This run already exists.");
     if ([...this.runs.values()].some((r) => r.projectId === projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
     const workspace = this.workspaceFor(projectId);
-    const snapshot = new RunSnapshot(workspace, runId, plan.goal);
-    // Computer access: what this project's agents may read or run on this computer (checked at each use).
-    const computer = accessService()?.gateFor(projectId, runId);
-    const kept: KeptRun = { projectId, run: null as unknown as TeamRun, plan, coordId: runId, retries: 0 };
-    const run = new TeamRun({ plan, agents, adapters: this.adapters, workspace, cwd: this.cwd(), snapshot, ...(writeGuard ? { writeGuard } : {}), ...(computer ? { computer } : {}), emit: (event) => {
-      emit(runId, event);
-      // The run's review (Manager chat → Review changes) shows what the app saw: outcomes per task.
-      try {
-        accessService()?.runEvent(projectId, runId, event);
-      } catch {
-        /* recording never affects the run */
-      }
-      // What the agents write stays on this computer: it is shown in the window, never shared.
-      if (event.type === "output") return;
-      try {
-        // A retry is coordinated (reservation, brief) under its own id; the window keeps the run's id.
-        this.observe?.({ runId: kept.coordId, localProjectId: projectId, plan }, event);
-      } catch {
-        /* an observer never affects the run */
-      }
-    } });
+    const kept: KeptRun = { projectId, run: null as unknown as TeamRun, plan, coordId: runId, retries: 0, emit };
+    const run = this.makeRun(runId, kept, agents, writeGuard);
     kept.run = run;
     this.keep(runId, kept);
     this.runs.set(runId, { projectId, run });
@@ -188,6 +176,44 @@ export class TeamService {
     return runId;
   }
 
+  // A run with its events wired to the window, the run review, Teams, and its checkpoint on disk.
+  private makeRun(runId: string, kept: KeptRun, agents: TeamAgent[], writeGuard?: { authorize(paths: string[]): Promise<void> }, restore?: RunState): TeamRun {
+    const { projectId, plan } = kept;
+    const workspace = this.workspaceFor(projectId);
+    const snapshot = new RunSnapshot(workspace, runId, plan.goal);
+    // Computer access: what this project's agents may read or run on this computer (checked at each use).
+    const computer = accessService()?.gateFor(projectId, runId);
+    const store = this.checkpoints;
+    const checkpoints = store ? { save: (state: RunState) => store.save({ version: 1, runId, projectId, plan, savedAt: new Date().toISOString(), ...state }) } : undefined;
+    return new TeamRun({ plan, agents, adapters: this.adapters, workspace, cwd: this.cwd(), snapshot, ...(writeGuard ? { writeGuard } : {}), ...(computer ? { computer } : {}), ...(checkpoints ? { checkpoints } : {}), ...(restore ? { restore } : {}), emit: (event) => {
+      kept.emit?.(runId, event);
+      // The run's review (Manager chat → Review changes) shows what the app saw: outcomes per task.
+      try {
+        accessService()?.runEvent(projectId, runId, event);
+      } catch {
+        /* recording never affects the run */
+      }
+      // What the agents write stays on this computer: it is shown in the window, never shared.
+      if (event.type === "output") return;
+      try {
+        // A retry is coordinated (reservation, brief) under its own id; the window keeps the run's id.
+        this.observe?.({ runId: kept.coordId, localProjectId: projectId, plan }, event);
+      } catch {
+        /* an observer never affects the run */
+      }
+    } });
+  }
+
+  // After a restart: the run rebuilt from its checkpoint (finished tasks keep their output).
+  private restored(runId: string, projectId: string, agents: TeamAgent[]): KeptRun | null {
+    const cp = this.checkpoints?.load(runId);
+    if (!cp || cp.projectId !== projectId) return null;
+    const kept: KeptRun = { projectId, run: null as unknown as TeamRun, plan: cp.plan, coordId: runId, retries: 0, emit: null };
+    kept.run = this.makeRun(runId, kept, agents, undefined, cp);
+    this.keep(runId, kept);
+    return kept;
+  }
+
   private keep(runId: string, entry: KeptRun): void {
     this.kept.delete(runId);
     this.kept.set(runId, entry);
@@ -201,27 +227,33 @@ export class TeamService {
     if (typeof v.runId !== "string" || !ID.test(v.runId)) throw new Error("Invalid run id.");
     if (typeof v.projectId !== "string" || !ID.test(v.projectId)) throw new Error("Invalid project id.");
     if (typeof v.taskId !== "string" || !ID.test(v.taskId)) throw new Error("Invalid task id.");
-    const kept = this.kept.get(v.runId);
-    if (!kept || kept.projectId !== v.projectId) throw new Error("This run's details are no longer in memory (the app was restarted), so its task cannot be retried here. Ask the Manager to fix it instead.");
+    const agentsNow = parseAgents(v.agents);
+    const kept = this.kept.get(v.runId) ?? this.restored(v.runId, v.projectId, agentsNow);
+    if (!kept || kept.projectId !== v.projectId) throw new Error("This run's details are no longer on this computer (the app was restarted and no checkpoint was kept), so its task cannot be retried here. Ask the Manager to fix it instead.");
     if (this.retrying.has(v.runId) || kept.run.running) throw new Error("This task is already being retried.");
     if ([...this.runs.values()].some((r) => r.projectId === v.projectId)) throw new Error("The team is already working in this project. Stop it or wait.");
     const task = kept.plan.tasks.find((t) => t.id === v.taskId);
     if (!task) throw new Error("Unknown task.");
     if (!["failed", "blocked", "stopped"].includes(kept.run.statusOf(task.id) ?? "")) throw new Error("Only a task that failed or is blocked can be retried.");
-    const agents = parseAgents(v.agents);
+    const agents = agentsNow;
+    // Retry with a backup agent the card offered after a usage limit.
+    const switchTo = typeof v.switchTo === "string" && ID.test(v.switchTo) ? v.switchTo : undefined;
+    if (switchTo && !agents.some((a) => a.id === switchTo && a.role === task.role)) throw new Error("That backup agent is no longer in the team with this task's role.");
     this.retrying.add(v.runId);
     kept.retries += 1;
     // Coordinated under a new id: the earlier attempt's reservation and brief are final.
     const coordId = `${v.runId}-retry${kept.retries}`.slice(0, 100);
     const dependents = kept.plan.tasks.filter((t) => t.dependsOn.includes(task.id));
     const scope: Plan = { ...kept.plan, tasks: [task, ...dependents] };
-    return { kept, runId: v.runId, taskId: task.id, agents, coordId, scope };
+    return { kept, runId: v.runId, taskId: task.id, agents, coordId, scope, ...(switchTo ? { switchTo } : {}) };
   }
 
   // Whether the tools the retried task needs are signed in, as a reason the card can act on.
   async retryReadiness(p: RetryPrepared): Promise<TaskReason | null> {
     const task = p.kept.plan.tasks.find((t) => t.id === p.taskId)!;
-    const workers = agentsFor(task.role, p.agents);
+    // Retrying with a backup checks that backup's tool; otherwise the task's agents in priority order.
+    const chosen = p.switchTo ? p.agents.filter((x) => x.id === p.switchTo) : [];
+    const workers = chosen.length ? chosen : agentsFor(task.role, p.agents);
     if (!workers.length) return { kind: "agent_missing", title: `No agent in the tree has the role ${task.role} and runs on Claude Code, Codex or Gemini.`, detail: `Missing role: ${task.role}.`, role: task.role };
     const reviewer = reviewerFor(workers[0]!, p.agents);
     const tools = [...new Set([workers[0]!.tool, ...(reviewer ? [reviewer.tool] : [])])];
@@ -249,8 +281,9 @@ export class TeamService {
   launchRetry(p: RetryPrepared, emit: TeamEmit, writeGuard?: { authorize(paths: string[]): Promise<void> }): void {
     const { kept, runId } = p;
     kept.coordId = p.coordId;
+    kept.emit = emit;
     this.runs.set(runId, { projectId: kept.projectId, run: kept.run });
-    void kept.run.retry(p.taskId, p.agents, writeGuard).catch((error: unknown) => {
+    void kept.run.retry(p.taskId, p.agents, writeGuard, p.switchTo ? { switchTo: p.switchTo } : {}).catch((error: unknown) => {
       emit(runId, { type: "run-finished", status: "failed", summary: error instanceof Error ? error.message : String(error), files: [], calls: 0, usage: { inputTokens: 0, outputTokens: 0 } });
     }).finally(() => {
       this.runs.delete(runId);

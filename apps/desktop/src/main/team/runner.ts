@@ -9,7 +9,8 @@ import { completeBrief, parseBrief, parseNeeds, type ContextNeed, type ReturnBri
 import { UsageLedger, type CallKind, type UsageEntry, type UsageTotals } from "./usage-ledger";
 import { outputProblems, unifiedDiff } from "./diff";
 import { listFiles, readFiles, writeFiles } from "./workspace";
-import { isStuck, ProviderFailure, providerReason, type ReservationConflict, type TaskReason } from "./recovery";
+import { isStuck, ProviderFailure, providerReason, TOOL_NAME, type ReservationConflict, type TaskReason } from "./recovery";
+import { checkpointPrompt, makeCheckpoint, type CheckpointStep, type RunState, type TaskCheckpoint } from "./checkpoint";
 
 // Runs an approved plan with the agents in the tree. Plain code, no AI: the order, the limits, the
 // retries and the choice of agent are decided here (docs/backend-plan.md, phase 3).
@@ -26,6 +27,12 @@ export interface TeamAgent extends AgentRef {
   agentKey?: string;
   projectSkills?: string[];
   skills?: { id: string; name: string; description: string }[];
+  // Backup agents (ids, in priority order) that continue this agent's task when its provider's usage
+  // limit is reached; "auto" switches at once, "ask" pauses the task with the backup offered.
+  backups?: string[];
+  backupMode?: "auto" | "ask";
+  // False when the app knows this agent's tool is not ready (not installed or signed out).
+  ready?: boolean;
 }
 
 export type TaskStatus = "waiting" | "working" | "waiting_context" | "reviewing" | "done" | "unverified" | "failed" | "blocked" | "stopped";
@@ -45,6 +52,8 @@ export type TeamEvent =
   // Which skills an agent got for a task (Capabilities), and the ones named that it does not have.
   | { type: "skills"; taskId: string; agentId: string; kind: "work" | "review"; loaded: { id: string; name: string }[]; refused: string[] }
   | { type: "usage"; entry: UsageEntry }
+  // A backup agent took over a task after the provider's usage limit (from the last checkpoint).
+  | { type: "switch"; taskId: string; fromId: string; fromName: string; fromTool: ProviderId; toId: string; toName: string; toTool: ProviderId; reason: string; resetsAt: number | null; step: CheckpointStep }
   // What an agent writes, while it writes (done: false, the latest part) and when it is done (the whole
   // answer, cut to OUTPUT_CHARS). Shown when the user opens the agent in the tree.
   | { type: "output"; taskId: string; agentId: string; kind: "work" | "review"; attempt: number; text: string; done: boolean; failed?: string }
@@ -81,6 +90,11 @@ export interface RunOptions {
   loadSkill?: (id: string) => { name: string; instructions: string } | null;
   // Computer access (main/access): reading granted folders and running approved checks, per agent.
   computer?: ComputerGate;
+  // Checkpoints (checkpoint.ts): saved after each step and before an agent switch, on this computer.
+  checkpoints?: { save(state: RunState): void };
+  // A run saved before the app restarted: finished tasks keep their output, the others continue
+  // from their checkpoints when retried.
+  restore?: RunState;
 }
 
 const byPriority = (a: TeamAgent, b: TeamAgent) => a.priority - b.priority || a.name.localeCompare(b.name);
@@ -123,11 +137,69 @@ export class TeamRun {
   private callLimit: number;
   private active_ = false;
   private readonly o: RunOptions;
+  // Each task's checkpoint (the last finished step), saved with the run's state.
+  private readonly checkpoints = new Map<string, TaskCheckpoint>();
+  // Tools whose usage limit was reported in this run (one account per tool on this computer), with
+  // the reset time when the provider gave one. Backups on the same tool are skipped.
+  private readonly exhausted = new Map<ProviderId, number | null>();
+  // An agent the user chose to continue a task with (Retry with a backup).
+  private readonly pin = new Map<string, string>();
+  // Tasks restored after a restart that continue from their checkpoint.
+  private readonly resumed = new Set<string>();
 
   constructor(options: RunOptions) {
     this.o = { ...options };
     this.limits = { ...DEFAULT_LIMITS, ...options.limits };
     this.callLimit = this.limits.maxCalls;
+    if (options.restore) this.restoreFrom(options.restore);
+  }
+
+  // After a restart: finished tasks stay finished with their output (they never run again); a task
+  // that was working when the app closed is stopped, and continues from its checkpoint on Retry,
+  // with its last valid files and findings. Partial answers were never saved, so they are not used.
+  private restoreFrom(r: RunState): void {
+    for (const t of this.o.plan.tasks) {
+      const s = r.status[t.id];
+      const status: TaskStatus = s === "done" || s === "unverified" || s === "failed" || s === "blocked" ? s : "stopped";
+      this.status.set(t.id, status);
+      this.cause.set(t.id, status === "stopped" ? "halted" : "own");
+      const out = r.outputs[t.id];
+      if (out && (status === "done" || status === "unverified")) this.outputs.set(t.id, out);
+      const cp = r.tasks[t.id];
+      if (cp) this.checkpoints.set(t.id, cp);
+      if (cp && status !== "done" && status !== "unverified") {
+        this.resumed.add(t.id);
+        const files = readFiles(this.o.workspace, cp.files, Number.MAX_SAFE_INTEGER).map((f) => ({ path: f.path, content: f.content }));
+        this.carry.set(t.id, { problems: cp.findings, files });
+      }
+    }
+    for (const w of r.written) this.written.set(w.path.toLowerCase(), w);
+  }
+
+  private persist(): void {
+    if (!this.o.checkpoints) return;
+    try {
+      this.o.checkpoints.save({
+        status: Object.fromEntries(this.status),
+        outputs: Object.fromEntries([...this.outputs].map(([id, o]) => [id, { title: o.title, role: o.role, summary: o.summary, files: o.files, ...(o.brief ? { brief: o.brief } : {}) }])),
+        tasks: Object.fromEntries(this.checkpoints),
+        written: [...this.written.values()],
+      });
+    } catch {
+      /* a checkpoint that cannot be written never stops the run */
+    }
+  }
+
+  private checkpoint(task: PlanTask, patch: Partial<TaskCheckpoint>): TaskCheckpoint {
+    const cp = makeCheckpoint(task, patch, this.checkpoints.get(task.id));
+    this.checkpoints.set(task.id, cp);
+    this.persist();
+    return cp;
+  }
+
+  // The task's checkpoint, for tests and the run card.
+  checkpointOf(taskId: string): TaskCheckpoint | undefined {
+    return this.checkpoints.get(taskId);
   }
 
   get running(): boolean {
@@ -148,6 +220,7 @@ export class TeamRun {
     this.status.set(task.id, status);
     this.cause.set(task.id, cause);
     this.o.emit({ type: "task", taskId: task.id, status, agentId, attempt, ...(note ? { note } : {}), ...(reason ? { reason } : {}) });
+    this.persist();
   }
 
   // One request to one agent. Returns the full text, or throws with a message for the next attempt.
@@ -187,7 +260,7 @@ export class TeamRun {
     if (last?.type === "completed") text = last.text || text;
     output(true, last?.type === "failed" ? last.message : last?.type === "completed" ? undefined : this.stopped || last?.type === "cancelled" ? "Stopped." : "No answer.");
     if (this.stopped || last?.type === "cancelled") throw new Stopped();
-    if (last?.type === "failed") throw new ProviderFailure(`${agent.name}: ${last.message}`, last.reason, agent.tool, agent.id, agent.name, model);
+    if (last?.type === "failed") throw new ProviderFailure(`${agent.name}: ${last.message}`, last.reason, agent.tool, agent.id, agent.name, model, last.resetsAt ?? null);
     if (last?.type !== "completed") throw new Error(`${agent.name} gave no answer.`);
     return last.text;
   }
@@ -218,17 +291,51 @@ export class TeamRun {
     // Why the last attempt did not pass, for the card if this task fails.
     let lastReason: TaskReason | null = null;
     const stuck = new Set<string>();
+    const started = this.checkpoints.get(task.id);
+    if (!started) this.checkpoint(task, { step: "started", pending: [task.open ? "Answer the request or change the files it needs" : `Deliver ${task.deliverables.join(", ")}`, "Pass review"] });
+    // The agent that continues this task: a backup after a usage limit, or the one the user chose on Retry.
+    const chosen = this.pin.get(task.id);
+    this.pin.delete(task.id);
+    let pinned: TeamAgent | null = chosen ? agents.find((a) => a.id === chosen && a.role === task.role) ?? null : null;
+    // A task continued from a checkpoint (after a switch or a restart) gets it with its handoff.
+    let resumeNote: string | null = this.resumed.has(task.id) || pinned ? checkpointPrompt(this.checkpoints.get(task.id)!) : null;
+    this.resumed.delete(task.id);
+    // Agents this task already went to after a usage limit, so it never switches back and forth.
+    const tried = new Set<string>();
+    const primary = workers[0]!;
     for (let attempt = 1; attempt <= this.limits.maxAttempts; attempt += 1) {
       // A retry goes to the next agent with the same role, if there is one (escalation by priority).
-      const worker = workers[(attempt - 1) % workers.length]!;
+      const worker = pinned ?? workers[(attempt - 1) % workers.length]!;
+      tried.add(worker.id);
+      // Its tool's usage limit was already reported in this run: switch without spending a request.
+      if (this.exhausted.has(worker.tool)) {
+        const next = this.onUsageLimit(task, primary, worker, tried, problems, current, attempt, this.exhausted.get(worker.tool) ?? null, `${TOOL_NAME[worker.tool] ?? worker.tool} reached its usage limit earlier in this run`);
+        if (!next) return;
+        pinned = next.agent;
+        resumeNote = next.note;
+        attempt -= 1;
+        continue;
+      }
       this.set(task, "working", worker.id, attempt, problems.length ? `Fixing: ${problems[0]}` : undefined);
       let text: string;
       try {
         if (attempt > 1) this.ledger.retries += 1;
-        text = await this.ask(worker, withComputer(workerPrompt(plan, task, worker, resolved, problems, problems.length ? current : [], { context: openContext, files: existing }, this.skills(task, worker, "work")), this.o.computer?.describe(worker.agentKey)), { taskId: task.id, kind: "worker", attempt, model: task.model });
+        const prompt = withComputer(workerPrompt(plan, task, worker, resolved, problems, problems.length || resumeNote ? current : [], { context: openContext, files: existing }, this.skills(task, worker, "work")), this.o.computer?.describe(worker.agentKey));
+        text = await this.ask(worker, resumeNote ? `${prompt}\n\n${resumeNote}` : prompt, { taskId: task.id, kind: "worker", attempt, model: task.model });
       } catch (error) {
         if (error instanceof Stopped) throw error;
         if (/limit of \d+ agent requests/.test((error as Error).message)) throw error;
+        // The provider's usage limit: a configured backup continues from the checkpoint. Whatever the
+        // agent wrote before it stopped is unfinished and is not used.
+        if (error instanceof ProviderFailure && error.reason === "usage_limit") {
+          this.exhausted.set(error.provider, error.resetsAt);
+          const next = this.onUsageLimit(task, primary, worker, tried, problems, current, attempt, error.resetsAt, `${TOOL_NAME[worker.tool] ?? worker.tool} reached its usage limit`, error);
+          if (!next) return;
+          pinned = next.agent;
+          resumeNote = next.note;
+          attempt -= 1;
+          continue;
+        }
         problems = [(error as Error).message];
         lastReason = error instanceof ProviderFailure ? providerReason(error) : { kind: "unknown", title: `${worker.name} did not answer.`, detail: (error as Error).message, agentId: worker.id, agentName: worker.name };
         // Signed out or out of usage: asking the same tool again cannot help.
@@ -273,6 +380,7 @@ export class TeamRun {
         problems = [...delivery, ...invalid];
         lastReason = { kind: "review_rejected", title: "The delivered files did not pass the app's checks.", detail: problems.join(" "), findings: problems, reviewer: "The app's checks", agentId: worker.id, agentName: worker.name };
         if (outgoing.length) current = outgoing;
+        this.checkpoint(task, { findings: problems, agentId: worker.id, agentName: worker.name, attempt });
         continue;
       }
       // What the files were before this answer, so the reviewer can read the change.
@@ -307,6 +415,14 @@ export class TeamRun {
       const observed = [`Delivered ${saved.map((f) => f.path).join(", ")}: the expected files, none empty, no others.`];
       const brief = completeBrief(parseBrief(text, task.id, plan.tasks.map((t) => t.id)), task.id, summary, saved.map((f) => f.path), observed);
       this.outputs.set(task.id, { title: task.title, role: task.role, summary: brief.summary, files: saved.map((f) => f.path), brief });
+      const reviewNext = !REVIEW_ROLES.includes(task.role) && reviewerFor(worker, agents);
+      const before = this.checkpoints.get(task.id);
+      this.checkpoint(task, {
+        step: "delivered", agentId: worker.id, agentName: worker.name, attempt, files: saved.map((f) => f.path), summary: brief.summary,
+        decisions: [...(before?.decisions ?? []), ...brief.decisions],
+        completed: [...(before?.completed ?? []), `Delivered ${saved.map((f) => f.path).join(", ")} (attempt ${attempt}, ${worker.name}); the app's checks passed.`],
+        pending: reviewNext ? ["Pass review"] : [], findings: [],
+      });
 
       const reviewer = REVIEW_ROLES.includes(task.role) ? null : reviewerFor(worker, agents);
       if (!reviewer) {
@@ -345,14 +461,56 @@ export class TeamRun {
         const reviewed = { ...brief, verified: [{ text: `Reviewed and approved by ${reviewer.name} (${reviewer.role}).`, source: "runner" as const }, ...brief.verified] };
         this.outputs.set(task.id, { ...this.outputs.get(task.id)!, brief: reviewed });
         this.keepBrief(task, reviewed);
+        this.checkpoint(task, { step: "reviewed", completed: [...(this.checkpoints.get(task.id)?.completed ?? []), `Approved by ${reviewer.name}.`], pending: [], findings: [] });
         this.set(task, "done", worker.id, attempt, `Approved by ${reviewer.name}${reviewer.tool === worker.tool ? " (same tool as the author)" : ""}.`);
         return;
       }
       problems = review.problems;
+      this.checkpoint(task, { findings: review.problems, pending: ["Fix the review findings", "Pass review"] });
       lastReason = { kind: "review_rejected", title: `${reviewer.name} did not approve the work after ${attempt} attempt${attempt === 1 ? "" : "s"}.`, detail: review.problems.join(" ") || "Not approved.", findings: review.problems, reviewer: reviewer.name, agentId: worker.id, agentName: worker.name };
     }
     this.carry.set(task.id, { problems, files: current });
     this.set(task, "failed", null, this.limits.maxAttempts, problems[0] ?? "Not approved.", lastReason ?? { kind: "unknown", title: "The task did not pass.", detail: problems.join(" ") || "Not approved." });
+  }
+
+  // A usage limit on a task's agent. Only the backups configured for the task's primary agent are
+  // considered, in their order, skipping any already tried, any on a tool whose limit was reported in
+  // this run (same account) and any the app knows is not ready. The checkpoint is saved first. Returns
+  // the backup to continue with (auto), or null when the task paused (ask) or failed (no backup).
+  private onUsageLimit(task: PlanTask, primary: TeamAgent, worker: TeamAgent, tried: Set<string>, problems: string[], current: { path: string; content: string }[], attempt: number, resetsAt: number | null, why: string, error?: ProviderFailure): { agent: TeamAgent; note: string } | null {
+    const agents = this.o.agents;
+    const configured = (primary.backups ?? []).map((id) => agents.find((a) => a.id === id)).filter((a): a is TeamAgent => Boolean(a) && a!.role === task.role && a!.id !== primary.id);
+    const skipped: string[] = [];
+    let next: TeamAgent | null = null;
+    for (const b of configured) {
+      if (tried.has(b.id)) continue;
+      if (this.exhausted.has(b.tool)) { skipped.push(`${b.name} uses ${TOOL_NAME[b.tool] ?? b.tool}, which reached its limit too (same account)`); continue; }
+      if (b.ready === false) { skipped.push(`${b.name} is not ready (${TOOL_NAME[b.tool] ?? b.tool} is not installed or signed out)`); continue; }
+      next = b;
+      break;
+    }
+    const base = providerReason(error ?? new ProviderFailure(why, "usage_limit", worker.tool, worker.id, worker.name, worker.model, resetsAt));
+    this.carry.set(task.id, { problems, files: current });
+    const sw = next ? { fromId: worker.id, fromName: worker.name, toId: next.id, toName: next.name, reason: `${why}`, at: new Date().toISOString() } : null;
+    const prev = this.checkpoints.get(task.id);
+    const cp = this.checkpoint(task, { step: "switching", ...(sw ? { switches: [...(prev?.switches ?? []), sw] } : {}), findings: problems, files: current.map((f) => f.path).length ? current.map((f) => f.path) : prev?.files ?? [] });
+    const resets = resetsAt ? { resetsAt } : {};
+    if (next && (primary.backupMode ?? "auto") === "auto") {
+      this.o.emit({ type: "switch", taskId: task.id, fromId: worker.id, fromName: worker.name, fromTool: worker.tool, toId: next.id, toName: next.name, toTool: next.tool, reason: why, resetsAt, step: prev?.step === "switching" ? "started" : prev?.step ?? "started" });
+      this.set(task, "working", next.id, attempt, `${TOOL_NAME[worker.tool] ?? worker.tool} reached its usage limit. ${next.name} resumed from the last checkpoint.`);
+      return { agent: next, note: checkpointPrompt(cp) };
+    }
+    if (next) {
+      this.set(task, "blocked", worker.id, attempt, `${TOOL_NAME[worker.tool] ?? worker.tool} reached its usage limit. ${next.name} can continue from the last checkpoint.`, {
+        ...base, ...resets, kind: "usage_limit", title: `${TOOL_NAME[worker.tool] ?? worker.tool} reached its usage limit. ${next.name} can continue from the last checkpoint when you switch.`, backup: { id: next.id, name: next.name, tool: next.tool },
+      });
+      return null;
+    }
+    const detail = [base.detail, configured.length ? "" : "No backup agents are set for this agent.", ...skipped].filter(Boolean).join(" ");
+    this.set(task, "failed", worker.id, attempt, `${TOOL_NAME[worker.tool] ?? worker.tool} reached its usage limit and no backup agent can continue.`, {
+      ...base, ...resets, kind: "usage_limit", detail, title: configured.length ? `${TOOL_NAME[worker.tool] ?? worker.tool} reached its usage limit, and none of ${primary.name}'s backup agents can continue.` : `${TOOL_NAME[worker.tool] ?? worker.tool} reached its usage limit, and ${primary.name} has no backup agents.`,
+    });
+    return null;
   }
 
   // The skills a task's handoff names that this agent has: their full instructions, loaded now. A
@@ -464,7 +622,7 @@ export class TeamRun {
 
   // Retry (run card): runs one failed or blocked task again, with the agents as they are now, and
   // then the tasks that were waiting for it. Finished tasks keep their output and never run again.
-  async retry(taskId: string, agents: TeamAgent[], writeGuard?: { authorize(paths: string[]): Promise<void> }): Promise<void> {
+  async retry(taskId: string, agents: TeamAgent[], writeGuard?: { authorize(paths: string[]): Promise<void> }, options: { switchTo?: string } = {}): Promise<void> {
     const { plan } = this.o;
     if (this.active_) throw new Error("The team is still working on this run.");
     const task = plan.tasks.find((t) => t.id === taskId);
@@ -472,7 +630,15 @@ export class TeamRun {
     if (!["failed", "blocked", "stopped"].includes(this.status.get(taskId) ?? "")) throw new Error("Only a task that failed or is blocked can be retried.");
     const missing = missingRoles({ ...plan, tasks: [task] }, agents);
     if (missing.length) throw new Error(`No agent in the tree has the role ${missing.join(", ")}.`);
+    if (options.switchTo) {
+      const to = agents.find((a) => a.id === options.switchTo);
+      if (!to || to.role !== task.role) throw new Error("That backup agent does not have this task's role.");
+      this.pin.set(taskId, to.id);
+      this.resumed.add(taskId);
+    }
     this.o.agents = agents;
+    // A retry asks the tools again: a usage limit may have reset since.
+    this.exhausted.clear();
     if (writeGuard) this.o.writeGuard = writeGuard;
     else delete this.o.writeGuard;
     this.stopped = false;

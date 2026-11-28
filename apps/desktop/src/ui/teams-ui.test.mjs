@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ago, briefsNotice, unsyncedBriefs, bridgeLayout, bridgeSummary, displayName, errorText, inviteLine, linkedTeamProject, memberStatus, linkLine, localName, projectChoices, repoName, selectionMatches, signInTitle, friendGroups, incomingTeamInvites, invitableFriends, outgoingTeamInvites, waitingCount, friendLabel, candidateState, sendOutcomeText, togetherChoices, projectInvitesWith, incomingProjectInvites, projectsTogether, togetherStatus, bridgeBackend, checklistProgress, checklistItems, checklistRunState, planPrompt, claimText } from './teams-ui.mjs';
+import { ago, briefsNotice, unsyncedBriefs, bridgeLayout, bridgeSummary, displayName, errorText, inviteLine, linkedTeamProject, memberStatus, linkLine, localName, projectChoices, repoName, selectionMatches, signInTitle, friendGroups, incomingTeamInvites, invitableFriends, outgoingTeamInvites, waitingCount, friendLabel, candidateState, sendOutcomeText, togetherChoices, projectInvitesWith, incomingProjectInvites, projectsTogether, togetherStatus, bridgeBackend, checklistProgress, checklistItems, checklistRunState, planPrompt, claimText, initialsOf, friendsTabCounts, friendsLayout, friendStatus, shareOptions } from './teams-ui.mjs';
 
 describe('Teams page text', () => {
   it('says whether this computer has a linked checkout', () => {
@@ -266,5 +266,64 @@ describe('shared checklist', () => {
     const nameOf = (id) => ({ f: 'friend' })[id];
     expect(claimText({ outcome: 'taken', assigneeId: 'f' }, nameOf)).toBe('friend claimed it first.');
     expect(claimText({ outcome: 'claimed' }, nameOf)).toBe('It is yours now.');
+  });
+});
+
+describe('friends page layout', () => {
+  it('makes initials from the display name or the username', () => {
+    expect(initialsOf({ displayName: 'Bob Builder', username: 'bob' })).toBe('BB');
+    expect(initialsOf({ username: 'anna_k' })).toBe('AK');
+    expect(initialsOf({ username: 'zed' })).toBe('ZE');
+    expect(initialsOf({})).toBe('?');
+  });
+
+  it('counts what needs an answer on each tab', () => {
+    const view = { status: 'signed_in', friends: [{ requestId: 'r', userId: 'u', username: 'x', state: 'incoming' }, { requestId: 's', userId: 'v', username: 'y', state: 'outgoing' }], teamInvites: [{ id: 't', direction: 'incoming' }], projectInvites: [{ id: 'p', direction: 'incoming' }, { id: 'q', direction: 'outgoing' }] };
+    expect(friendsTabCounts(view)).toEqual({ friends: 0, requests: 1, invites: 2 });
+    expect(friendsTabCounts({ status: 'signed_out' })).toEqual({ friends: 0, requests: 0, invites: 0 });
+  });
+
+  it('switches to one column below the breakpoint', () => {
+    expect(friendsLayout(1200)).toBe('two');
+    expect(friendsLayout(759)).toBe('one');
+  });
+});
+
+describe('friends status and sharing a project', () => {
+  it('shows online, offline, unavailable and checking in words', () => {
+    const live = { friendsPresence: { connection: 'live', online: ['b'] } };
+    expect(friendStatus(live, 'b')).toEqual({ state: 'online', text: 'Online' });
+    expect(friendStatus(live, 'c')).toEqual({ state: 'offline', text: 'Offline' });
+    expect(friendStatus({ friendsPresence: { connection: 'unavailable', online: [] } }, 'b').text).toBe('Status unavailable');
+    expect(friendStatus({ friendsPresence: { connection: 'reconnecting', online: ['b'] } }, 'b')).toEqual({ state: 'checking', text: 'Reconnecting…' });
+    expect(friendStatus({}, 'b').state).toBe('checking');
+  });
+
+  const me = { userId: 'me', isYou: true, name: 'ann' };
+  const base = {
+    status: 'signed_in', userId: 'me',
+    friends: [{ requestId: 'r1', userId: 'b', username: 'bob', state: 'friend' }, { requestId: 'r2', userId: 'c', username: 'cat', state: 'friend' }, { requestId: 'r3', userId: 'd', username: 'dan', state: 'friend' }],
+    teams: [
+      { id: 't1', name: 'Shop team', isOwner: true, members: [me, { userId: 'b', name: 'bob' }], projects: [{ id: 'p1', name: 'Shop', link: { localProjectId: 'local-shop' } }] },
+      { id: 't2', name: 'Big', isOwner: true, members: [me, { userId: 'e', name: 'eve' }], projects: [{ id: 'p2', name: 'One' }, { id: 'p3', name: 'Two' }] },
+      { id: 't3', name: 'Theirs', isOwner: false, members: [me], projects: [] },
+    ],
+    projectInvites: [{ id: 'i1', direction: 'outgoing', projectId: 'p1', userId: 'c' }],
+  };
+
+  it('shows who already has access, who is pending, and which teams it could be shared with', () => {
+    const o = shareOptions(base, 'local-shop');
+    expect(o.linked.team.name).toBe('Shop team');
+    expect(o.friends.map((f) => [f.username, f.reason])).toEqual([['bob', 'Already has access'], ['cat', 'Pending'], ['dan', null]]);
+    expect(o.teams.map((t) => [t.name, t.gaining.map((m) => m.name), t.otherProjects])).toEqual([['Big', ['eve'], ['One', 'Two']]]);
+  });
+
+  it('explains why friends cannot be invited to a project in a shared team, and offers every owned team for an unshared project', () => {
+    const notOwner = { ...base, teams: [{ ...base.teams[0], isOwner: false }] };
+    expect(shareOptions(notOwner, 'local-shop').friends.find((f) => f.username === 'dan').reason).toMatch(/Only the owner/);
+    const unshared = shareOptions(base, 'local-new');
+    expect(unshared.linked).toBeNull();
+    expect(unshared.friends.every((f) => f.reason === null)).toBe(true);
+    expect(unshared.teams.map((t) => t.name)).toEqual(['Shop team', 'Big']);
   });
 });

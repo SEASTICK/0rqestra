@@ -34,16 +34,20 @@ export interface TaskReason {
   needs?: string[];
   // The task this one waits for (dependency).
   after?: string[];
+  // Usage limit: when it resets (seconds since the epoch), only if the provider reported it.
+  resetsAt?: number | null;
+  // Usage limit: a configured backup agent that can continue from the checkpoint (when 0rqestra asks first).
+  backup?: { id: string; name: string; tool: ProviderId };
 }
 
 // A failed request to an agent's tool, with the tool's own reason (providers/types FailureReason).
 export class ProviderFailure extends Error {
-  constructor(message: string, readonly reason: FailureReason, readonly provider: ProviderId, readonly agentId: string, readonly agentName: string, readonly model: string | null) {
+  constructor(message: string, readonly reason: FailureReason, readonly provider: ProviderId, readonly agentId: string, readonly agentName: string, readonly model: string | null, readonly resetsAt: number | null = null) {
     super(message);
   }
 }
 
-const TOOL_NAME: Record<string, string> = { claude: "Claude Code", codex: "Codex", gemini: "Gemini" };
+export const TOOL_NAME: Record<string, string> = { claude: "Claude Code", codex: "Codex", gemini: "Gemini" };
 const MODEL_REFUSED = /model/i;
 const MODEL_WORDS = /(not found|not available|unavailable|invalid|does not exist|unknown|not supported|unsupported|no access|not allowed|access to)/i;
 
@@ -58,7 +62,7 @@ export function providerReason(error: ProviderFailure): TaskReason {
     case "not_subscription":
       return { ...base, kind: "signed_out", title: `${tool} is not signed in with a subscription, so nothing was sent for ${error.agentName}.` };
     case "usage_limit":
-      return { ...base, kind: "usage_limit", title: `The usage limit of your ${tool} plan is reached, so ${error.agentName} stopped.` };
+      return { ...base, kind: "usage_limit", title: `The usage limit of your ${tool} plan is reached, so ${error.agentName} stopped.`, ...(error.resetsAt ? { resetsAt: error.resetsAt } : {}) };
     default:
       if (MODEL_REFUSED.test(error.message) && MODEL_WORDS.test(error.message)) {
         return { ...base, kind: "model_unavailable", title: `${tool} refused ${error.model ? `the model ${error.model}` : "the agent's model"} for ${error.agentName}.` };

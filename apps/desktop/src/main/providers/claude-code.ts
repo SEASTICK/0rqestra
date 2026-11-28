@@ -313,7 +313,9 @@ export class ClaudeCodeAdapter implements ProviderAdapter {
         if (event.is_error === true || event.subtype !== "success") {
           const message = typeof event.result === "string" && event.result ? event.result : `Claude Code ended with ${String(event.subtype)}.`;
           const limit = /limit|quota|usage/i.test(message);
-          return finish({ type: "failed", reason: limit ? "usage_limit" : "provider_error", message, text });
+          // The window that is used up says when it resets (rate_limit_event), if Claude Code sent one.
+          const full = [...windows.values()].filter((w) => w.usedPercent >= 100 && typeof w.resetsAt === "number").sort((a, b) => (b.resetsAt ?? 0) - (a.resetsAt ?? 0))[0];
+          return finish({ type: "failed", reason: limit ? "usage_limit" : "provider_error", message, text, ...(limit && full ? { resetsAt: full.resetsAt ?? null } : {}) });
         }
         const answer = text || (typeof event.result === "string" ? event.result : "");
         finish({ type: "completed", text: answer, usage: claudeUsage(event), limits: [...windows.values()] });

@@ -342,3 +342,64 @@ export function claimText(result, nameOf) {
   if (result?.outcome === 'archived') return 'That item is archived.';
   return `${nameOf(result?.assigneeId) || 'Someone else'} claimed it first.`;
 }
+
+// ---- Friends page layout ------------------------------------------------------------------------
+
+// One or two letters for an avatar: from the display name, else the username.
+export function initialsOf(person) {
+  const shown = String(person?.displayName || '').trim();
+  const words = (shown || String(person?.username || '?')).replace(/^@/, '').split(/[\s_.-]+/).filter(Boolean);
+  const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0] || '?').slice(0, 2);
+  return letters.toUpperCase();
+}
+
+// What waits for me on each tab: incoming friend requests, and incoming project or team invitations.
+export function friendsTabCounts(view) {
+  const groups = friendGroups(view);
+  return {
+    friends: 0,
+    requests: groups.incoming.length,
+    invites: incomingProjectInvites(view).length + incomingTeamInvites(view).length,
+  };
+}
+
+// The page uses two columns when its own width allows a list and a detail column side by side.
+export const FRIENDS_TWO_COLUMNS_AT = 760;
+export const friendsLayout = (width) => (width >= FRIENDS_TWO_COLUMNS_AT ? 'two' : 'one');
+
+// A friend's online status from friends' presence: 'online', 'offline', 'unavailable' (my app cannot
+// reach the server, or it has no friends' status) or 'checking' (connecting). Always with text.
+export function friendStatus(view, userId) {
+  const p = view?.friendsPresence;
+  if (!p || p.connection === 'off') return { state: 'checking', text: '' };
+  if (p.connection === 'unavailable') return { state: 'unavailable', text: 'Status unavailable' };
+  if (p.connection !== 'live') return { state: 'checking', text: p.connection === 'reconnecting' ? 'Reconnecting…' : 'Checking…' };
+  return (p.online || []).includes(userId) ? { state: 'online', text: 'Online' } : { state: 'offline', text: 'Offline' };
+}
+
+// The "Add friend or team…" dialog for one local project: whether it is shared yet, who has access,
+// which friends can be invited (and why not), and which teams it could be shared with.
+export function shareOptions(view, localProjectId) {
+  if (view?.status !== 'signed_in') return null;
+  let linked = null;
+  for (const team of view.teams || []) for (const project of team.projects || []) if (project.link?.localProjectId === localProjectId) linked = { team, project };
+  const pending = linked ? (view.projectInvites || []).filter((i) => i.direction === 'outgoing' && i.projectId === linked.project.id) : [];
+  const pendingIds = new Set(pending.map((i) => i.userId));
+  const memberIds = new Set((linked?.team.members || []).map((m) => m.userId));
+  const blocked = !linked ? null
+    : !linked.team.isOwner ? `Only the owner of ${linked.team.name} can invite people to it.`
+    : linked.team.projects.length > 1 ? `${linked.team.name} has other projects too, so a friend would see them. Share this project with a team of its own instead.`
+    : null;
+  const friends = friendGroups(view).friends.map((f) => ({
+    ...f,
+    member: memberIds.has(f.userId),
+    pending: pendingIds.has(f.userId),
+    reason: memberIds.has(f.userId) ? 'Already has access' : pendingIds.has(f.userId) ? 'Pending' : blocked,
+  }));
+  const teams = (view.teams || []).filter((t) => t.isOwner && (!linked || t.id !== linked.team.id)).map((t) => ({
+    id: t.id, name: t.name,
+    gaining: t.members.filter((m) => !m.isYou),
+    otherProjects: t.projects.map((p) => p.name),
+  }));
+  return { linked, pending, friends, teams };
+}

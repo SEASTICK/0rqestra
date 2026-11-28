@@ -25,6 +25,7 @@ export function ProjectMenu({ project, link, Icon, onAction }) {
           <button type="button" role="menuitem" onClick={pick('open')}><Icon name="folder" size={14}/> Open folder</button>
           <button type="button" role="menuitem" onClick={pick('access')}><Icon name="link" size={14}/> Computer access</button>
           <button type="button" role="menuitem" onClick={pick('onboarding')}><Icon name="spark" size={14}/> Get started</button>
+          <button type="button" role="menuitem" onClick={pick('share')}><Icon name="user" size={14}/> Add friend or team…</button>
           <div className="project-menu-line" role="separator"/>
           {link && <button type="button" role="menuitem" onClick={pick('unlink')}>Unlink checkout from this computer</button>}
           {link?.team.isOwner && <button type="button" role="menuitem" className="danger-button" onClick={pick('remove-team')}>Remove from team…</button>}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ActivityMonitor, isActive } from "./activity";
-import { HEARTBEAT_MS, PresenceHub, UNAVAILABLE_AFTER_MS, inboxTopic, presenceTopic, type PresenceSnapshot, type SocketLike } from "./presence";
+import { HEARTBEAT_MS, PresenceHub, UNAVAILABLE_AFTER_MS, friendPresenceTopic, inboxTopic, presenceTopic, type PresenceSnapshot, type SocketLike } from "./presence";
 
 // A controlled clock and timers, and sockets that record what is sent.
 function harness() {
@@ -383,5 +383,79 @@ describe("checklist changes", () => {
     await h.flush();
     s2.acceptJoins();
     expect(changed).toEqual([P, P, P]);
+  });
+});
+
+describe("friends' presence", () => {
+  const BOB = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  it("shows a friend online while one of their sessions is there, and goes offline when the last leaves", async () => {
+    const friends: unknown[] = [];
+    const h = harness();
+    (h.hub as unknown as { deps: { onFriends: (f: unknown) => void } }).deps.onFriends = (f) => friends.push(f);
+    h.hub.setFriends(ME, [ANN, BOB]);
+    const s = h.sockets[0]!;
+    s.onopen?.();
+    await h.flush();
+    const annTopic = `realtime:${friendPresenceTopic(ANN)}`;
+    expect(s.joins().map((j) => j.topic).sort()).toEqual([friendPresenceTopic(ANN), friendPresenceTopic(BOB), friendPresenceTopic(ME)].map((t) => `realtime:${t}`).sort());
+    s.acceptJoins({ [annTopic]: { k1: meta("a1"), k2: meta("a2") } });
+    expect(h.hub.friendsSnapshot()).toEqual({ connection: "live", online: [ANN], problem: null });
+    // My own presence is published on my topic only.
+    expect(s.sent.some((m) => m.topic === `realtime:${friendPresenceTopic(ME)}` && m.event === "presence")).toBe(true);
+    expect(s.sent.some((m) => m.topic === annTopic && m.event === "presence")).toBe(false);
+    // One of Ann's two sessions leaves: still online. The last one leaves: offline.
+    s.serverSends({ topic: annTopic, event: "presence_diff", payload: { joins: {}, leaves: { k1: meta("a1") } }, ref: null, join_ref: s.joinRefOf(friendPresenceTopic(ANN)) });
+    expect(h.hub.friendsSnapshot().online).toEqual([ANN]);
+    s.serverSends({ topic: annTopic, event: "presence_diff", payload: { joins: {}, leaves: { k2: meta("a2") } }, ref: null, join_ref: s.joinRefOf(friendPresenceTopic(ANN)) });
+    expect(h.hub.friendsSnapshot().online).toEqual([]);
+    expect(friends.at(-1)).toEqual({ connection: "live", online: [], problem: null });
+  });
+
+  it("goes offline for friends when inactive, and back when active again", async () => {
+    const h = harness();
+    h.hub.setFriends(ME, [ANN]);
+    const s = h.sockets[0]!;
+    s.onopen?.();
+    await h.flush();
+    s.acceptJoins();
+    const mine = `realtime:${friendPresenceTopic(ME)}`;
+    h.hub.setActive(false);
+    expect(s.sent.filter((m) => m.topic === mine && m.event === "presence").map((m) => (m.payload as { event: string }).event)).toEqual(["track", "untrack"]);
+    h.hub.setActive(true);
+    expect(s.sent.filter((m) => m.topic === mine && m.event === "presence").map((m) => (m.payload as { event: string }).event)).toEqual(["track", "untrack", "track"]);
+  });
+
+  it("says status is unavailable when the server refuses my topic or the connection stays down, and stops on sign-out", async () => {
+    const h = harness();
+    h.hub.setFriends(ME, [ANN]);
+    const s = h.sockets[0]!;
+    s.onopen?.();
+    await h.flush();
+    const mine = s.joins().find((j) => j.topic === `realtime:${friendPresenceTopic(ME)}`)!;
+    (mine as { answered?: boolean }).answered = true;
+    s.serverSends({ topic: mine.topic, event: "phx_reply", payload: { status: "error", response: { reason: "Unauthorized" } }, ref: mine.ref, join_ref: mine.join_ref });
+    s.acceptJoins();
+    expect(h.hub.friendsSnapshot().connection).toBe("unavailable");
+    h.hub.setFriends(null);
+    expect(h.hub.friendsSnapshot()).toEqual({ connection: "off", online: [], problem: null });
+    expect(s.closed).toBe(true);
+  });
+
+  it("reports a lost connection as unavailable after the grace period, and live again after reconnecting", async () => {
+    const h = harness();
+    h.hub.setFriends(ME, [ANN]);
+    const s = h.sockets[0]!;
+    s.onopen?.();
+    await h.flush();
+    s.acceptJoins({ [`realtime:${friendPresenceTopic(ANN)}`]: { k: meta("a") } });
+    s.onclose?.();
+    expect(h.hub.friendsSnapshot().connection).toBe("reconnecting");
+    h.advance(UNAVAILABLE_AFTER_MS + 100);
+    expect(h.hub.friendsSnapshot()).toMatchObject({ connection: "unavailable", online: [] });
+    const s2 = h.sockets.at(-1)!;
+    s2.onopen?.();
+    await h.flush();
+    s2.acceptJoins({ [`realtime:${friendPresenceTopic(ANN)}`]: { k: meta("a") } });
+    expect(h.hub.friendsSnapshot()).toEqual({ connection: "live", online: [ANN], problem: null });
   });
 });

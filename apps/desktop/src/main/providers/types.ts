@@ -81,7 +81,8 @@ export type ChatEvent =
   | { type: "delta"; text: string }
   | { type: "completed"; text: string; usage: Usage | null; limits: RateLimit[] }
   | { type: "cancelled"; text: string }
-  | { type: "failed"; reason: FailureReason; message: string; text: string };
+  // resetsAt: when a usage limit resets (seconds since the epoch), only when the provider reported it.
+  | { type: "failed"; reason: FailureReason; message: string; text: string; resetsAt?: number | null };
 
 export interface ModelOption {
   id: string;

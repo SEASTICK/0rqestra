@@ -39,6 +39,10 @@ export interface ProjectPresence {
 
 export type PresenceSnapshot = Record<string, ProjectPresence>;
 
+// Friends' presence (…_friends_presence.sql): who of my accepted friends is online now. "off": not
+// watching (signed out or no friends). Only meaningful as a list when connection is "live".
+export interface FriendsPresence { connection: ConnectionState | "off"; online: string[]; problem: string | null }
+
 type Timer = unknown;
 
 export interface PresenceDeps {
@@ -59,6 +63,8 @@ export interface PresenceDeps {
   onChat?: (projectId: string) => void;
   // The project's shared checklist changed, or the channel was (re)joined: read the checklist again.
   onChecklist?: (projectId: string) => void;
+  // Friends' presence changed (someone came online or left, or the connection changed).
+  onFriends?: (presence: FriendsPresence) => void;
   // A random id per app session; several sessions of one person each publish their own entry.
   sessionKey: string;
   setTimer?: (fn: () => void, ms: number) => Timer;
@@ -90,6 +96,9 @@ interface Channel {
 export const presenceTopic = (projectId: string, userId: string) => `teams:${projectId}:user:${userId}`;
 export const briefsTopic = (projectId: string) => `teams:${projectId}:briefs`;
 export const inboxTopic = (userId: string) => `friends:${userId}`;
+export const friendPresenceTopic = (userId: string) => `friends:presence:${userId}`;
+// Friend presence channels belong to no project; this marks them.
+const FRIENDS = "~friends";
 
 export class PresenceHub {
   private socket: SocketLike | null = null;
@@ -97,6 +106,8 @@ export class PresenceHub {
   private channels = new Map<string, Channel>();
   private targets: PresenceTarget[] = [];
   private inboxUser: string | null = null;
+  private friendsTarget: { selfId: string; friendIds: string[] } | null = null;
+  private lastFriends = "";
   private active = true;
   private ref = 0;
   private pendingHeartbeat: string | null = null;
@@ -132,8 +143,18 @@ export class PresenceHub {
     this.sync();
   }
 
+  // The signed-in user and their accepted friends: each publishes presence on their own topic, and
+  // friends listen to each other's. Null (signed out) stops it.
+  setFriends(selfId: string | null, friendIds: string[] = []): void {
+    const next = selfId ? { selfId, friendIds: [...new Set(friendIds.filter((f) => f !== selfId))].sort() } : null;
+    if (JSON.stringify(next) === JSON.stringify(this.friendsTarget)) return;
+    this.friendsTarget = next;
+    this.sync();
+  }
+
   private clearAll(): void {
     this.inboxUser = null;
+    this.friendsTarget = null;
     this.setTargets([]);
   }
 
@@ -144,6 +165,10 @@ export class PresenceHub {
       wanted.set(briefsTopic(t.projectId), { topic: briefsTopic(t.projectId), kind: "briefs", projectId: t.projectId, memberId: "", isSelf: false });
     }
     if (this.inboxUser) wanted.set(inboxTopic(this.inboxUser), { topic: inboxTopic(this.inboxUser), kind: "inbox", projectId: "", memberId: this.inboxUser, isSelf: true });
+    if (this.friendsTarget) {
+      const { selfId, friendIds } = this.friendsTarget;
+      for (const m of [selfId, ...friendIds]) wanted.set(friendPresenceTopic(m), { topic: friendPresenceTopic(m), kind: "presence", projectId: FRIENDS, memberId: m, isSelf: m === selfId });
+    }
     // Leave channels that are no longer wanted (project removed, account changed).
     for (const [topic, ch] of this.channels) {
       if (!wanted.has(topic)) {
@@ -359,7 +384,7 @@ export class PresenceHub {
 
   private markLiveIfReady(): void {
     // A refused friends topic (an older server) must not keep the projects' status from going live.
-    if (this.open && [...this.channels.values()].every((c) => (c.state === "joined" && c.synced) || (c.kind === "inbox" && c.state === "denied"))) {
+    if (this.open && [...this.channels.values()].every((c) => (c.state === "joined" && c.synced) || ((c.kind === "inbox" || c.projectId === FRIENDS) && c.state === "denied"))) {
       this.everLive = true;
       this.downSince = null;
     }
@@ -471,12 +496,40 @@ export class PresenceHub {
     this.changed();
   }
 
+  // Friends' presence, from the same Presence protocol as the Team Bridge: a friend is online while
+  // at least one of their sessions has presence on their topic (inactive sessions untrack).
+  friendsSnapshot(): FriendsPresence {
+    if (!this.friendsTarget) return { connection: "off", online: [], problem: null };
+    const chans = [...this.channels.values()].filter((c) => c.projectId === FRIENDS);
+    const unavailable = this.downSince !== null && this.now() - this.downSince >= UNAVAILABLE_AFTER_MS;
+    const selfDenied = chans.find((c) => c.isSelf && c.state === "denied");
+    // A friend's topic refused (friendship ended a moment ago) only hides that friend.
+    const usable = chans.filter((c) => c.state !== "denied");
+    let connection: ConnectionState;
+    if (selfDenied) connection = "unavailable";
+    else if (this.open && usable.length > 0 && usable.every((c) => c.state === "joined" && c.synced)) connection = "live";
+    else if (unavailable) connection = "unavailable";
+    else connection = this.everLive ? "reconnecting" : "connecting";
+    return {
+      connection,
+      online: connection === "live" ? usable.filter((c) => !c.isSelf && [...c.presence.values()].some((metas) => metas.length > 0)).map((c) => c.memberId).sort() : [],
+      problem: connection === "unavailable" ? (selfDenied ? "The 0rqestra server does not offer friends' status yet." : "Status unavailable: the connection to the 0rqestra server is down.") : null,
+    };
+  }
+
   private changed(): void {
     const snap = this.snapshot();
     const key = JSON.stringify(snap);
-    if (key === this.lastSnapshot) return;
-    this.lastSnapshot = key;
-    this.deps.onChange(snap);
+    if (key !== this.lastSnapshot) {
+      this.lastSnapshot = key;
+      this.deps.onChange(snap);
+    }
+    const friends = this.friendsSnapshot();
+    const fkey = JSON.stringify(friends);
+    if (fkey !== this.lastFriends) {
+      this.lastFriends = fkey;
+      this.deps.onFriends?.(friends);
+    }
   }
 }
 

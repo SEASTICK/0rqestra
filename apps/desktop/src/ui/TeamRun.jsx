@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityLog, Working } from './Activity.jsx';
 import { directReply, elapsed, planTools, runUsage, textParts, TOOL_LABEL } from './live-chat.mjs';
+import { resetText, switchText } from './backup-ui.mjs';
 
 const STATUS_LABEL = {
   waiting: 'Waiting', working: 'Working', waiting_context: 'Waiting for context', reviewing: 'In review', done: 'Done', unverified: 'Done, not reviewed',
@@ -80,12 +81,12 @@ function TaskRecovery({ run, task, reason, nameOf, recovery, onReplan }) {
   useEffect(() => { if (kind === 'signed_out') recovery?.onRecheck?.(); }, [kind]);
   const providerReady = shown.provider ? recovery?.providerReady?.(shown.provider) : true;
   const canRetry = Boolean(recovery?.onRetry) && kind !== 'dependency' && run.status !== 'running' && !recovery?.busy && !pending && !(kind === 'signed_out' && !providerReady);
-  const retry = async () => {
+  const retry = async (opts) => {
     if (!canRetry) return;
     setPending(true);
     setCheck(null);
     try {
-      const r = await recovery.onRetry(task.id);
+      const r = await recovery.onRetry(task.id, opts && opts.switchTo ? opts : undefined);
       if (r && r.ok === false) setCheck({ reason: r.reason || { kind: 'unknown', title: r.message || 'The retry did not start.', detail: r.message || '' } });
     } catch (e) {
       setCheck({ error: String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '') });
@@ -101,6 +102,7 @@ function TaskRecovery({ run, task, reason, nameOf, recovery, onReplan }) {
     <div className={`task-recovery reason-${kind}`} role="group" aria-label={`What happened to ${task.title}`}>
       <p className="recovery-title">{check?.reason && check.reason !== reason ? <strong>Not retried: </strong> : null}{shown.title}</p>
       {kind === 'signed_out' && <p className="recovery-line">{providerReady ? `${tool} is ready now. Retry to continue.` : `Sign in to ${tool}, then come back here.`}</p>}
+      {kind === 'usage_limit' && <p className="recovery-line">{[resetText(shown.resetsAt), shown.backup ? `${shown.backup.name} (${TOOL_NAME[shown.backup.tool] || shown.backup.tool}) continues from the last checkpoint; finished work is kept.` : 'Finished work is kept. Retry when the limit has reset, or set backup agents in this agent’s settings.'].filter(Boolean).join(' ')}</p>}
       {kind === 'needs_context' && shown.needs?.length > 0 && <div className="recovery-needs"><span>What is needed from you or the Manager:</span><ul>{shown.needs.map((n) => <li key={n}>{n}</li>)}</ul></div>}
       {kind === 'dependency' && <p className="recovery-line">Nothing to do here: it runs once {shown.after?.length ? shown.after.map((id) => `“${run.tasks.find((x) => x.id === id)?.title || id}”`).join(', ') : 'the tasks before it'} pass{shown.after?.length === 1 ? 'es' : ''}.</p>}
       {open === 'conflict' && kind === 'reservation' && <div className="recovery-panel">
@@ -117,6 +119,7 @@ function TaskRecovery({ run, task, reason, nameOf, recovery, onReplan }) {
       <div className="recovery-actions">
         {kind === 'signed_out' && !providerReady && recovery?.onSignIn && button(`Sign in to ${tool}`, () => recovery.onSignIn(shown.provider), true)}
         {kind === 'signed_out' && recovery?.onRecheck && button('Check again', () => recovery.onRecheck())}
+        {kind === 'usage_limit' && shown.backup && recovery?.onRetry && button(pending ? 'Switching…' : `Switch to ${shown.backup.name}`, () => retry({ switchTo: shown.backup.id }), true, !canRetry)}
         {kind === 'usage_limit' && recovery?.onSignIn && button('See usage', () => recovery.onSignIn(shown.provider))}
         {['agent_missing', 'model_unavailable'].includes(kind) && recovery?.onConfigure && button(shown.agentId ? `Configure ${shown.agentName || nameOf?.(shown.agentId) || 'agent'}` : 'Configure agent', () => recovery.onConfigure(shown.agentId || null, shown.role || task.role), true)}
         {kind === 'reservation' && button(open === 'conflict' ? 'Hide conflict' : 'View conflict', () => setOpen(open === 'conflict' ? null : 'conflict'), true)}
@@ -159,6 +162,7 @@ export function TeamRunCard({ run, nameOf, onStop, onOpenFolder, onReplan, onPre
               {t.brief?.summary && <small className="team-brief">{t.brief.summary}{t.brief.unresolved?.length ? ` · Open: ${t.brief.unresolved.slice(0, 2).join('; ')}` : ''}</small>}
               {t.review && !t.review.approved && t.review.problems.length > 0 && <small className="team-problems">Review: {t.review.problems.slice(0, 3).join(' · ')}</small>}
               {t.files.length > 0 && <div className="plan-files">{t.files.map((f) => <code key={f.path}>{f.path}</code>)}</div>}
+              {(t.switches || []).map((sw, i) => <p key={`sw-${i}`} className="task-switch" role="status">{switchText(sw)}{resetText(sw.resetsAt) ? ` ${resetText(sw.resetsAt)}` : ''}</p>)}
               {!running && taskReason(t) && <TaskRecovery key={`${t.id}-${run.retriedAt || 0}`} run={run} task={t} reason={taskReason(t)} nameOf={nameOf} recovery={recovery} onReplan={onReplan}/>}
             </div>
           </li>

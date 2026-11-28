@@ -41,7 +41,7 @@ function AskAgent({ node, canAsk, busy, onAsk }) {
   </form>;
 }
 
-export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure, onAsk, canAsk = false, busy = false, graph, projectId, notify, onPatchNode, onPatchProjectSkills }) {
+export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure, onAsk, canAsk = false, busy = false, graph, projectId, notify, onPatchNode, onPatchProjectSkills, onOpenAccess }) {
   const [tab, setTab] = useState('activity');
   const work = agentWork(messages, node.id);
   const scroller = useRef(null);
@@ -66,7 +66,7 @@ export function AgentPanel({ node, state, messages, Icon, onClose, onConfigure, 
       <button type="button" role="tab" aria-selected={tab === 'activity'} className={tab === 'activity' ? 'is-on' : ''} onClick={() => setTab('activity')}>Activity</button>
       <button type="button" role="tab" aria-selected={tab === 'capabilities'} className={tab === 'capabilities' ? 'is-on' : ''} onClick={() => setTab('capabilities')}>Capabilities</button>
     </div>
-    {tab === 'capabilities' ? <div className="agent-panel-body"><CapabilitiesTab node={node} graph={graph} projectId={projectId} Icon={Icon} notify={notify} onPatchNode={onPatchNode} onPatchProjectSkills={onPatchProjectSkills} /></div> : <>
+    {tab === 'capabilities' ? <div className="agent-panel-body"><CapabilitiesTab node={node} graph={graph} projectId={projectId} Icon={Icon} notify={notify} onPatchNode={onPatchNode} onPatchProjectSkills={onPatchProjectSkills} onConfigure={onConfigure} onOpenAccess={onOpenAccess} /></div> : <>
     <div className="agent-panel-body" ref={scroller}>
       <section className="agent-now">
         <h4>Now</h4>
